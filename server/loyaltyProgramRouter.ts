@@ -28,7 +28,7 @@ export const loyaltyProgramRouter = router({
 
   getMyAccount: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.store) throw new Error("Boutique introuvable.");
-    const account = await getCustomerLoyaltyAccount(ctx.store.id, ctx.user.id, ctx.user.email);
+    const account = await getCustomerLoyaltyAccount(ctx.store.id, ctx.user.id, ctx.user.email ?? undefined);
     const config = await getStoreLoyaltyConfig(ctx.store.id);
     return { account, config };
   }),
@@ -41,7 +41,7 @@ export const loyaltyProgramRouter = router({
         ctx.store.id,
         ctx.user.id,
         input.pointsToRedeem,
-        ctx.user.email
+        ctx.user.email ?? undefined
       );
     }),
 });

@@ -131,6 +131,8 @@ import {
 } from "./db/demoFallback";
 
 const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents } = schema;
+type StorefrontBannerRow = typeof banners.$inferSelect;
+type ProductImageRow = typeof productImages.$inferSelect;
 
 let _db: ReturnType<typeof drizzle<typeof schema, Pool>> | null = null;
 let _passwordHashColumnReady: Promise<void> | null = null;
@@ -1305,13 +1307,13 @@ export async function getStudioOwnerPublicStorefrontContent(storeId: number) {
     } catch {
       profile = { ...defaultDesignProfile };
     }
-    const storeBanners = DEMO_BANNERS
+    const storeBanners: StorefrontBannerRow[] = DEMO_BANNERS
       .filter(b => b.storeId === store.id)
       .sort((a, b) => a.displayOrder - b.displayOrder || b.createdAt.getTime() - a.createdAt.getTime());
     return {
-      store: { id: store.id, displayName: store.displayName, status: store.status, primaryDomain: store.primaryDomain },
+      store: { id: store.id, slug: store.slug, displayName: store.displayName, status: store.status, primaryDomain: store.primaryDomain },
       profile,
-      banners: storeBanners as any,
+      banners: storeBanners,
     };
   }
   // This management read deliberately bypasses the historical content-schema
@@ -1329,7 +1331,7 @@ export async function getStudioOwnerPublicStorefrontContent(storeId: number) {
     profile = { ...defaultDesignProfile };
   }
   return {
-    store: { id: store.id, displayName: store.displayName, status: store.status, primaryDomain: store.primaryDomain },
+    store: { id: store.id, slug: store.slug, displayName: store.displayName, status: store.status, primaryDomain: store.primaryDomain },
     profile,
     banners: bannerRows,
   };
@@ -2022,7 +2024,7 @@ export async function getStudioOwnerExistingCatalogue(storeId: number) {
       publicStorefront: false as const,
       publicCart: false as const,
       publicCheckout: false as const,
-      store: { id: ownerContext.store.id, displayName: ownerContext.store.displayName, status: ownerContext.store.status },
+      store: { id: ownerContext.store.id, slug: ownerContext.store.slug, displayName: ownerContext.store.displayName, status: ownerContext.store.status },
       categories: categoryRows,
       products: productRows.map(product => ({
         id: product.id,
@@ -2053,7 +2055,7 @@ export async function getStudioOwnerExistingCatalogue(storeId: number) {
     publicStorefront: false as const,
     publicCart: false as const,
     publicCheckout: false as const,
-    store: { id: ownerContext.store.id, displayName: ownerContext.store.displayName, status: ownerContext.store.status },
+    store: { id: ownerContext.store.id, slug: ownerContext.store.slug, displayName: ownerContext.store.displayName, status: ownerContext.store.status },
     categories: categoryRows,
     products: productRows.map(product => ({ ...product, featured: Boolean(product.featured), showNewBadge: Boolean(product.showNewBadge), images: imagesByProductId.get(product.id) || [] })),
   };
@@ -6057,7 +6059,6 @@ export async function getDb() {
       const pool = mysql.createPool(poolOptions);
 
       const origQuery = pool.query.bind(pool);
-      const origExecute = pool.execute.bind(pool);
 
       // Verify connectivity and that core schema baseline (`settings` and `users`) is ready
       await origQuery("SELECT 1 FROM `settings` LIMIT 1");
@@ -6089,7 +6090,6 @@ export async function getDb() {
       };
 
       pool.query = wrapMethod(origQuery);
-      pool.execute = wrapMethod(origExecute);
 
       _db = drizzle(pool, { schema, mode: 'default' });
     } catch (error) {
@@ -6188,8 +6188,9 @@ export async function ensureSuperAdminSeed() {
       await ensurePasswordHashColumn();
       await ensureAccountStatusColumn();
       const defaultHash = "scrypt-v1$CTQP92IgJcVPDF3kVjS4jw$TkBvKJ-2fv4qIXv0n_o7kyCzluiwY1dWmgn0O12PgCOofEusR87azMf8IUhhrSwuHqjfZcLuJfgvQn2IWT0a4g"; // MazighoAdmin2026!
-      
-      const adminAccounts = [
+
+      type SeedAccount = Pick<InsertUser, "openId" | "name"> & { email: string; role: NonNullable<InsertUser["role"]> };
+      const adminAccounts: readonly SeedAccount[] = [
         { openId: "operator-yacbhl71", email: "yacbhl71@gmail.com", name: "Yacine (Super Admin)", role: "admin" },
         { openId: "local_demo_admin", email: "admin@mazigho.ch", name: "Direction MAZIGHO Studio", role: "admin" },
         { openId: "user-bhllvoyage", email: "bhllvoyage@gmail.com", name: "BHLL Voyage", role: "user" },
@@ -6204,7 +6205,7 @@ export async function ensureSuperAdminSeed() {
             email: account.email.toLowerCase(),
             passwordHash: defaultHash,
             loginMethod: "password",
-            role: account.role || "admin",
+            role: account.role,
             accountStatus: "active",
             lastSignedIn: new Date(),
           });
@@ -7532,12 +7533,12 @@ export async function getProductById(productId: number, storeId?: number) {
 }
 
 // Product images queries
-export async function getProductImages(productId: number, storeId?: number) {
+export async function getProductImages(productId: number, storeId?: number): Promise<ProductImageRow[]> {
   await ensureStoreCatalogScopeSchema();
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
-    return DEMO_PRODUCT_IMAGES.filter(img => img.storeId === effectiveStoreId && img.productId === productId) as any;
+    return DEMO_PRODUCT_IMAGES.filter(img => img.storeId === effectiveStoreId && img.productId === productId);
   }
   const effectiveStoreId = storeId ?? await getPrimaryStoreId();
   return await db.select().from(productImages).where(and(eq(productImages.storeId, effectiveStoreId), eq(productImages.productId, productId))).orderBy(asc(productImages.displayOrder));
@@ -11896,11 +11897,11 @@ export async function getOrderDetail(userId: number, orderId: number, storeId?: 
 }
 
 // Content management: banners
-export async function getAllBanners(storeId?: number) {
+export async function getAllBanners(storeId?: number): Promise<StorefrontBannerRow[]> {
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
-    return DEMO_BANNERS.filter(b => b.storeId === effectiveStoreId) as any;
+    return DEMO_BANNERS.filter(b => b.storeId === effectiveStoreId);
   }
   try {
     const effectiveStoreId = storeId ?? await getPrimaryStoreId();
@@ -14046,11 +14047,11 @@ export async function getOrderTimeline(orderId: number, storeId?: number) {
   return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
-export async function getActiveBanners(storeId?: number) {
+export async function getActiveBanners(storeId?: number): Promise<StorefrontBannerRow[]> {
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
-    return DEMO_BANNERS.filter(b => b.storeId === effectiveStoreId && b.active === 1) as any;
+    return DEMO_BANNERS.filter(b => b.storeId === effectiveStoreId && b.active === 1);
   }
   try {
     const effectiveStoreId = storeId ?? await getPrimaryStoreId();
