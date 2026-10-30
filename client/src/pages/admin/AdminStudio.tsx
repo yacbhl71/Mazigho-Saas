@@ -1057,10 +1057,10 @@ export default function AdminStudio() {
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2">
-                                <div className={`grid h-8 w-8 place-items-center rounded-lg ${service.soft} ${service.accent}`}>
+                                <div className={`grid h-8 w-8 place-items-center rounded-lg ${service.bgSoft}`}>
                                   <Icon className="h-4 w-4" />
                                 </div>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${service.soft} ${service.accent}`}>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${service.badgeTone}`}>
                                   {service.badge}
                                 </span>
                               </div>
