@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { CarrierCode, ShippingLabel, TrackingEventType } from "@/shared/shippingCarrier";
+import type { CarrierCode, ShippingLabel, TrackingEventType } from "@shared/shippingCarrier";
 
 export default function OwnerShippingLabelsManager() {
   const utils = trpc.useUtils();

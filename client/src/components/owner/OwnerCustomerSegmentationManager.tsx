@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { SegmentTag } from "@/shared/customerSegmentation";
+import type { SegmentTag } from "@shared/customerSegmentation";
 
 export default function OwnerCustomerSegmentationManager() {
   const utils = trpc.useUtils();

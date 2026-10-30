@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ProductReviewItem, ReviewStatus } from "@/shared/productReviewsUgc";
+import type { ProductReviewItem, ReviewStatus } from "@shared/productReviewsUgc";
 
 export default function OwnerReviewsModerationManager() {
   const utils = trpc.useUtils();
