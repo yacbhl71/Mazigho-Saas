@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { TrackingEventType } from "@/shared/shippingCarrier";
+import type { TrackingEventType } from "@shared/shippingCarrier";
 
 export default function CustomerOrderTrackingPage() {
   const [searchInput, setSearchInput] = useState("");

@@ -5,8 +5,8 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
-import { SubscriptionFrequency } from "@/shared/productSubscriptions";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { SubscriptionFrequency } from "@shared/productSubscriptions";
 
 interface ProductSubscribeAndSaveWidgetProps {
   productId: number;
