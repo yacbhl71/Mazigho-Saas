@@ -242,7 +242,7 @@ export async function computeStoreHealthAudit(storeId: number, storeName?: strin
   // 4. PILIER PAIEMENTS & ENCAISSEMENT (Max 20 pts)
   // ==========================================
   let paymentsScore = 0;
-  const hasStripeConnected = Boolean(stripeSetup?.ready);
+  const hasStripeConnected = Boolean(stripeSetup?.paymentReadiness.enabled);
   const hasSwissQr = Boolean(swissCreditor?.enabled && swissCreditor?.iban);
   const hasCod = Boolean(algeriaSettings);
 

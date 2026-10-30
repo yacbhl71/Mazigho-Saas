@@ -10,6 +10,8 @@ export type DemoCategory = {
   imageUrl: string | null;
   icon: string | null;
   publicMessage: string | null;
+  publicNotice: string | null;
+  emptyStateMessage: string | null;
   catalogSection: "standard" | "creations";
   displayOrder: number;
   createdAt: Date;
@@ -43,7 +45,7 @@ export type DemoProduct = {
   originalPrice: number | null;
   stock: number;
   featured: number;
-  newBadge: number;
+  showNewBadge: number;
   status: "active" | "draft" | "archived";
   options: string | null;
   supplier: string | null;
@@ -106,8 +108,9 @@ export type DemoUser = {
 };
 
 const now = new Date("2026-10-20T10:00:00.000Z");
+type DemoStore = StoreScope & { createdAt: Date; updatedAt: Date };
 
-export const DEMO_STORES: StoreScope[] = [
+export const DEMO_STORES: DemoStore[] = [
   {
     id: 1,
     slug: "primary-store",
@@ -115,6 +118,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "mazigho.ch",
     status: "active",
     isPlatformStore: 1,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 2,
@@ -123,6 +128,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "tiziri.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 3,
@@ -131,6 +138,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "atlas-deco.mazigho.ch",
     status: "setup",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 4,
@@ -139,6 +148,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "bhll.mazigho.com",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 5,
@@ -147,6 +158,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "kenza.mazigho.ch",
     status: "limited",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 6,
@@ -155,6 +168,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "dyama.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 7,
@@ -163,6 +178,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "souhila.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 8,
@@ -171,6 +188,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "compagnons.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 9,
@@ -179,6 +198,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "connect.mazigho.ch",
     status: "setup",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 10,
@@ -187,6 +208,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "lina.mazigho.ch",
     status: "setup",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 11,
@@ -195,6 +218,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "import-wp.mazigho.ch",
     status: "setup",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 12,
@@ -203,6 +228,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "asma.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 13,
@@ -211,6 +238,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "pets.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 14,
@@ -219,6 +248,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "marche-atlas.mazigho.ch",
     status: "limited",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: 15,
@@ -227,6 +258,8 @@ export const DEMO_STORES: StoreScope[] = [
     primaryDomain: "rituels.mazigho.ch",
     status: "active",
     isPlatformStore: 0,
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -240,6 +273,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-high-tech.webp",
     icon: "📱",
     publicMessage: "Livraison suivie en Suisse et en Europe avec contrôle qualité avant expédition.",
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 1,
     createdAt: now,
@@ -253,6 +288,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-maison.webp",
     icon: "🏠",
     publicMessage: "Une sélection pensée pour embellir et simplifier chaque espace de vie.",
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 2,
     createdAt: now,
@@ -266,6 +303,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-beaute.webp",
     icon: "💄",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 3,
     createdAt: now,
@@ -279,6 +318,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-sport.webp",
     icon: "🏋️",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 4,
     createdAt: now,
@@ -292,6 +333,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-auto.webp",
     icon: "🚗",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 5,
     createdAt: now,
@@ -305,6 +348,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-mode.webp",
     icon: "👗",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "standard",
     displayOrder: 6,
     createdAt: now,
@@ -318,6 +363,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-mode.webp",
     icon: "👕",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "creations",
     displayOrder: 101,
     createdAt: now,
@@ -331,6 +378,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-mode.webp",
     icon: "🧥",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "creations",
     displayOrder: 102,
     createdAt: now,
@@ -344,6 +393,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/category-maison.webp",
     icon: "☕",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "creations",
     displayOrder: 103,
     createdAt: now,
@@ -357,6 +408,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/dyama/dyama-category-floral.webp",
     icon: "🖼️",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "creations",
     displayOrder: 104,
     createdAt: now,
@@ -370,6 +423,8 @@ export const DEMO_CATEGORIES: DemoCategory[] = [
     imageUrl: "/assets/dyama/dyama-category-landscape.webp",
     icon: "👜",
     publicMessage: null,
+    publicNotice: null,
+    emptyStateMessage: null,
     catalogSection: "creations",
     displayOrder: 105,
     createdAt: now,
@@ -389,7 +444,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 22900,
     stock: 14,
     featured: 1,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: JSON.stringify([{ id: "color-inox", type: "color", label: "Acier brossé", value: "#94a3b8" }, { id: "color-noir", type: "color", label: "Noir mat", value: "#0f172a" }]),
     supplier: null,
@@ -414,7 +469,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 9500,
     stock: 22,
     featured: 1,
-    newBadge: 0,
+    showNewBadge: 0,
     status: "active",
     options: null,
     supplier: null,
@@ -439,7 +494,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 10900,
     stock: 19,
     featured: 1,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: null,
     supplier: null,
@@ -464,7 +519,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 6900,
     stock: 35,
     featured: 1,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: null,
     supplier: null,
@@ -489,7 +544,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 7900,
     stock: 18,
     featured: 1,
-    newBadge: 0,
+    showNewBadge: 0,
     status: "active",
     options: null,
     supplier: null,
@@ -514,7 +569,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 11900,
     stock: 12,
     featured: 1,
-    newBadge: 0,
+    showNewBadge: 0,
     status: "active",
     options: null,
     supplier: null,
@@ -539,7 +594,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 13900,
     stock: 9,
     featured: 1,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: null,
     supplier: null,
@@ -564,7 +619,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 4900,
     stock: 28,
     featured: 1,
-    newBadge: 0,
+    showNewBadge: 0,
     status: "active",
     options: null,
     supplier: null,
@@ -589,7 +644,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: null,
     stock: 25,
     featured: 0,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: null,
     supplier: null,
@@ -614,7 +669,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     originalPrice: 3900,
     stock: 40,
     featured: 0,
-    newBadge: 1,
+    showNewBadge: 1,
     status: "active",
     options: null,
     supplier: null,

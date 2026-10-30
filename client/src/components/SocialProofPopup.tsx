@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ShoppingBag, CheckCircle2, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { SocialProofNotification } from "@/shared/socialProofPopups";
+import type { SocialProofNotification } from "@shared/socialProofPopups";
 
 export default function SocialProofPopup() {
   const feedQuery = trpc.socialProofPopups.getFeed.useQuery();

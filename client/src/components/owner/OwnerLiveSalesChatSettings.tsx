@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function OwnerLiveSalesChatSettings() {
   const utils = trpc.useUtils();
@@ -71,7 +71,7 @@ export default function OwnerLiveSalesChatSettings() {
 
           <div>
             <Label className="text-xs font-semibold">Position du Widget</Label>
-            <Select value={position} onValueChange={(v) => setPosition(v as any)}>
+            <Select value={position} onValueChange={(v) => setPosition(v as "bottom-right" | "bottom-left")}>
               <SelectTrigger className="mt-1 text-xs">
                 <SelectValue />
               </SelectTrigger>

@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
 vi.mock("./db", () => ({
   getStoreMembershipForUser: vi.fn(async () => state.membership),
   getAllCategories: vi.fn(async () => state.categories),
-  getAllProducts: vi.fn(async () => [
+  getAllProductsAdmin: vi.fn(async () => [
     {
       id: 10,
       categoryId: 1,

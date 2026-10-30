@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Coins, ChevronDown } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { SupportedCurrency } from "@/shared/currencyConverter";
+import type { SupportedCurrency } from "@shared/currencyConverter";
 
 interface MultiCurrencyHeaderSelectorProps {
   currentCurrency: SupportedCurrency;
