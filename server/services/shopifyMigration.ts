@@ -66,9 +66,8 @@ export async function executeShopifyMigration(
     categoriesCreated,
   };
 }
-
 export async function generateFullCatalogueCsv(storeId: number): Promise<string> {
-  const products = await db.getAllProducts(storeId);
+  const products = (await db.getAllProductsAdmin(storeId)).filter(product => product.status === "active");
   const categories = await db.getAllCategories(storeId);
   const catMap = new Map(categories.map(c => [c.id, c.name]));
   const { getProductImagesForProducts } = await import("../db");
