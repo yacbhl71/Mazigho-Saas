@@ -61,6 +61,7 @@ export async function notifyBackInStockForProduct(
         to: sub.customerEmail,
         subject: `[Retour en Stock] ${sub.productTitle} est de nouveau disponible !`,
         html: `<p>Bonne nouvelle ! L'article <strong>${sub.productTitle}</strong> est de nouveau en stock dans notre boutique.</p><p>Rendez-vous vite sur notre site pour commander avant la fin des stocks !</p>`,
+        text: `Bonne nouvelle ! L'article ${sub.productTitle} est de nouveau en stock dans notre boutique.\n\nRendez-vous vite sur notre site pour commander avant la fin des stocks !`,
         idempotencyKey: `bis-${sub.id}`,
       });
     } catch {
