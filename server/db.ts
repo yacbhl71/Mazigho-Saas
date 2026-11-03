@@ -3858,6 +3858,29 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
   };
 }
 
+export async function purgeSaasExternalChStores() {
+  const database = await getDb();
+  if (!database) throw new Error("DATABASE_UNAVAILABLE");
+  const targets = await database
+    .select({ id: stores.id, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status })
+    .from(stores)
+    .where(and(eq(stores.isPlatformStore, 0), sql`LOWER(${stores.primaryDomain}) LIKE '%.mazigho.ch'`));
+  if (targets.length === 0) return { deleted: [], deletedRows: 0 };
+  const ids = targets.map(target => target.id);
+  const idList = ids.join(",");
+  const identifier = (value: string) => `\`${value.replace(/`/g, "``")}\``;
+  const [columnRows] = await database.execute(sql.raw("SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('storeId', 'copySourceStoreId', 'provisionedStoreId')"));
+  const columns = Array.isArray(columnRows) ? columnRows as Array<{ tableName: string; columnName: string }> : [];
+  await database.transaction(async tx => {
+    for (const column of columns) {
+      if (column.tableName === "stores") continue;
+      await tx.execute(sql.raw(`DELETE FROM ${identifier(column.tableName)} WHERE ${identifier(column.columnName)} IN (${idList})`));
+    }
+    await tx.execute(sql.raw(`DELETE FROM ${identifier("stores")} WHERE id IN (${idList}) AND isPlatformStore = 0 AND LOWER(primaryDomain) LIKE '%.mazigho.ch'`));
+  });
+  return { deleted: targets, deletedRows: targets.length };
+}
+
 /**
  * Read-only production board across client boutiques. It reuses the existing
  * Studio inventory and only projects project-stage/checklist/reminder dates.

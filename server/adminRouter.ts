@@ -1488,6 +1488,10 @@ export const adminRouter = router({
       page: z.number().int().positive().max(10_000).optional(),
       pageSize: z.union([z.literal(20), z.literal(50), z.literal(100)]).optional(),
     }).optional()).query(async ({ input }) => db.getStudioStoreInventory(input ?? {})),
+    purgeExternalChStores: platformProcedure.input(z.object({ confirmation: z.literal("SUPPRIMER LES BOUTIQUES .CH") })).mutation(async ({ input }) => {
+      if (input.confirmation !== "SUPPRIMER LES BOUTIQUES .CH") throw new TRPCError({ code: "BAD_REQUEST", message: "Confirmation invalide." });
+      return db.purgeSaasExternalChStores();
+    }),
     getProductionBoard: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       stage: z.enum(["new_project", "to_analyze", "to_prepare", "ready", "handed_over"]).optional(),
