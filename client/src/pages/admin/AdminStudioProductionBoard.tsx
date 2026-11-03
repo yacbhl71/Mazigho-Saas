@@ -184,7 +184,7 @@ export default function AdminStudioProductionBoard() {
                                 <Store className="h-4 w-4 shrink-0 text-slate-400" />
                                 <div>
                                   <p className="font-semibold text-slate-950">{store.displayName}</p>
-                                  <p className="text-xs text-slate-500">{store.primaryDomain}</p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5"><p className="text-xs text-slate-500">{store.primaryDomain}</p><Badge variant="outline" className={store.status === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : store.status === "setup" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-700"}>{store.status === "active" ? "Active" : store.status === "setup" ? "En préparation" : store.status}</Badge></div>
                                 </div>
                               </div>
                             </td>
@@ -283,7 +283,7 @@ export default function AdminStudioProductionBoard() {
                                     <Store className="h-4 w-4 shrink-0 text-slate-500" />
                                     <p className="truncate text-sm font-bold text-slate-950">{store.displayName}</p>
                                   </div>
-                                  <p className="mt-1 truncate text-xs text-slate-500">{store.primaryDomain}</p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5"><p className="truncate text-xs text-slate-500">{store.primaryDomain}</p><Badge variant="outline" className={store.status === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : store.status === "setup" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-700"}>{store.status === "active" ? "Active" : store.status === "setup" ? "En préparation" : store.status}</Badge></div>
                                 </div>
                                 <Badge variant="outline" className={tone.badge}>{store.handoverComplete}/{store.handoverTotal}</Badge>
                               </div>
