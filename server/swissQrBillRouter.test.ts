@@ -80,6 +80,14 @@ describe("swissQrBillRouter - Factures PDF & QR-Facture Suisse", () => {
 
   it("génère les données de facture et le HTML d'impression pour une commande", async () => {
     const caller = makeOwnerCaller(702);
+    await caller.saveCreditorConfig({
+      iban: "CH56 3000 0000 0000 0000 0",
+      creditorName: "Boutique Test 702",
+      creditorStreet: "Bahnhofstrasse 10",
+      creditorPostalCode: "8001",
+      creditorCity: "Zürich",
+      creditorCountry: "CH",
+    });
     const res = await caller.generateInvoiceData({ orderId: 1042 });
 
     expect(res.invoiceData.invoiceNumber).toContain("1042");

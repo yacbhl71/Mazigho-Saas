@@ -1,20 +1,16 @@
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { defaultSpinToWinSettings, spinToWinSettingsSchema } from "../shared/spinToWinGamification";
+import { publicProcedure, router, storeOwnerProcedure } from "./_core/trpc";
+import * as db from "./db";
+import { spinToWinSettingsSchema } from "../shared/spinToWinGamification";
 import { z } from "zod";
-
-// In-memory tenant store settings map
-const storeSpinToWinSettings = new Map<number, typeof defaultSpinToWinSettings>();
 
 export const spinToWinRouter = router({
   getSettings: publicProcedure.query(async ({ ctx }) => {
     const storeId = ctx.store?.id || 1;
-    return storeSpinToWinSettings.get(storeId) || defaultSpinToWinSettings;
+    return db.getSpinToWinSettings(storeId);
   }),
 
-  saveSettings: protectedProcedure.input(spinToWinSettingsSchema).mutation(async ({ ctx, input }) => {
-    const storeId = ctx.store?.id || 1;
-    storeSpinToWinSettings.set(storeId, input);
-    return input;
+  saveSettings: storeOwnerProcedure.input(spinToWinSettingsSchema).mutation(async ({ ctx, input }) => {
+    return db.saveSpinToWinSettings(ctx.store.id, input);
   }),
 
   claimReward: publicProcedure.input(z.object({
@@ -23,7 +19,8 @@ export const spinToWinRouter = router({
     rewardLabel: z.string().min(1),
   })).mutation(async ({ ctx, input }) => {
     const storeId = ctx.store?.id || 1;
-    console.log(`[SpinToWin] Lead captured for store ${storeId}: ${input.email} -> ${input.rewardCode} (${input.rewardLabel})`);
-    return { success: true, message: `Code ${input.rewardCode} débloqué pour ${input.email} !` };
+    const reward = await db.claimSpinToWinReward(storeId, input.rewardCode, input.rewardLabel);
+    console.log(`[SpinToWin] Lead captured for store ${storeId}: ${input.email} -> ${reward.code} (${reward.label})`);
+    return { success: true, message: `Code ${reward.code} débloqué pour ${input.email} !`, code: reward.code };
   }),
 });

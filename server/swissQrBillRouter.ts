@@ -53,9 +53,9 @@ export const swissQrBillRouter = router({
         creditor,
         customerName: ctx.user?.name || "Client MAZIGHO",
         customerEmail: ctx.user?.email || "client@example.ch",
-        customerStreet: "Rue de la Gare 12",
-        customerPostalCode: "1003",
-        customerCity: "Lausanne",
+        customerStreet: "",
+        customerPostalCode: "",
+        customerCity: "",
         customerCountry: "CH",
         items: [
           {

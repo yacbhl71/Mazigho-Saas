@@ -65,6 +65,8 @@ import { OWNER_MANUAL_TRACKING_LIMITS } from "../shared/ownerManualTracking";
 import { ALGERIA_CASH_ON_DELIVERY_PAYMENT_METHOD, getAlgeriaCashOnDeliveryEligibility, getAlgeriaOnlinePaymentPreparationStatus, makeAlgeriaCashOnDeliverySettings, makeAlgeriaOnlinePaymentPreparation, parseAlgeriaCashOnDeliverySettings, parseAlgeriaOnlinePaymentPreparation, type AlgeriaOnlinePaymentPreparation } from "../shared/algeriaCashOnDelivery";
 import { needsStudioSupportAttention } from "./services/studioSupportAttention";
 import { assessStudioStoreAttention } from "./services/studioStoreAttention";
+import { defaultShoppableStoriesConfig, shoppableStoriesConfigSchema, type ShoppableStoriesConfig } from "../shared/shoppableVideoStories";
+import { defaultSpinToWinSettings, spinToWinSettingsSchema, type SpinToWinSettings } from "../shared/spinToWinGamification";
 import { normalizeOwnerCustomDomainRequest, normalizeOwnerDomainConnectionGuide, parseOwnerCustomDomainRequest } from "./services/ownerCustomDomainRequest";
 import { getStudioCustomDomainConnectionStatus, inspectStoreCustomDomainDns, makeStoreCustomDomainConnection, parseStoreCustomDomainConnection } from "./services/storeCustomDomainConnection";
 import { normalizeStoreCommercialOfferMode, type StoreCommercialOfferMode } from "../shared/storeCommercialOffer";
@@ -4870,6 +4872,55 @@ async function setStoreSettingValue(storeId: number | undefined, key: string, va
     await db.insert(storeSettings).values({ storeId: effectiveStoreId, key, value, description: description ?? null });
   }
   return { success: true } as const;
+}
+
+const SHOPTABLE_STORIES_SETTING_KEY = "marketing_shoppable_stories";
+const SPIN_TO_WIN_SETTING_KEY = "marketing_spin_to_win";
+
+export async function getShoppableStoriesConfig(storeId: number): Promise<ShoppableStoriesConfig> {
+  const raw = await getStoreSettingValue(storeId, SHOPTABLE_STORIES_SETTING_KEY);
+  if (!raw) return defaultShoppableStoriesConfig;
+  try {
+    const parsed = shoppableStoriesConfigSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : defaultShoppableStoriesConfig;
+  } catch { return defaultShoppableStoriesConfig; }
+}
+
+export async function saveShoppableStoriesConfig(storeId: number, input: ShoppableStoriesConfig) {
+  const config = shoppableStoriesConfigSchema.parse(input);
+  await setStoreSettingValue(storeId, SHOPTABLE_STORIES_SETTING_KEY, JSON.stringify(config), "Configuration Shoppable Stories propre à la boutique");
+  return config;
+}
+
+export async function getSpinToWinSettings(storeId: number): Promise<SpinToWinSettings> {
+  const raw = await getStoreSettingValue(storeId, SPIN_TO_WIN_SETTING_KEY);
+  if (!raw) return defaultSpinToWinSettings;
+  try {
+    const parsed = spinToWinSettingsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : defaultSpinToWinSettings;
+  } catch { return defaultSpinToWinSettings; }
+}
+
+async function ensureSpinRewardPromotion(storeId: number, reward: SpinToWinSettings["rewards"][number]) {
+  const code = reward.code.trim().toUpperCase();
+  const existing = await getPromotionByCode(code, storeId);
+  if (existing) return existing;
+  return createPromotion({ code, type: "percent", value: reward.discountPercent, active: 1, scope: "all" }, storeId);
+}
+
+export async function saveSpinToWinSettings(storeId: number, input: SpinToWinSettings) {
+  const settings = spinToWinSettingsSchema.parse(input);
+  await setStoreSettingValue(storeId, SPIN_TO_WIN_SETTING_KEY, JSON.stringify(settings), "Configuration Spin-to-Win propre à la boutique");
+  for (const reward of settings.rewards) await ensureSpinRewardPromotion(storeId, reward);
+  return settings;
+}
+
+export async function claimSpinToWinReward(storeId: number, rewardCode: string, rewardLabel: string) {
+  const settings = await getSpinToWinSettings(storeId);
+  const reward = settings.rewards.find(candidate => candidate.code.trim().toUpperCase() === rewardCode.trim().toUpperCase());
+  if (!reward || reward.label !== rewardLabel) throw new Error("SPIN_REWARD_INVALID");
+  await ensureSpinRewardPromotion(storeId, reward);
+  return { success: true, code: reward.code.trim().toUpperCase(), label: reward.label };
 }
 
 const OWNER_KNOWLEDGE_DOCUMENT_LIMIT = 100;

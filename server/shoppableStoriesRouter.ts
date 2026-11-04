@@ -1,17 +1,14 @@
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { defaultShoppableStoriesConfig, shoppableStoriesConfigSchema } from "../shared/shoppableVideoStories";
-
-const storeShoppableStoriesConfig = new Map<number, typeof defaultShoppableStoriesConfig>();
+import { publicProcedure, router, storeOwnerProcedure } from "./_core/trpc";
+import * as db from "./db";
+import { shoppableStoriesConfigSchema } from "../shared/shoppableVideoStories";
 
 export const shoppableStoriesRouter = router({
   getConfig: publicProcedure.query(async ({ ctx }) => {
     const storeId = ctx.store?.id || 1;
-    return storeShoppableStoriesConfig.get(storeId) || defaultShoppableStoriesConfig;
+    return db.getShoppableStoriesConfig(storeId);
   }),
 
-  saveConfig: protectedProcedure.input(shoppableStoriesConfigSchema).mutation(async ({ ctx, input }) => {
-    const storeId = ctx.store?.id || 1;
-    storeShoppableStoriesConfig.set(storeId, input);
-    return input;
+  saveConfig: storeOwnerProcedure.input(shoppableStoriesConfigSchema).mutation(async ({ ctx, input }) => {
+    return db.saveShoppableStoriesConfig(ctx.store.id, input);
   }),
 });

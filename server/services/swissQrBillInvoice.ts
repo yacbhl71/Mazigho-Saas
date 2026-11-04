@@ -16,14 +16,14 @@ export async function getStoreSwissCreditorConfig(storeId: number): Promise<Swis
   if (existing) return existing;
 
   const defaultConfig: SwissCreditorConfig = {
-    iban: "CH56 3000 0000 0000 0000 0",
-    creditorName: "MAZIGHO Ecommerce SARL",
-    creditorStreet: "Rue du Rhône 42",
-    creditorPostalCode: "1204",
-    creditorCity: "Genève",
+    iban: "",
+    creditorName: "",
+    creditorStreet: "",
+    creditorPostalCode: "",
+    creditorCity: "",
     creditorCountry: "CH",
-    vatNumber: "CHE-123.456.789 TVA",
-    enabled: true,
+    vatNumber: "",
+    enabled: false,
   };
 
   creditorRegistry.set(storeId, defaultConfig);
