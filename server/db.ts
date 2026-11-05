@@ -4091,7 +4091,7 @@ export async function getStudioSaasBillingDashboard(input: StudioSaasPortfolioQu
   const db = await getDb();
   if (!db) {
     const lemonConfiguration = getLemonSqueezyBillingConfiguration();
-    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore).sort((a, b) => a.displayName.localeCompare(b.displayName, "fr-CH"));
+    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore && !s.primaryDomain?.toLowerCase().endsWith(".mazigho.ch")).sort((a, b) => a.displayName.localeCompare(b.displayName, "fr-CH"));
     const storesWithBilling = clientStores.map(store => {
       const billing = parseStoreSaasBillingProfile(getDemoStoreSettingValue(store.id, "saas_billing_profile"));
       const planAssignment = parseStoreSaasPlanAssignment(getDemoStoreSettingValue(store.id, "saas_plan_assignment"));
@@ -4146,7 +4146,7 @@ export async function getStudioSaasBillingDashboard(input: StudioSaasPortfolioQu
     };
   }
   const clientStores = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status })
-    .from(stores).where(eq(stores.isPlatformStore, 0)).orderBy(asc(stores.displayName));
+    .from(stores).where(and(eq(stores.isPlatformStore, 0), sql`(${stores.primaryDomain} IS NULL OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch')`)).orderBy(asc(stores.displayName));
   if (clientStores.length === 0) {
     const page = paginateStudioSaasPortfolio([], input);
     return {
@@ -4472,7 +4472,7 @@ export async function getStudioTenantResourceSummary() {
   await ensureMultiStoreSchema();
   const db = await getDb();
   if (!db) {
-    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore);
+    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore && !s.primaryDomain?.toLowerCase().endsWith(".mazigho.ch"));
     const clientIds = new Set(clientStores.map(s => s.id));
     return buildTenantResourceSummary({
       clientStores: clientStores.length,
@@ -4486,7 +4486,7 @@ export async function getStudioTenantResourceSummary() {
       settings: clientStores.length * 4,
     });
   }
-  const clientStoreRows = await db.select({ id: stores.id }).from(stores).where(eq(stores.isPlatformStore, 0));
+  const clientStoreRows = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.isPlatformStore, 0), sql`(${stores.primaryDomain} IS NULL OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch')`));
   const clientStoreIds = clientStoreRows.map(store => store.id);
   if (clientStoreIds.length === 0) {
     return buildTenantResourceSummary({ clientStores: 0, categories: 0, products: 0, productImages: 0, variants: 0, orders: 0, carts: 0, cartItems: 0, settings: 0 });
@@ -9739,7 +9739,7 @@ export async function saveOwnerIntegrationRequests(storeId: number, ids: readonl
 export async function getStudioIntegrationRequestRegistry(input: StudioIntegrationRequestRegistryQuery = {}) {
   const db = await getDb();
   if (!db) {
-    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore);
+    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore && !s.primaryDomain?.toLowerCase().endsWith(".mazigho.ch"));
     const requests = clientStores.flatMap(store => parseStoreIntegrationRequestProfile(getDemoStoreSettingValue(store.id, "owner_integration_requests")).requests.map(request => ({
       storeId: store.id,
       integrationId: request.id,
@@ -9847,7 +9847,7 @@ export async function getStudioSupportTickets(input: { query?: string; status?: 
   const db = await getDb();
   if (!db) {
     const now = new Date();
-    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore);
+    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore && !s.primaryDomain?.toLowerCase().endsWith(".mazigho.ch"));
     const allTickets = clientStores.flatMap(store => parseStoreSupportTicketProfile(getDemoStoreSettingValue(store.id, "owner_support_tickets")).tickets.map(ticket => ({
       ...ticket,
       needsAttention: needsStudioSupportAttention(ticket, now),
@@ -10125,7 +10125,7 @@ export async function getStudioCustomDomainRegistry(input: StudioCustomDomainReg
   await ensureMultiStoreSchema();
   const db = await getDb();
   if (!db) {
-    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore).sort((a, b) => a.displayName.localeCompare(b.displayName, "fr-CH"));
+    const clientStores = DEMO_STORES.filter(s => !s.isPlatformStore && !s.primaryDomain?.toLowerCase().endsWith(".mazigho.ch")).sort((a, b) => a.displayName.localeCompare(b.displayName, "fr-CH"));
     const registry = clientStores.map(store => {
       const request = parseOwnerCustomDomainRequest(getDemoStoreSettingValue(store.id, "owner_custom_domain_request"));
       const connection = parseStoreCustomDomainConnection(getDemoStoreSettingValue(store.id, "store_custom_domain_connection"));
@@ -10164,7 +10164,7 @@ export async function getStudioCustomDomainRegistry(input: StudioCustomDomainReg
   }
   const [storeRows, settingRows] = await Promise.all([
     db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status })
-      .from(stores).where(eq(stores.isPlatformStore, 0)).orderBy(asc(stores.displayName)),
+      .from(stores).where(and(eq(stores.isPlatformStore, 0), sql`(${stores.primaryDomain} IS NULL OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch')`)).orderBy(asc(stores.displayName)),
     db.select({ storeId: storeSettings.storeId, key: storeSettings.key, value: storeSettings.value })
       .from(storeSettings).where(inArray(storeSettings.key, ["owner_custom_domain_request", "store_custom_domain_connection"])),
   ]);
