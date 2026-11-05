@@ -3510,6 +3510,19 @@ export async function getSetupStoreForOwnerPanel(storeId: number): Promise<Store
   return rows[0] ?? null;
 }
 
+/** Returns a non-platform SaaS store for an operator-only domain retry. */
+export async function getStudioManagedStore(storeId: number): Promise<StoreScope | null> {
+  if (!Number.isInteger(storeId) || storeId <= 0) return null;
+  const db = await getDb();
+  if (!db) return DEMO_STORES.find(s => s.id === storeId && !s.isPlatformStore) ?? null;
+  const rows = await db
+    .select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
+    .from(stores)
+    .where(and(eq(stores.id, storeId), eq(stores.isPlatformStore, 0)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function getFirstActiveOwnerStoreForUser(userId: number) {
   if (!Number.isInteger(userId) || userId <= 0) return null;
   const db = await getDb();

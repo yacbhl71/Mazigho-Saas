@@ -1606,6 +1606,20 @@ export const adminRouter = router({
       page: z.number().int().positive().max(10_000).optional(),
       pageSize: z.union([z.literal(20), z.literal(50), z.literal(100)]).optional(),
     }).optional()).query(async ({ input }) => db.getStudioCustomDomainRegistry(input ?? {})),
+    retryManagedStoreDomain: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique SaaS introuvable." });
+      if (store.isPlatformStore) throw new TRPCError({ code: "FORBIDDEN", message: "La boutique principale ne peut pas être traitée ici." });
+      const result = await ensureManagedStoreDomain(store.primaryDomain);
+      logAudit(ctx, {
+        action: "studio.store.domain.managed_retry",
+        entityType: "store",
+        entityId: store.id,
+        summary: "Relance du rattachement automatique du sous-domaine géré.",
+        metadata: { domain: store.primaryDomain, provider: store.primaryDomain.endsWith(".mazigho.com") ? "cloud_run" : "vercel", status: result.status, storefrontActivated: false, commerceActivated: false },
+      });
+      return { store: { id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain, status: store.status }, domainAutomation: result };
+    }),
     getIntegrationRequestRegistry: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       integrationId: z.enum(["stripe", "paypal", "google_analytics", "transactional_email"]).optional(),
