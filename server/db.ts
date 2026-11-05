@@ -3650,7 +3650,9 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
   const db = await getDb();
   if (!db) {
     const now = new Date();
-    const sortedStores = [...DEMO_STORES].sort((a, b) => b.isPlatformStore - a.isPlatformStore || a.displayName.localeCompare(b.displayName, "fr-CH"));
+    const sortedStores = DEMO_STORES
+      .filter(store => Boolean(store.isPlatformStore) || !store.primaryDomain.toLowerCase().endsWith(".mazigho.ch"))
+      .sort((a, b) => b.isPlatformStore - a.isPlatformStore || a.displayName.localeCompare(b.displayName, "fr-CH"));
     const demoStores = sortedStores.map(store => {
       const storeProducts = DEMO_PRODUCTS
         .filter(p => p.storeId === store.id && p.status === "active")
@@ -3732,7 +3734,9 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
       isPlatformStore: stores.isPlatformStore,
       createdAt: stores.createdAt,
       updatedAt: stores.updatedAt,
-    }).from(stores).orderBy(desc(stores.isPlatformStore), asc(stores.displayName)),
+    }).from(stores)
+      .where(sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
+      .orderBy(desc(stores.isPlatformStore), asc(stores.displayName)),
     db.select({
       storeId: storeMemberships.storeId,
       activeMembers: sql<number>`SUM(CASE WHEN ${storeMemberships.status} = 'active' THEN 1 ELSE 0 END)`,
@@ -3780,7 +3784,9 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
       isPlatformStore: stores.isPlatformStore,
       createdAt: stores.createdAt,
       updatedAt: stores.updatedAt,
-    }).from(stores).orderBy(desc(stores.isPlatformStore), asc(stores.displayName));
+    }).from(stores)
+      .where(sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
+      .orderBy(desc(stores.isPlatformStore), asc(stores.displayName));
     return [fallbackStores, [], [], [], [], [], [], [], [], []] as const;
   });
 
