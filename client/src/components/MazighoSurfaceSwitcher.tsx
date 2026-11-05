@@ -57,7 +57,14 @@ export function MazighoSurfaceSwitcher() {
     { staleTime: 30_000, retry: false }
   );
 
-  const clientStores = publicStoresQuery.data ?? [];
+  // Le Studio .com ne doit jamais proposer les boutiques hébergées dans
+  // l’environnement Principal .ch. Le filtrage reste côté interface en plus
+  // du périmètre serveur, afin d’éviter toute incohérence après un cache ou
+  // une ancienne réponse de l’API.
+  const clientStores = (publicStoresQuery.data ?? []).filter(store => {
+    const domain = store.primaryDomain.trim().toLowerCase();
+    return !domain.endsWith(".mazigho.ch");
+  });
 
   if (user?.role !== "admin") return null;
 
@@ -198,4 +205,3 @@ export function MazighoSurfaceSwitcher() {
     </div>
   );
 }
-
