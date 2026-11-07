@@ -6,12 +6,14 @@ import {
   saveFbtBundle,
   getFbtBundleForProduct,
 } from "./db/frequentlyBoughtTogetherStorage";
+import { hasStoreSaasFeature } from "./db";
 
 export const frequentlyBoughtTogetherRouter = router({
   getForProduct: publicProcedure
     .input(z.object({ mainProductId: z.number().int() }))
     .query(async ({ ctx, input }) => {
       const storeId = ctx.store?.id || 1;
+      if (!await hasStoreSaasFeature(storeId, "frequently_bought_together")) return null;
       return await getFbtBundleForProduct(storeId, input.mainProductId);
     }),
 

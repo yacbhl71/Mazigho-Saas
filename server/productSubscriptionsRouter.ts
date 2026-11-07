@@ -11,23 +11,26 @@ import {
   getCustomerSubscriptions,
   getStoreSubscriptions,
 } from "./db/productSubscriptionsStorage";
+import { hasStoreSaasFeature } from "./db";
 
 export const productSubscriptionsRouter = router({
   getConfig: publicProcedure.query(async ({ ctx }) => {
     const storeId = ctx.store?.id || 1;
-    return await getSubscriptionConfig(storeId);
+    const config = await getSubscriptionConfig(storeId);
+    return { ...config, enabled: Boolean(config.enabled && await hasStoreSaasFeature(storeId, "subscriptions")) };
   }),
 
   saveConfig: storeOwnerProcedure
     .input(subscriptionsConfigSchema)
     .mutation(async ({ ctx, input }) => {
-      return await saveSubscriptionConfig(ctx.store.id, input);
+      return await saveSubscriptionConfig(ctx.store.id, { ...input, enabled: Boolean(input.enabled && await hasStoreSaasFeature(ctx.store.id, "subscriptions")) });
     }),
 
   createSubscription: protectedProcedure
     .input(createSubscriptionSchema)
     .mutation(async ({ ctx, input }) => {
       if (!ctx.store) throw new Error("Boutique introuvable.");
+      if (!await hasStoreSaasFeature(ctx.store.id, "subscriptions")) throw new Error("SUBSCRIPTIONS_FEATURE_NOT_INCLUDED");
       return await createCustomerSubscription(ctx.store.id, ctx.user.id, input);
     }),
 
