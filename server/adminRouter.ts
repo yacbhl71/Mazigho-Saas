@@ -2419,22 +2419,29 @@ export const adminRouter = router({
       const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
       const startedAt = Date.now();
       try {
+        const catalogue = await db.getStudioOwnerExistingCatalogue(input.storeId);
         const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(15000), headers: { "user-agent": "MAZIGHO-Studio-SmokeTest/1.0" } });
         const body = await response.text();
         const contentType = response.headers.get("content-type") || "";
+        const expectedProductNames = catalogue.products.slice(0, 12).map(product => product.name).filter(Boolean);
+        const bodyLower = body.toLocaleLowerCase("fr-CH");
+        const catalogueMarker = expectedProductNames.length === 0 || expectedProductNames.some(name => bodyLower.includes(String(name).toLocaleLowerCase("fr-CH")));
+        const demoDataFree = !/(sophie\.martin|marc\.dubois|elena\.rossi|cj-home-8921|pf-hood-eco-12|mz_live_gateway_token)/i.test(body);
         const checks = {
           https: url.startsWith("https://") && response.url.startsWith("https://"),
           httpStatus: response.status >= 200 && response.status < 400,
           html: contentType.includes("text/html") && /<html[\s>]/i.test(body),
           storefrontMarker: /MAZIGHO|boutique|shop|produit|product/i.test(body),
+          catalogueMarker,
+          demoDataFree,
         };
         const passed = Object.values(checks).every(Boolean);
-        logAudit(ctx, { action: "studio.store_smoke_test", entityType: "store", entityId: input.storeId, summary: passed ? "Recette technique publique réussie." : "Recette technique publique avec points à corriger.", metadata: { url, status: response.status, checks, durationMs: Date.now() - startedAt } });
-        return { storeId: input.storeId, url, finalUrl: response.url, status: response.status, durationMs: Date.now() - startedAt, checks, passed, testedAt: new Date().toISOString() };
+        logAudit(ctx, { action: "studio.store_smoke_test", entityType: "store", entityId: input.storeId, summary: passed ? "Recette technique publique réussie." : "Recette technique publique avec points à corriger.", metadata: { url, status: response.status, checks, expectedProductNames, durationMs: Date.now() - startedAt } });
+        return { storeId: input.storeId, url, finalUrl: response.url, status: response.status, durationMs: Date.now() - startedAt, checks, expectedProductNames, passed, testedAt: new Date().toISOString() };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Erreur réseau inconnue";
         logAudit(ctx, { action: "studio.store_smoke_test", entityType: "store", entityId: input.storeId, summary: "Recette technique publique en échec réseau.", metadata: { url, error: message, durationMs: Date.now() - startedAt } });
-        return { storeId: input.storeId, url, finalUrl: null, status: null, durationMs: Date.now() - startedAt, checks: { https: url.startsWith("https://"), httpStatus: false, html: false, storefrontMarker: false }, passed: false, error: message, testedAt: new Date().toISOString() };
+        return { storeId: input.storeId, url, finalUrl: null, status: null, durationMs: Date.now() - startedAt, checks: { https: url.startsWith("https://"), httpStatus: false, html: false, storefrontMarker: false, catalogueMarker: false, demoDataFree: false }, expectedProductNames: [], passed: false, error: message, testedAt: new Date().toISOString() };
       }
     }),
     getStoreBackupSnapshot: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
