@@ -13,6 +13,8 @@ export type StoreIntegrationRequestProfile = {
 
 export const storeIntegrationOperationalStatuses = ["active", "configured", "requested", "optional", "unavailable"] as const;
 export type StoreIntegrationOperationalStatus = (typeof storeIntegrationOperationalStatuses)[number];
+export const storeOperationalIntegrationIds = ["stripe", "paypal", "google_analytics", "transactional_email", "odoo", "supplier_hub", "shipping_carriers", "ad_pixels", "image_storage"] as const;
+export type StoreOperationalIntegrationId = (typeof storeOperationalIntegrationIds)[number];
 
 export const emptyStoreIntegrationRequestProfile: StoreIntegrationRequestProfile = {
   requests: [],

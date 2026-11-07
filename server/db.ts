@@ -72,7 +72,7 @@ import { normalizeOwnerCustomDomainRequest, normalizeOwnerDomainConnectionGuide,
 import { getStudioCustomDomainConnectionStatus, inspectStoreCustomDomainDns, makeStoreCustomDomainConnection, parseStoreCustomDomainConnection } from "./services/storeCustomDomainConnection";
 import { normalizeStoreCommercialOfferMode, type StoreCommercialOfferMode } from "../shared/storeCommercialOffer";
 import { getStoreSaasBillingDraftReadiness, makeDraftInvoice, normalizeSaasBillingPlan, parseStoreSaasBillingProfile, type SaasBillingCurrency } from "../shared/storeSaasBilling";
-import { makeStoreIntegrationRequestProfile, parseStoreIntegrationRequestProfile, type StoreIntegrationId, type StoreIntegrationOperationalStatus } from "../shared/storeIntegrationRequests";
+import { makeStoreIntegrationRequestProfile, parseStoreIntegrationRequestProfile, type StoreIntegrationId, type StoreIntegrationOperationalStatus, type StoreOperationalIntegrationId } from "../shared/storeIntegrationRequests";
 import { defaultSaasPlanCatalog, normalizeSaasPlanCatalog, parseSaasPlanCatalog, type SaasPlanCatalog, type SaasPlanFeatureId } from "../shared/saasPlanCatalog";
 import { assignStoreSaasPlanTemplate, parseStoreSaasPlanAssignment } from "../shared/storeSaasPlanAssignment";
 import { createStoreCommissionOverride, parseStoreCommissionOverride, type StoreCommissionOverride } from "../shared/storeCommissionOverride";
@@ -9902,8 +9902,8 @@ export async function getStudioStoreIntegrationOperationalStatus(storeId: number
     getStoreSettingValue(storeId, "google_analytics_id"),
   ]);
   const requestedAt = new Map(requests.requests.map(request => [request.id, request.requestedAt]));
-  const requested = (id: StoreIntegrationId) => requestedAt.get(id) ?? null;
-  const state = (id: StoreIntegrationId, configured: boolean, active: boolean, unavailable = false) => ({
+  const requested = (id: StoreOperationalIntegrationId) => requestedAt.get(id as StoreIntegrationId) ?? null;
+  const state = (id: StoreOperationalIntegrationId, configured: boolean, active: boolean, unavailable = false) => ({
     integrationId: id,
     status: (unavailable ? "unavailable" : active ? "active" : configured ? "configured" : requested(id) ? "requested" : "optional") as StoreIntegrationOperationalStatus,
     requestedAt: requested(id),
@@ -9916,6 +9916,11 @@ export async function getStudioStoreIntegrationOperationalStatus(storeId: number
       state("paypal", false, false, true),
       state("google_analytics", Boolean(rawAnalyticsId?.trim()), Boolean(rawAnalyticsId?.trim())),
       state("transactional_email", false, false),
+      state("odoo", false, false),
+      state("supplier_hub", false, false),
+      state("shipping_carriers", false, false),
+      state("ad_pixels", false, false),
+      state("image_storage", false, false),
     ],
     note: "Les états sont des signaux opérateur. Aucun secret, identifiant fournisseur ou jeton n’est retourné.",
   };
