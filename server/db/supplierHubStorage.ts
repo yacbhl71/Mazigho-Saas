@@ -7,6 +7,7 @@ import type {
 } from "../../shared/supplierHub";
 import { SUPPLIER_PROVIDERS_META } from "../../shared/supplierHub";
 import * as db from "../db";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 // Store-isolated in-memory registry for connections
 // key: `${storeId}:${provider}`
@@ -23,6 +24,20 @@ const connectionRegistry = new Map<string, {
 // Store-isolated in-memory registry for product drafts
 // key: draftId
 const draftRegistry = new Map<string, SupplierProductDraft>();
+const DRAFTS_KEY = "feature_supplier_product_drafts";
+
+async function getDraftsForStore(storeId: number): Promise<SupplierProductDraft[]> {
+  const existing = Array.from(draftRegistry.values()).filter(draft => draft.storeId === storeId);
+  if (existing.length > 0) return existing;
+  const drafts = await readPersistentStoreSetting<SupplierProductDraft[]>(storeId, DRAFTS_KEY, []);
+  for (const draft of drafts) draftRegistry.set(draft.id, draft);
+  return drafts;
+}
+
+async function saveDraftsForStore(storeId: number): Promise<void> {
+  const drafts = Array.from(draftRegistry.values()).filter(draft => draft.storeId === storeId);
+  await writePersistentStoreSetting(storeId, DRAFTS_KEY, drafts, "Brouillons fournisseurs isolés par boutique");
+}
 
 function maskApiKey(key: string): string {
   if (!key) return "";
@@ -139,8 +154,8 @@ export async function testStoreSupplierConnection(
 
 // 2. DRAFTS QUEUE MANAGEMENT
 export async function getSupplierProductDrafts(storeId: number): Promise<SupplierProductDraft[]> {
-  ensureSeedDrafts(storeId);
-  return Array.from(draftRegistry.values())
+  const drafts = await getDraftsForStore(storeId);
+  return drafts
     .filter(d => d.storeId === storeId)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
@@ -162,6 +177,7 @@ export async function createSupplierProductDraft(
   };
 
   draftRegistry.set(id, draft);
+  await saveDraftsForStore(storeId);
   return draft;
 }
 
@@ -170,6 +186,7 @@ export async function updateSupplierProductDraft(
   draftId: string,
   changes: Partial<SupplierProductDraft>
 ): Promise<SupplierProductDraft> {
+  await getDraftsForStore(storeId);
   const draft = draftRegistry.get(draftId);
   if (!draft || draft.storeId !== storeId) {
     throw new Error("Brouillon introuvable pour cette boutique.");
@@ -182,15 +199,18 @@ export async function updateSupplierProductDraft(
   };
 
   draftRegistry.set(draftId, updated);
+  await saveDraftsForStore(storeId);
   return updated;
 }
 
 export async function deleteSupplierProductDraft(storeId: number, draftId: string): Promise<boolean> {
+  await getDraftsForStore(storeId);
   const draft = draftRegistry.get(draftId);
   if (!draft || draft.storeId !== storeId) {
     throw new Error("Brouillon introuvable pour cette boutique.");
   }
   draftRegistry.delete(draftId);
+  await saveDraftsForStore(storeId);
   return true;
 }
 
@@ -200,6 +220,7 @@ export async function publishSupplierProductDraft(
   draftId: string,
   categoryId?: number
 ): Promise<{ productId: number; slug: string }> {
+  await getDraftsForStore(storeId);
   const draft = draftRegistry.get(draftId);
   if (!draft || draft.storeId !== storeId) {
     throw new Error("Brouillon introuvable pour cette boutique.");
@@ -258,6 +279,7 @@ export async function publishSupplierProductDraft(
   draft.publishedProductId = newProduct.id;
   draft.updatedAt = new Date().toISOString();
   draftRegistry.set(draftId, draft);
+  await saveDraftsForStore(storeId);
 
   return { productId: newProduct.id, slug: productSlug };
 }
