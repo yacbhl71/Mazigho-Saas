@@ -23,6 +23,25 @@ const statusLabels: Record<string, string> = {
   closed: "Clôturée",
 };
 
+function ThemePreviewFrame({ theme, label }: { theme: (typeof themes)[number]; label: string }) {
+  return (
+    <div className={`overflow-hidden rounded-2xl border shadow-sm ${theme.palette.card}`}>
+      <div className="flex items-center justify-between border-b border-black/10 bg-white/90 px-3 py-2 text-[10px] font-bold text-slate-700">
+        <span className="truncate uppercase tracking-[0.14em]">{theme.label}</span><span className="rounded-full bg-slate-950 px-2 py-1 text-[9px] text-white">APERÇU</span>
+      </div>
+      <div className="relative h-52 overflow-hidden">
+        <img src={theme.visual} alt={theme.visualAlt} className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/35 to-transparent" />
+        <div className="relative flex h-full flex-col justify-between p-4 text-white">
+          <div className="flex items-center justify-between text-[9px] font-semibold"><span>Accueil</span><span className="hidden sm:inline">Boutique&nbsp;&nbsp; Collections&nbsp;&nbsp; Contact</span><span>☰</span></div>
+          <div className="max-w-[75%]"><p className="text-[9px] font-bold uppercase tracking-[0.16em] text-orange-200">{theme.eyebrow}</p><p className="mt-1 text-xl font-bold leading-tight">Une sélection pensée pour vous.</p><p className="mt-1 text-[10px] leading-4 text-white/80">Découvrez l’univers de votre boutique.</p><button type="button" className="mt-3 rounded-full bg-white px-3 py-1.5 text-[9px] font-bold text-slate-950">Découvrir la boutique</button></div>
+        </div>
+      </div>
+      <div className="bg-white/90 p-3"><p className="text-center text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p><div className="mt-2 grid grid-cols-3 gap-2"><span className="rounded-lg bg-slate-100 px-2 py-2 text-center text-[9px] text-slate-600">Nouveautés</span><span className="rounded-lg bg-slate-100 px-2 py-2 text-center text-[9px] text-slate-600">Collections</span><span className="rounded-lg bg-slate-100 px-2 py-2 text-center text-[9px] text-slate-600">Promotions</span></div></div>
+    </div>
+  );
+}
+
 export default function AdminStudioThemes() {
   const [, setLocation] = useLocation();
   const inventoryQuery = trpc.admin.studio.getInventory.useQuery(undefined, { refetchOnWindowFocus: false });
@@ -464,12 +483,8 @@ export default function AdminStudioThemes() {
               const before = themes.find(theme => theme.id === themeComparisonQuery.data?.currentThemeId) ?? themes[0];
               const after = themes.find(theme => theme.id === themeComparisonQuery.data?.snapshot.themeId) ?? themes[0];
               return <div className="grid gap-4 md:grid-cols-2">
-                {[{ label: "Avant — actuellement actif", theme: before, tone: "border-slate-200 bg-slate-50" }, { label: "Après — version sauvegardée", theme: after, tone: "border-violet-200 bg-violet-50" }].map(panel => (
-                  <div key={panel.label} className={`overflow-hidden rounded-2xl border ${panel.tone}`}>
-                    <img src={panel.theme.visual} alt={panel.theme.visualAlt} className="h-48 w-full object-cover" />
-                    <div className="p-4"><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">{panel.label}</p><h3 className="mt-1 text-lg font-bold text-slate-950">{panel.theme.label}</h3><p className="mt-2 text-sm leading-5 text-slate-600">{panel.theme.description}</p></div>
-                  </div>
-                ))}
+                <ThemePreviewFrame theme={before} label="Avant — actuellement actif" />
+                <ThemePreviewFrame theme={after} label="Après — version sauvegardée" />
               </div>;
             })()}
             <DialogFooter>
