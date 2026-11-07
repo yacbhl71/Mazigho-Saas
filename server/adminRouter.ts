@@ -2365,6 +2365,53 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    getClientValidation: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => db.getStudioClientValidation(input.storeId)),
+    issueClientValidation: platformProcedure.input(z.object({ storeId: z.number().int().positive(), confirmationName: z.string().trim().min(2).max(160), acknowledged: z.literal(true) })).mutation(async ({ ctx, input }) => {
+      try {
+        const summary = await db.getOwnerStoreSettingsSummary(input.storeId);
+        if (summary.store.displayName.trim() !== input.confirmationName.trim()) throw new Error("CLIENT_VALIDATION_CONFIRMATION_MISMATCH");
+        const current = await db.getStudioClientValidation(input.storeId);
+        const issued = await db.issueStudioClientValidation({ storeId: input.storeId });
+        logAudit(ctx, { action: "studio.client_validation.issue", entityType: "store", entityId: input.storeId, summary: "Version privée préparée pour validation client.", metadata: { previousStatus: current.status, tokenIssued: Boolean(issued.token), publicStorefrontChanged: false, commerceChanged: false } });
+        return issued;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        if (code === "CLIENT_VALIDATION_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Recopiez exactement le nom de la boutique avant de préparer la validation." });
+        if (code === "CLIENT_VALIDATION_LOCKED") throw new TRPCError({ code: "CONFLICT", message: "Cette version est déjà verrouillée et ne peut plus être remplacée." });
+        throw error;
+      }
+    }),
+    approveClientValidation: platformProcedure.input(z.object({ storeId: z.number().int().positive(), confirmationName: z.string().trim().min(2).max(160), acknowledged: z.literal(true) })).mutation(async ({ ctx, input }) => {
+      try {
+        const summary = await db.getOwnerStoreSettingsSummary(input.storeId);
+        if (summary.store.displayName.trim() !== input.confirmationName.trim()) throw new Error("CLIENT_VALIDATION_CONFIRMATION_MISMATCH");
+        const approved = await db.approveStudioClientValidation({ storeId: input.storeId, confirmationName: input.confirmationName, approvedBy: ctx.user.name || ctx.user.email || "Opérateur MAZIGHO" });
+        logAudit(ctx, { action: "studio.client_validation.approve", entityType: "store", entityId: input.storeId, summary: "Validation client enregistrée pour la version présentée.", metadata: { publicStorefrontChanged: false, commerceChanged: false } });
+        return approved;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        if (code === "CLIENT_VALIDATION_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Recopiez exactement le nom de la boutique avant de confirmer." });
+        if (code === "CLIENT_VALIDATION_NOT_SENT") throw new TRPCError({ code: "CONFLICT", message: "Préparez d’abord une version de validation client." });
+        throw error;
+      }
+    }),
+    lockClientValidation: platformProcedure.input(z.object({ storeId: z.number().int().positive(), confirmationName: z.string().trim().min(2).max(160), acknowledged: z.literal(true) })).mutation(async ({ ctx, input }) => {
+      try {
+        const summary = await db.getOwnerStoreSettingsSummary(input.storeId);
+        if (summary.store.displayName.trim() !== input.confirmationName.trim()) throw new Error("CLIENT_VALIDATION_CONFIRMATION_MISMATCH");
+        const locked = await db.lockStudioClientValidation({ storeId: input.storeId, confirmationName: input.confirmationName });
+        logAudit(ctx, { action: "studio.client_validation.lock", entityType: "store", entityId: input.storeId, summary: "Version approuvée verrouillée avant transmission au propriétaire.", metadata: { publicStorefrontChanged: false, commerceChanged: false, immutableVersion: true } });
+        return locked;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        if (code === "CLIENT_VALIDATION_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Recopiez exactement le nom de la boutique avant de verrouiller." });
+        if (code === "CLIENT_VALIDATION_NOT_APPROVED") throw new TRPCError({ code: "CONFLICT", message: "La validation client doit être enregistrée avant le verrouillage." });
+        throw error;
+      }
+    }),
     getCatalogueImportTargets: platformProcedure.query(async () => db.getStudioCatalogueImportTargets()),
     getProvisioningReviews: platformProcedure.query(async () => db.getStudioProvisioningDraftReviews()),
     getLaunchPreflight: platformProcedure.input(z.object({ draftId: z.number().int().positive() })).query(async ({ input }) => db.getStudioStoreLaunchPreflight(input.draftId)),

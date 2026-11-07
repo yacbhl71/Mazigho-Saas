@@ -4902,6 +4902,60 @@ export async function setStoreSettingValue(storeId: number | undefined, key: str
   return { success: true } as const;
 }
 
+const STUDIO_CLIENT_VALIDATION_KEY = "studio_client_validation";
+type StudioClientValidationStatus = "draft" | "sent" | "approved" | "locked";
+
+function parseStudioClientValidation(raw: string | null, storeId: number) {
+  if (!raw) return { storeId, status: "draft" as const, version: 1, token: null as string | null, sentAt: null as string | null, approvedAt: null as string | null, lockedAt: null as string | null, approvedBy: null as string | null };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const status: StudioClientValidationStatus = ["draft", "sent", "approved", "locked"].includes(String(parsed.status)) ? String(parsed.status) as StudioClientValidationStatus : "draft";
+    return {
+      storeId,
+      status,
+      version: Number(parsed.version) || 1,
+      token: typeof parsed.token === "string" ? parsed.token : null,
+      sentAt: typeof parsed.sentAt === "string" ? parsed.sentAt : null,
+      approvedAt: typeof parsed.approvedAt === "string" ? parsed.approvedAt : null,
+      lockedAt: typeof parsed.lockedAt === "string" ? parsed.lockedAt : null,
+      approvedBy: typeof parsed.approvedBy === "string" ? parsed.approvedBy : null,
+    };
+  } catch {
+    return { storeId, status: "draft" as const, version: 1, token: null as string | null, sentAt: null as string | null, approvedAt: null as string | null, lockedAt: null as string | null, approvedBy: null as string | null };
+  }
+}
+
+export async function getStudioClientValidation(storeId: number) {
+  const raw = await getStoreSettingValue(storeId, STUDIO_CLIENT_VALIDATION_KEY);
+  return parseStudioClientValidation(raw, storeId);
+}
+
+export async function issueStudioClientValidation(input: { storeId: number }) {
+  const current = await getStudioClientValidation(input.storeId);
+  if (current.status === "locked") throw new Error("CLIENT_VALIDATION_LOCKED");
+  const now = new Date().toISOString();
+  const next = { ...current, status: "sent" as const, version: current.version + 1, token: randomBytes(24).toString("hex"), sentAt: now, approvedAt: null, lockedAt: null, approvedBy: null };
+  await setStoreSettingValue(input.storeId, STUDIO_CLIENT_VALIDATION_KEY, JSON.stringify(next), "État de validation client et verrouillage avant transmission.");
+  return next;
+}
+
+export async function approveStudioClientValidation(input: { storeId: number; confirmationName: string; approvedBy: string }) {
+  const current = await getStudioClientValidation(input.storeId);
+  if (current.status !== "sent") throw new Error("CLIENT_VALIDATION_NOT_SENT");
+  const now = new Date().toISOString();
+  const next = { ...current, status: "approved" as const, approvedAt: now, approvedBy: input.approvedBy };
+  await setStoreSettingValue(input.storeId, STUDIO_CLIENT_VALIDATION_KEY, JSON.stringify(next), "État de validation client et verrouillage avant transmission.");
+  return next;
+}
+
+export async function lockStudioClientValidation(input: { storeId: number; confirmationName: string }) {
+  const current = await getStudioClientValidation(input.storeId);
+  if (current.status !== "approved") throw new Error("CLIENT_VALIDATION_NOT_APPROVED");
+  const next = { ...current, status: "locked" as const, lockedAt: new Date().toISOString() };
+  await setStoreSettingValue(input.storeId, STUDIO_CLIENT_VALIDATION_KEY, JSON.stringify(next), "Version client verrouillée avant transmission.");
+  return next;
+}
+
 
 const VISUAL_SEARCH_SETTING_KEY = "marketing_visual_search";
 
