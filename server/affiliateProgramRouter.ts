@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { router, storeOwnerProcedure, publicProcedure } from "./_core/trpc";
 import {
@@ -21,16 +22,19 @@ export const affiliateProgramRouter = router({
   saveConfig: storeOwnerProcedure
     .input(affiliateConfigSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "affiliate_program");
       return await saveAffiliateConfig(ctx.store.id, input);
     }),
 
   createAffiliate: storeOwnerProcedure
     .input(createAffiliateSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "affiliate_program");
       return await createAffiliateAmbassador(ctx.store.id, input);
     }),
 
   getStoreAffiliates: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "affiliate_program");
     return await getStoreAffiliates(ctx.store.id);
   }),
 

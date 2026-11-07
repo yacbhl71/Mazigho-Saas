@@ -4,14 +4,27 @@ import {
 } from "../../shared/backInStock";
 import { z } from "zod";
 import { sendTransactionalEmail } from "../transactionalEmail";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeBackInStockMap = new Map<number, BackInStockSubscription[]>();
+const SETTING_KEY = "feature_back_in_stock_subscriptions";
+async function getSubscriptions(storeId: number) {
+  const cached = storeBackInStockMap.get(storeId);
+  if (cached) return cached;
+  const persisted = await readPersistentStoreSetting<BackInStockSubscription[]>(storeId, SETTING_KEY, []);
+  storeBackInStockMap.set(storeId, persisted);
+  return persisted;
+}
+async function saveSubscriptions(storeId: number, value: BackInStockSubscription[]) {
+  storeBackInStockMap.set(storeId, value);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, value, "Abonnements retour en stock isolés par boutique");
+}
 
 export async function subscribeToBackInStock(
   storeId: number,
   input: z.infer<typeof subscribeBackInStockSchema>
 ): Promise<BackInStockSubscription> {
-  const subscriptions = storeBackInStockMap.get(storeId) || [];
+  const subscriptions = await getSubscriptions(storeId);
 
   const existing = subscriptions.find(
     (s) => s.productId === input.productId && s.customerEmail.toLowerCase() === input.customerEmail.toLowerCase()
@@ -32,7 +45,7 @@ export async function subscribeToBackInStock(
   };
 
   subscriptions.unshift(newSub);
-  storeBackInStockMap.set(storeId, subscriptions);
+  await saveSubscriptions(storeId, subscriptions);
 
   return newSub;
 }
@@ -47,7 +60,7 @@ export async function notifyBackInStockForProduct(
   storeId: number,
   productId: number
 ): Promise<{ notifiedCount: number }> {
-  const subscriptions = storeBackInStockMap.get(storeId) || [];
+  const subscriptions = await getSubscriptions(storeId);
   const pending = subscriptions.filter((s) => s.productId === productId && !s.notified);
 
   let count = 0;
@@ -69,7 +82,7 @@ export async function notifyBackInStockForProduct(
     }
   }
 
-  storeBackInStockMap.set(storeId, subscriptions);
+  await saveSubscriptions(storeId, subscriptions);
 
   return { notifiedCount: count };
 }

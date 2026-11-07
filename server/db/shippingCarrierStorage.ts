@@ -11,8 +11,22 @@ import {
   getCarrierTrackingUrl,
 } from "../services/shippingCarrierService";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeLabelsMap = new Map<number, ShippingLabel[]>();
+const LABELS_KEY = "feature_shipping_labels";
+const SENDER_KEY = "feature_shipping_sender";
+async function getLabels(storeId: number) {
+  const cached = storeLabelsMap.get(storeId);
+  if (cached) return cached;
+  const persisted = await readPersistentStoreSetting<ShippingLabel[]>(storeId, LABELS_KEY, []);
+  storeLabelsMap.set(storeId, persisted);
+  return persisted;
+}
+async function saveLabels(storeId: number, value: ShippingLabel[]) {
+  storeLabelsMap.set(storeId, value);
+  await writePersistentStoreSetting(storeId, LABELS_KEY, value, "Étiquettes d’expédition isolées par boutique");
+}
 
 export interface StoreSenderAddress {
   companyName: string;
@@ -25,15 +39,12 @@ export interface StoreSenderAddress {
 const defaultSenderAddresses = new Map<number, StoreSenderAddress>();
 
 export async function getStoreSenderAddress(storeId: number): Promise<StoreSenderAddress> {
-  return (
-    defaultSenderAddresses.get(storeId) || {
-      companyName: "Boutique Officielle",
-      street: "Rue du Commerce 12",
-      postalCode: "1003",
-      city: "Lausanne",
-      country: "CH",
-    }
-  );
+  const cached = defaultSenderAddresses.get(storeId);
+  if (cached) return cached;
+  const persisted = await readPersistentStoreSetting<StoreSenderAddress | null>(storeId, SENDER_KEY, null);
+  const emptyAddress = persisted ?? { companyName: "", street: "", postalCode: "", city: "", country: "" };
+  defaultSenderAddresses.set(storeId, emptyAddress);
+  return emptyAddress;
 }
 
 export async function setStoreSenderAddress(
@@ -41,6 +52,7 @@ export async function setStoreSenderAddress(
   address: StoreSenderAddress
 ): Promise<StoreSenderAddress> {
   defaultSenderAddresses.set(storeId, address);
+  await writePersistentStoreSetting(storeId, SENDER_KEY, address, "Adresse expéditeur isolée par boutique");
   return address;
 }
 
@@ -48,7 +60,7 @@ export async function createShippingLabelForOrder(
   storeId: number,
   input: z.infer<typeof generateLabelSchema>
 ): Promise<ShippingLabel> {
-  const storeLabels = storeLabelsMap.get(storeId) || [];
+  const storeLabels = await getLabels(storeId);
   const senderAddress = await getStoreSenderAddress(storeId);
 
   const trackingNumber = generateTrackingNumber(input.carrier);
@@ -83,7 +95,7 @@ export async function createShippingLabelForOrder(
   };
 
   storeLabels.unshift(label);
-  storeLabelsMap.set(storeId, storeLabels);
+  await saveLabels(storeId, storeLabels);
 
   return label;
 }
@@ -91,7 +103,7 @@ export async function createShippingLabelForOrder(
 export async function getStoreShippingLabels(
   storeId: number
 ): Promise<ShippingLabel[]> {
-  return storeLabelsMap.get(storeId) || [];
+  return await getLabels(storeId);
 }
 
 export async function getShippingLabelByTracking(
@@ -110,7 +122,7 @@ export async function getShippingLabelByOrder(
   storeId: number,
   orderId: string
 ): Promise<ShippingLabel | null> {
-  const storeLabels = storeLabelsMap.get(storeId) || [];
+  const storeLabels = await getLabels(storeId);
   return storeLabels.find((l: ShippingLabel) => l.orderId === orderId) || null;
 }
 

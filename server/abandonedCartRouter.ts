@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { router, storeOwnerProcedure, publicProcedure } from "./_core/trpc";
 import {
@@ -14,10 +15,12 @@ import {
 export const abandonedCartRouter = router({
   // Owner queries & mutations
   getCarts: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
     return await getStoreAbandonedCarts(ctx.store.id);
   }),
 
   getAnalytics: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
     return await getAbandonedCartAnalytics(ctx.store.id);
   }),
 
@@ -29,6 +32,7 @@ export const abandonedCartRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
       const storeName = ctx.store.displayName || "MAZIGHO Boutique";
       return await sendCartRecoveryReminder(ctx.store.id, input.cartId, storeName, input.discountPercent);
     }),
@@ -42,17 +46,20 @@ export const abandonedCartRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
       return await recordCartChannelReminder(ctx.store.id, input.cartId, input.channel, input.discountPercent);
     }),
 
   markRecovered: storeOwnerProcedure
     .input(z.object({ cartId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
       return await markCartAsRecovered(ctx.store.id, input.cartId);
     }),
 
   // Tracking Pixels endpoints
   getPixelsConfig: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
     return await getStoreTrackingPixels(ctx.store.id);
   }),
 
@@ -67,6 +74,7 @@ export const abandonedCartRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "abandoned_cart_automation");
       return await saveStoreTrackingPixels(ctx.store.id, input);
     }),
 

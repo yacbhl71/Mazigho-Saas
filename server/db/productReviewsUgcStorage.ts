@@ -6,13 +6,29 @@ import {
   moderateReviewSchema,
 } from "../../shared/productReviewsUgc";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeReviewsConfigs = new Map<number, ProductReviewsConfig>();
 const storeReviewsMap = new Map<number, ProductReviewItem[]>();
+const CONFIG_KEY = "feature_reviews_config";
+const REVIEWS_KEY = "feature_reviews_items";
+async function getReviews(storeId: number) {
+  const cached = storeReviewsMap.get(storeId);
+  if (cached) return cached;
+  const persisted = await readPersistentStoreSetting<ProductReviewItem[]>(storeId, REVIEWS_KEY, []);
+  storeReviewsMap.set(storeId, persisted);
+  return persisted;
+}
+async function saveReviews(storeId: number, value: ProductReviewItem[]) {
+  storeReviewsMap.set(storeId, value);
+  await writePersistentStoreSetting(storeId, REVIEWS_KEY, value, "Avis clients isolés par boutique");
+}
 
 export async function getReviewsConfig(storeId: number): Promise<ProductReviewsConfig> {
   const existing = storeReviewsConfigs.get(storeId);
   if (existing) return existing;
+  const persisted = await readPersistentStoreSetting<ProductReviewsConfig | null>(storeId, CONFIG_KEY, null);
+  if (persisted) { storeReviewsConfigs.set(storeId, persisted); return persisted; }
 
   const defaultConfig: ProductReviewsConfig = {
     storeId,
@@ -38,6 +54,7 @@ export async function saveReviewsConfig(
   };
 
   storeReviewsConfigs.set(storeId, updated);
+  await writePersistentStoreSetting(storeId, CONFIG_KEY, updated, "Configuration avis clients isolée par boutique");
   return updated;
 }
 
@@ -50,7 +67,7 @@ export async function createProductReview(
     throw new Error("Les avis clients sont temporairement désactivés.");
   }
 
-  const storeReviews = storeReviewsMap.get(storeId) || [];
+  const storeReviews = await getReviews(storeId);
 
   const autoApprove =
     !config.requireApproval || (config.autoApproveVerified && input.verifiedBuyer);
@@ -72,13 +89,13 @@ export async function createProductReview(
   };
 
   storeReviews.unshift(newReview);
-  storeReviewsMap.set(storeId, storeReviews);
+  await saveReviews(storeId, storeReviews);
 
   return newReview;
 }
 
 export async function getStoreReviews(storeId: number): Promise<ProductReviewItem[]> {
-  return storeReviewsMap.get(storeId) || [];
+  return await getReviews(storeId);
 }
 
 export async function getProductPublicReviews(
@@ -94,7 +111,7 @@ export async function getProductPublicReviews(
     return { reviews: [], averageRating: 0, totalReviews: 0 };
   }
 
-  const storeReviews = storeReviewsMap.get(storeId) || [];
+  const storeReviews = await getReviews(storeId);
   const approved = storeReviews.filter(
     (r) => r.productId === productId && r.status === "APPROVED"
   );
@@ -116,7 +133,7 @@ export async function moderateReview(
   storeId: number,
   input: z.infer<typeof moderateReviewSchema>
 ): Promise<ProductReviewItem> {
-  const storeReviews = storeReviewsMap.get(storeId) || [];
+  const storeReviews = await getReviews(storeId);
   const idx = storeReviews.findIndex((r) => r.id === input.reviewId);
 
   if (idx === -1) {
@@ -131,7 +148,7 @@ export async function moderateReview(
   };
 
   storeReviews[idx] = updated;
-  storeReviewsMap.set(storeId, storeReviews);
+  await saveReviews(storeId, storeReviews);
 
   return updated;
 }

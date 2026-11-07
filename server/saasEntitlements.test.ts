@@ -15,10 +15,10 @@ describe("MAZIGHO SaaS entitlements", () => {
     });
   });
 
-  it("differentiates paid capacity and reserves dropshipping for Pro", () => {
+  it("differentiates paid capacity and enables dropshipping for Pro and Lifetime", () => {
     expect(formatSaasMediaQuota(getSaasPlanEntitlements("free").mediaQuotaBytes)).toBe("500 Mo");
     expect(getSaasPlanEntitlements("basic")).toMatchObject({ maxActiveProducts: null, maxTeamMembers: 5, mediaQuotaBytes: 1024 * 1024 * 1024, monthlyAiRequests: 400, maxWorkspaceDocuments: 40, maxWorkspaceTemplates: 15, dropshippingEnabled: false });
     expect(getSaasPlanEntitlements("pro")).toMatchObject({ maxActiveProducts: null, maxTeamMembers: 8, mediaQuotaBytes: 2 * 1024 * 1024 * 1024, monthlyAiRequests: 1200, maxWorkspaceDocuments: 80, maxWorkspaceTemplates: 30, dropshippingEnabled: true });
-    expect(getSaasPlanEntitlements("lifetime")).toMatchObject({ maxActiveProducts: null, maxTeamMembers: 10, mediaQuotaBytes: 2 * 1024 * 1024 * 1024, monthlyAiRequests: 400, maxWorkspaceDocuments: 40, maxWorkspaceTemplates: 15, dropshippingEnabled: false });
+    expect(getSaasPlanEntitlements("lifetime")).toMatchObject({ maxActiveProducts: null, maxTeamMembers: 10, mediaQuotaBytes: 2 * 1024 * 1024 * 1024, monthlyAiRequests: 400, maxWorkspaceDocuments: 40, maxWorkspaceTemplates: 15, dropshippingEnabled: true });
   });
 });

@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { router, storeOwnerProcedure, publicProcedure } from "./_core/trpc";
 import { createGiftCardSchema, redeemGiftCardSchema } from "../shared/digitalGiftCards";
@@ -26,10 +27,12 @@ export const digitalGiftCardsRouter = router({
   createCard: storeOwnerProcedure
     .input(createGiftCardSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "gift_cards");
       return await createStoreGiftCard(ctx.store.id, input);
     }),
 
   getStoreCards: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "gift_cards");
     return await getStoreGiftCards(ctx.store.id);
   }),
 });

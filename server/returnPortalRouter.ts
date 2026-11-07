@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { router, storeOwnerProcedure, protectedProcedure } from "./_core/trpc";
 import {
   createReturnRequestSchema,
@@ -24,12 +25,14 @@ export const returnPortalRouter = router({
   }),
 
   getStoreRequests: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "return_portal");
     return await getStoreReturnRequests(ctx.store.id);
   }),
 
   updateStatus: storeOwnerProcedure
     .input(updateReturnStatusSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "return_portal");
       return await updateReturnStatus(ctx.store.id, input);
     }),
 });

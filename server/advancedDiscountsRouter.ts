@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { router, storeOwnerProcedure, publicProcedure } from "./_core/trpc";
 import { discountRuleSchema } from "../shared/advancedDiscounts";
@@ -11,24 +12,28 @@ import {
 
 export const advancedDiscountsRouter = router({
   getRules: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "advanced_discounts");
     return await getStoreDiscountRules(ctx.store.id);
   }),
 
   saveRule: storeOwnerProcedure
     .input(discountRuleSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "advanced_discounts");
       return await saveStoreDiscountRule(ctx.store.id, input);
     }),
 
   toggleRule: storeOwnerProcedure
     .input(z.object({ ruleId: z.string(), enabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "advanced_discounts");
       return await toggleStoreDiscountRule(ctx.store.id, input.ruleId, input.enabled);
     }),
 
   deleteRule: storeOwnerProcedure
     .input(z.object({ ruleId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "advanced_discounts");
       return await deleteStoreDiscountRule(ctx.store.id, input.ruleId);
     }),
 

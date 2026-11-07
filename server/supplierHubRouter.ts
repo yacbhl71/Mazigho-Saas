@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, storeOwnerProcedure } from "./_core/trpc";
@@ -21,6 +22,7 @@ const providerEnum = z.enum(["cjdropshipping", "aliexpress", "printful", "printi
 export const supplierHubRouter = router({
   // 1. GESTION DES CONNEXIONS FOURNISSEURS (MULTI-TENANT)
   getConnections: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
     return await getStoreSupplierConnections(ctx.store.id);
   }),
 
@@ -33,6 +35,7 @@ export const supplierHubRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await saveStoreSupplierConnection(
         ctx.store.id,
         input.provider as SupplierProvider,
@@ -44,6 +47,7 @@ export const supplierHubRouter = router({
   removeConnection: storeOwnerProcedure
     .input(z.object({ provider: providerEnum }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await removeStoreSupplierConnection(
         ctx.store.id,
         input.provider as SupplierProvider
@@ -53,6 +57,7 @@ export const supplierHubRouter = router({
   testConnection: storeOwnerProcedure
     .input(z.object({ provider: providerEnum }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await testStoreSupplierConnection(
         ctx.store.id,
         input.provider as SupplierProvider
@@ -68,6 +73,7 @@ export const supplierHubRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await searchSupplierCatalog(
         ctx.store.id,
         input.query,
@@ -78,11 +84,13 @@ export const supplierHubRouter = router({
   importUrl: storeOwnerProcedure
     .input(z.object({ url: z.string().trim().url("Indiquez une URL valide.") }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await importSupplierProductByUrl(ctx.store.id, input.url);
     }),
 
   // 3. FILE DE BROUILLONS & ATELIER D'ÉDITION
   getDrafts: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
     return await getSupplierProductDrafts(ctx.store.id);
   }),
 
@@ -103,6 +111,7 @@ export const supplierHubRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       const defaultSellingPrice = Math.round((input.sourcePriceCents + input.supplierShippingEstimateCents) * 2.2);
       const profit = defaultSellingPrice - (input.sourcePriceCents + input.supplierShippingEstimateCents);
       const marginPercent = Math.round((profit / (input.sourcePriceCents + input.supplierShippingEstimateCents)) * 100);
@@ -155,6 +164,7 @@ export const supplierHubRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       const { draftId, ...changes } = input;
 
       // Calcul dynamique de marge
@@ -179,6 +189,7 @@ export const supplierHubRouter = router({
   deleteDraft: storeOwnerProcedure
     .input(z.object({ draftId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       return await deleteSupplierProductDraft(ctx.store.id, input.draftId);
     }),
 
@@ -191,6 +202,7 @@ export const supplierHubRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "supplier_hub");
       try {
         return await publishSupplierProductDraft(ctx.store.id, input.draftId, input.categoryId);
       } catch (error: any) {

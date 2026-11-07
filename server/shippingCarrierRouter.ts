@@ -1,3 +1,4 @@
+import { requireStoreSaasFeature } from "./featureAccess";
 import { z } from "zod";
 import { router, storeOwnerProcedure, publicProcedure } from "./_core/trpc";
 import {
@@ -17,6 +18,7 @@ import { renderPrintableLabelHtml } from "./services/shippingCarrierService";
 
 export const shippingCarrierRouter = router({
   getSenderAddress: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "shipping_labels");
     return await getStoreSenderAddress(ctx.store.id);
   }),
 
@@ -31,16 +33,19 @@ export const shippingCarrierRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "shipping_labels");
       return await setStoreSenderAddress(ctx.store.id, input);
     }),
 
   getStoreLabels: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "shipping_labels");
     return await getStoreShippingLabels(ctx.store.id);
   }),
 
   generateLabel: storeOwnerProcedure
     .input(generateLabelSchema)
     .mutation(async ({ ctx, input }) => {
+    await requireStoreSaasFeature(ctx.store.id, "shipping_labels");
       return await createShippingLabelForOrder(ctx.store.id, input);
     }),
 

@@ -5,13 +5,21 @@ import {
   customerSegmentationConfigSchema,
 } from "../../shared/customerSegmentation";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeSegmentationConfigs = new Map<number, CustomerSegmentsConfig>();
 const storeCustomersMap = new Map<number, SegmentedCustomer[]>();
+const CONFIG_KEY = "feature_customer_segmentation_config";
+const CUSTOMERS_KEY = "feature_customer_segmentation_customers";
 
 export async function getSegmentationConfig(storeId: number): Promise<CustomerSegmentsConfig> {
   const existing = storeSegmentationConfigs.get(storeId);
   if (existing) return existing;
+  const persisted = await readPersistentStoreSetting<CustomerSegmentsConfig | null>(storeId, CONFIG_KEY, null);
+  if (persisted) {
+    storeSegmentationConfigs.set(storeId, persisted);
+    return persisted;
+  }
 
   const defaultConfig: CustomerSegmentsConfig = {
     storeId,
@@ -36,6 +44,7 @@ export async function saveSegmentationConfig(
   };
 
   storeSegmentationConfigs.set(storeId, updated);
+  await writePersistentStoreSetting(storeId, CONFIG_KEY, updated, "Configuration de segmentation isolée par boutique");
   return updated;
 }
 
@@ -47,8 +56,7 @@ export async function getStoreCustomerSegments(storeId: number): Promise<{
 
   let customers = storeCustomersMap.get(storeId);
   if (!customers) {
-    // Aucune donnée de démonstration : les clients viennent uniquement des commandes réelles.
-    customers = [];
+    customers = await readPersistentStoreSetting<SegmentedCustomer[]>(storeId, CUSTOMERS_KEY, []);
     storeCustomersMap.set(storeId, customers);
   }
 
