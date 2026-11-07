@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Building2, ChevronDown, ChevronUp, Compass, LayoutDashboard, Mail, Rocket, ShoppingBag, Sparkles, Store } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -53,7 +53,15 @@ export function MazighoSurfaceSwitcher() {
   const [location, setLocation] = useLocation();
   const { user } = useAuth() as any;
   const ownedStoresQuery = trpc.auth.myOwnedStores.useQuery(undefined, { staleTime: 30_000, retry: false, enabled: Boolean(user) });
-  const ownedStores = ownedStoresQuery.data ?? [];
+  const ownedStores = useMemo(() => {
+    const seen = new Set<string>();
+    return (ownedStoresQuery.data ?? []).filter(store => {
+      const domain = store.primaryDomain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      if (!domain || domain === "mazigho.ch" || domain.endsWith(".mazigho.ch") || seen.has(domain)) return false;
+      seen.add(domain);
+      return true;
+    });
+  }, [ownedStoresQuery.data]);
 
   // Le sélecteur ne doit jamais être un registre public. Il ne présente que
   // les boutiques pour lesquelles le compte courant possède une membership
