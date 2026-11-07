@@ -6,6 +6,7 @@ import type {
 } from "../../shared/abandonedCart";
 import { sanitizeTrackingPixelsConfig } from "../../shared/abandonedCart";
 import { sendTransactionalEmail } from "../transactionalEmail";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 // Store-isolated memory registries
 // Carts map: cartId -> AbandonedCart
@@ -13,10 +14,25 @@ const cartRegistry = new Map<string, AbandonedCart>();
 
 // Pixels config map: storeId -> TrackingPixelsConfig
 const pixelsRegistry = new Map<number, TrackingPixelsConfig>();
+const CARTS_KEY = "feature_abandoned_carts";
+const PIXELS_KEY = "feature_tracking_pixels";
 
 // Seed default demo abandoned carts for fresh store testing
 function ensureSeedCarts(storeId: number) {
   // Les données de démonstration sont interdites : seules les actions explicites du propriétaire créent des données.
+}
+
+async function getCartsForStore(storeId: number): Promise<AbandonedCart[]> {
+  const existing = Array.from(cartRegistry.values()).filter(cart => cart.storeId === storeId);
+  if (existing.length > 0) return existing;
+  const persisted = await readPersistentStoreSetting<AbandonedCart[]>(storeId, CARTS_KEY, []);
+  for (const cart of persisted) cartRegistry.set(cart.id, cart);
+  return persisted;
+}
+
+async function saveCartsForStore(storeId: number): Promise<void> {
+  const carts = Array.from(cartRegistry.values()).filter(cart => cart.storeId === storeId);
+  await writePersistentStoreSetting(storeId, CARTS_KEY, carts, "Paniers abandonnés isolés par boutique");
 }
 
 // 1. ABANDONED CARTS OPERATIONS
@@ -31,7 +47,8 @@ export async function recordAbandonedCart(
     currency?: string;
   }
 ): Promise<AbandonedCart> {
-  const existing = Array.from(cartRegistry.values()).find(
+  const carts = await getCartsForStore(storeId);
+  const existing = carts.find(
     c => c.storeId === storeId && c.customerEmail.toLowerCase() === input.customerEmail.toLowerCase() && c.status !== "recovered"
   );
 
@@ -45,6 +62,7 @@ export async function recordAbandonedCart(
     if (input.customerPhone) existing.customerPhone = input.customerPhone;
     existing.abandonedAt = now;
     cartRegistry.set(existing.id, existing);
+    await saveCartsForStore(storeId);
     return existing;
   }
 
@@ -67,19 +85,18 @@ export async function recordAbandonedCart(
   };
 
   cartRegistry.set(id, newCart);
+  await saveCartsForStore(storeId);
   return newCart;
 }
 
 export async function getStoreAbandonedCarts(storeId: number): Promise<AbandonedCart[]> {
-  ensureSeedCarts(storeId);
-  return Array.from(cartRegistry.values())
-    .filter(c => c.storeId === storeId)
+  const carts = await getCartsForStore(storeId);
+  return carts
     .sort((a, b) => new Date(b.abandonedAt).getTime() - new Date(a.abandonedAt).getTime());
 }
 
 export async function getAbandonedCartAnalytics(storeId: number): Promise<AbandonedCartAnalytics> {
-  ensureSeedCarts(storeId);
-  const carts = Array.from(cartRegistry.values()).filter(c => c.storeId === storeId);
+  const carts = await getCartsForStore(storeId);
 
   let totalAbandonedCents = 0;
   let totalRecoveredCents = 0;
@@ -113,7 +130,7 @@ export async function sendCartRecoveryReminder(
   storeName: string = "MAZIGHO Boutique",
   discountPercent: number = 10
 ): Promise<{ success: boolean; message: string }> {
-  const cart = cartRegistry.get(cartId);
+  const cart = (await getCartsForStore(storeId)).find(item => item.id === cartId);
   if (!cart || cart.storeId !== storeId) {
     throw new Error("Panier introuvable pour cette boutique.");
   }
@@ -127,6 +144,7 @@ export async function sendCartRecoveryReminder(
   cart.lastReminderSentAt = now;
   cart.recoveryDiscountCode = discountCode;
   cartRegistry.set(cartId, cart);
+  await saveCartsForStore(storeId);
 
   // Construction de l'e-mail transactional
   const itemsHtml = cart.items
@@ -184,12 +202,13 @@ export async function sendCartRecoveryReminder(
 }
 
 export async function markCartAsRecovered(storeId: number, cartId: string): Promise<boolean> {
-  const cart = cartRegistry.get(cartId);
+  const cart = (await getCartsForStore(storeId)).find(item => item.id === cartId);
   if (!cart || cart.storeId !== storeId) return false;
 
   cart.status = "recovered";
   cart.recoveredAt = new Date().toISOString();
   cartRegistry.set(cartId, cart);
+  await saveCartsForStore(storeId);
   return true;
 }
 
@@ -199,7 +218,7 @@ export async function recordCartChannelReminder(
   channel: "whatsapp" | "sms" | "email",
   discountPercent: number = 10
 ): Promise<{ success: boolean; message: string }> {
-  const cart = cartRegistry.get(cartId);
+  const cart = (await getCartsForStore(storeId)).find(item => item.id === cartId);
   if (!cart || cart.storeId !== storeId) {
     throw new Error("Panier introuvable pour cette boutique.");
   }
@@ -229,8 +248,10 @@ export async function getStoreTrackingPixels(storeId: number): Promise<TrackingP
     enabled: true,
   };
 
-  pixelsRegistry.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting<TrackingPixelsConfig>(storeId, PIXELS_KEY, defaultConfig);
+  const config = sanitizeTrackingPixelsConfig(persisted);
+  pixelsRegistry.set(storeId, config);
+  return config;
 }
 
 export async function saveStoreTrackingPixels(
@@ -244,5 +265,5 @@ export async function saveStoreTrackingPixels(
   });
 
   pixelsRegistry.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, PIXELS_KEY, updated, "Réglages de tracking isolés par boutique");
 }

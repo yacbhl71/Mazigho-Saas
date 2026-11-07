@@ -47,41 +47,8 @@ export async function getStoreCustomerSegments(storeId: number): Promise<{
 
   let customers = storeCustomersMap.get(storeId);
   if (!customers) {
-    // Generate sample/initial data for demonstration and testing
-    const now = new Date();
-    const d30 = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30).toISOString();
-    const d90 = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 90).toISOString();
-
-    customers = [
-      {
-        userId: 101,
-        email: "sophie.martin@example.ch",
-        name: "Sophie Martin",
-        totalSpentCents: 75000, // 750 CHF -> VIP
-        ordersCount: 4,
-        lastOrderDate: d30,
-        tags: ["VIP", "RECURRING", "HIGH_AOV"],
-      },
-      {
-        userId: 102,
-        email: "marc.berger@example.ch",
-        name: "Marc Berger",
-        totalSpentCents: 22000, // 220 CHF
-        ordersCount: 2,
-        lastOrderDate: d90,
-        tags: ["RECURRING", "INACTIVE_60D"],
-      },
-      {
-        userId: 103,
-        email: "elena.rossi@example.ch",
-        name: "Elena Rossi",
-        totalSpentCents: 18000, // 180 CHF
-        ordersCount: 1,
-        lastOrderDate: d30,
-        tags: ["NEW_CUSTOMER", "HIGH_AOV"],
-      },
-    ];
-
+    // Aucune donnée de démonstration : les clients viennent uniquement des commandes réelles.
+    customers = [];
     storeCustomersMap.set(storeId, customers);
   }
 
