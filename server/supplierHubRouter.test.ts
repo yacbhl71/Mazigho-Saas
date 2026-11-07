@@ -156,7 +156,7 @@ describe("supplierHubRouter - Multi-Tenant Supplier Hub", () => {
       const drafts = await caller.getDrafts();
 
       expect(Array.isArray(drafts)).toBe(true);
-      expect(drafts.length).toBeGreaterThan(0);
+      expect(drafts).toEqual([]);
     });
 
     it("permet d'ajouter un article du catalogue sourcing à la file de brouillons", async () => {
@@ -184,6 +184,19 @@ describe("supplierHubRouter - Multi-Tenant Supplier Hub", () => {
 
     it("recalcule instantanément la marge et le profit net lors de la modification du prix de vente", async () => {
       const caller = makeOwnerCaller(403);
+      await caller.stageCatalogItemToDraft({
+        provider: "printful",
+        supplierProductId: "PF-TEST-MARGIN-1",
+        supplierUrl: "https://printful.com/custom/mugs/margin",
+        title: "Produit de test marge",
+        thumbnail: "https://example.com/margin.jpg",
+        sourcePriceCents: 650,
+        supplierShippingEstimateCents: 350,
+        stock: 10,
+        supplierName: "Printful",
+        originCountry: "Europe",
+        estimatedDeliveryDays: 4,
+      });
       const drafts = await caller.getDrafts();
       const firstDraft = drafts[0];
 
@@ -203,6 +216,19 @@ describe("supplierHubRouter - Multi-Tenant Supplier Hub", () => {
 
     it("permet de supprimer un brouillon", async () => {
       const caller = makeOwnerCaller(404);
+      await caller.stageCatalogItemToDraft({
+        provider: "printful",
+        supplierProductId: "PF-TEST-DELETE-1",
+        supplierUrl: "https://printful.com/custom/mugs/delete",
+        title: "Produit de test suppression",
+        thumbnail: "https://example.com/delete.jpg",
+        sourcePriceCents: 650,
+        supplierShippingEstimateCents: 350,
+        stock: 10,
+        supplierName: "Printful",
+        originCountry: "Europe",
+        estimatedDeliveryDays: 4,
+      });
       const drafts = await caller.getDrafts();
       const draftToDelete = drafts[0];
 
@@ -217,6 +243,19 @@ describe("supplierHubRouter - Multi-Tenant Supplier Hub", () => {
   describe("4. Publication 1-clic au catalogue réel de la boutique", () => {
     it("publie un brouillon vers les produits réels et renseigne les métadonnées fournisseur", async () => {
       const caller = makeOwnerCaller(501);
+      await caller.stageCatalogItemToDraft({
+        provider: "printful",
+        supplierProductId: "PF-TEST-PUBLISH-1",
+        supplierUrl: "https://printful.com/custom/mugs/publish",
+        title: "Produit de test publication",
+        thumbnail: "https://example.com/publish.jpg",
+        sourcePriceCents: 650,
+        supplierShippingEstimateCents: 350,
+        stock: 10,
+        supplierName: "Printful",
+        originCountry: "Europe",
+        estimatedDeliveryDays: 4,
+      });
       const drafts = await caller.getDrafts();
       const draft = drafts[0];
 

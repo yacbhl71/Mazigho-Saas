@@ -50,9 +50,21 @@ describe("abandonedCartRouter - Paniers Abandonnés & Pixels", () => {
     state.membership = { role: "owner", status: "active" };
   });
 
+  async function seedCart(storeId: number) {
+    const publicCaller = makePublicCaller(storeId);
+    return await publicCaller.recordPublicCartHeartbeat({
+      customerEmail: `client-${storeId}@example.com`,
+      customerName: "Client de test",
+      items: [{ productId: 1, productName: "Produit de test", priceCents: 2500, quantity: 1 }],
+      totalAmountCents: 2500,
+      currency: "CHF",
+    });
+  }
+
   describe("1. Gestion des Paniers Abandonnés & Relances", () => {
     it("retourne la liste des paniers abandonnés isolée par boutique", async () => {
       const caller = makeOwnerCaller(801);
+      await seedCart(801);
       const carts = await caller.getCarts();
 
       expect(Array.isArray(carts)).toBe(true);
@@ -62,6 +74,7 @@ describe("abandonedCartRouter - Paniers Abandonnés & Pixels", () => {
 
     it("calcule les statistiques d'analyse de récupération de revenus", async () => {
       const caller = makeOwnerCaller(802);
+      await seedCart(802);
       const analytics = await caller.getAnalytics();
 
       expect(analytics.totalCartsCount).toBeGreaterThan(0);
@@ -71,6 +84,7 @@ describe("abandonedCartRouter - Paniers Abandonnés & Pixels", () => {
 
     it("envoie un e-mail de relance avec code de réduction et met à jour le statut", async () => {
       const caller = makeOwnerCaller(803);
+      await seedCart(803);
       const carts = await caller.getCarts();
       const firstCart = carts[0];
 
@@ -91,6 +105,7 @@ describe("abandonedCartRouter - Paniers Abandonnés & Pixels", () => {
 
     it("permet de marquer un panier comme récupéré", async () => {
       const caller = makeOwnerCaller(804);
+      await seedCart(804);
       const carts = await caller.getCarts();
       const firstCart = carts[0];
 
@@ -104,6 +119,7 @@ describe("abandonedCartRouter - Paniers Abandonnés & Pixels", () => {
 
     it("enregistre une relance WhatsApp et SMS en 1 clic avec statut mis à jour", async () => {
       const caller = makeOwnerCaller(808);
+      await seedCart(808);
       const carts = await caller.getCarts();
       const firstCart = carts[0];
 

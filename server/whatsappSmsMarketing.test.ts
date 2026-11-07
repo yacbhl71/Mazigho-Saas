@@ -9,13 +9,14 @@ import {
 describe("WhatsApp & SMS Marketing Storage & Operations", () => {
   const storeId = 999;
 
-  it("should retrieve default campaigns and settings", async () => {
+  it("should start without demo campaigns or credentials", async () => {
     const campaigns = await getStoreWhatsAppSmsCampaigns(storeId);
-    expect(campaigns.length).toBeGreaterThan(0);
+    expect(campaigns).toEqual([]);
 
     const settings = await getStoreWhatsAppSmsSettings(storeId);
-    expect(settings.enabled).toBe(true);
-    expect(settings.provider).toBe("mazigho_gateway");
+    expect(settings.enabled).toBe(false);
+    expect(settings.accountSidOrApiKey).toBe("");
+    expect(settings.senderIdOrNumber).toBe("");
   });
 
   it("should create and update a marketing campaign", async () => {

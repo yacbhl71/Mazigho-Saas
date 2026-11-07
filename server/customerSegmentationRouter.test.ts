@@ -8,14 +8,10 @@ import {
 describe("Customer Segmentation & Tags Engine", () => {
   const storeId = 77;
 
-  it("should return customer segments with dynamic tags", async () => {
+  it("should start with no fictitious customer segments", async () => {
     const { config, customers } = await getStoreCustomerSegments(storeId);
     expect(config).toBeDefined();
-    expect(customers.length).toBeGreaterThan(0);
-
-    const vipCustomer = customers.find((c) => c.tags.includes("VIP"));
-    expect(vipCustomer).toBeDefined();
-    expect(vipCustomer?.totalSpentCents).toBeGreaterThanOrEqual(config.vipThresholdCents);
+    expect(customers).toEqual([]);
   });
 
   it("should update VIP threshold and recalculate customer tags", async () => {
