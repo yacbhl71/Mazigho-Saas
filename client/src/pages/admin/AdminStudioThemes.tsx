@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { planTierLabels, storefrontThemeCatalog, type StorefrontThemeId } from "@shared/storefrontThemeCatalog";
-import { ArrowLeft, ArrowRight, CheckCircle2, Crown, Eye, Loader2, Palette, Rocket, Sparkles, Store, WandSparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Crown, Eye, History, Loader2, Palette, Rocket, RotateCcw, Sparkles, Store, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 
 const themes = storefrontThemeCatalog;
@@ -38,6 +38,7 @@ export default function AdminStudioThemes() {
   const availableStores = useMemo(() => (inventoryQuery.data?.stores ?? []).filter(store => !store.isPlatformStore && store.status !== "closed"), [inventoryQuery.data?.stores]);
   const selectedStore = useMemo(() => availableStores.find(store => String(store.id) === selectedStoreId) ?? null, [availableStores, selectedStoreId]);
   const themeAccessQuery = trpc.admin.studio.getStorefrontThemeAccess.useQuery({ storeId: selectedStore?.id ?? 0 }, { enabled: Boolean(selectedStore), retry: false });
+  const themeHistoryQuery = trpc.admin.studio.getStorefrontThemeHistory.useQuery({ storeId: selectedStore?.id ?? 0 }, { enabled: Boolean(selectedStore), retry: false });
 
   useEffect(() => {
     if (themeAccessQuery.data?.themeIds) setAssignedThemeIds(themeAccessQuery.data.themeIds);
@@ -66,6 +67,19 @@ export default function AdminStudioThemes() {
       setLocation(`/admin/studio/contenu-public/${input.storeId}`);
     },
     onError: error => toast.error(error.message || "Le modèle n’a pas pu être appliqué."),
+  });
+
+  const restoreThemeMutation = trpc.admin.studio.restoreStorefrontTheme.useMutation({
+    onSuccess: async (_, input) => {
+      toast.success("La version visuelle précédente a été restaurée. Le catalogue et le commerce restent inchangés.");
+      await Promise.all([
+        utils.admin.studio.getStorefrontThemeHistory.invalidate({ storeId: input.storeId }),
+        utils.admin.studio.getOwnerPublicStorefrontContent.invalidate({ storeId: input.storeId }),
+        utils.admin.studio.getPrivateStorefrontPreview.invalidate({ storeId: input.storeId }),
+      ]);
+      setLocation(`/admin/studio/contenu-public/${input.storeId}`);
+    },
+    onError: error => toast.error(error.message || "La restauration n’a pas pu être effectuée."),
   });
 
   const canConfirm = Boolean(selectedStore && acknowledged && confirmationName.trim() === selectedStore.displayName.trim());
@@ -316,6 +330,30 @@ export default function AdminStudioThemes() {
               >
                 <WandSparkles className="mr-2 h-4 w-4" /> Appliquer à cette boutique
               </Button>
+              {selectedStore && (themeHistoryQuery.data?.length ?? 0) > 0 && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                  <div className="flex items-start gap-3">
+                    <History className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-amber-950">Versions visuelles sauvegardées</p>
+                      <p className="mt-1 text-xs leading-5 text-amber-900">Chaque changement de thème conserve automatiquement l’état précédent de cette boutique. Restaurer ne modifie jamais le catalogue, les prix, les stocks ou le statut public.</p>
+                      <div className="mt-3 space-y-2">
+                        {[...(themeHistoryQuery.data ?? [])].reverse().slice(0, 5).map(snapshot => (
+                          <div key={snapshot.id} className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0 text-sm text-amber-950">
+                              <p className="font-medium">{themes.find(theme => theme.id === snapshot.themeId)?.label ?? "Version personnalisée"}</p>
+                              <p className="text-xs text-amber-800">{new Date(snapshot.createdAt).toLocaleString("fr-FR")} · {snapshot.categoryCount} catégorie(s) concernée(s)</p>
+                            </div>
+                            <Button type="button" size="sm" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" disabled={restoreThemeMutation.isPending} onClick={() => restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: snapshot.id, confirmationName: selectedStore.displayName })}>
+                              {restoreThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />} Restaurer
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
