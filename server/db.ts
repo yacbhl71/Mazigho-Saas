@@ -8975,7 +8975,10 @@ export async function createStorefrontThemeSnapshot(input: { storeId: number; th
   return snapshot;
 }
 
-export async function restoreStorefrontThemeSnapshot(storeId: number, snapshotId: string) {
+export async function restoreStorefrontThemeSnapshot(storeId: number, snapshotId: string, confirmationName: string) {
+  const managedStore = await getStudioManagedStore(storeId);
+  if (!managedStore) throw new Error("STOREFRONT_THEME_STORE_NOT_FOUND");
+  if (managedStore.displayName.trim() !== confirmationName.trim()) throw new Error("STOREFRONT_THEME_CONFIRMATION_MISMATCH");
   const history = await getStorefrontThemeHistory(storeId);
   const snapshot = history.find(item => item.id === snapshotId);
   if (!snapshot) throw new Error("STOREFRONT_THEME_SNAPSHOT_NOT_FOUND");

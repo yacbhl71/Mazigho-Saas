@@ -52,6 +52,9 @@ export default function AdminStudioThemes() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [comparisonSnapshotId, setComparisonSnapshotId] = useState<string | null>(null);
+  const [restoreSnapshotId, setRestoreSnapshotId] = useState<string | null>(null);
+  const [restoreConfirmationName, setRestoreConfirmationName] = useState("");
+  const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
   const [assignedThemeIds, setAssignedThemeIds] = useState<StorefrontThemeId[]>([]);
 
   const selectedTheme = themes.find(theme => theme.id === selectedThemeId) ?? themes[0];
@@ -98,12 +101,16 @@ export default function AdminStudioThemes() {
         utils.admin.studio.getOwnerPublicStorefrontContent.invalidate({ storeId: input.storeId }),
         utils.admin.studio.getPrivateStorefrontPreview.invalidate({ storeId: input.storeId }),
       ]);
+      setRestoreSnapshotId(null);
+      setRestoreConfirmationName("");
+      setRestoreAcknowledged(false);
       setLocation(`/admin/studio/contenu-public/${input.storeId}`);
     },
     onError: error => toast.error(error.message || "La restauration n’a pas pu être effectuée."),
   });
 
   const canConfirm = Boolean(selectedStore && acknowledged && confirmationName.trim() === selectedStore.displayName.trim());
+  const canRestore = Boolean(selectedStore && restoreSnapshotId && restoreAcknowledged && restoreConfirmationName.trim() === selectedStore.displayName.trim());
 
   return (
     <DashboardLayout>
@@ -369,7 +376,7 @@ export default function AdminStudioThemes() {
                               <Button type="button" size="sm" variant="outline" className="border-slate-300 bg-white text-slate-800 hover:bg-slate-100" onClick={() => setComparisonSnapshotId(snapshot.id)}>
                                 <Eye className="mr-2 h-4 w-4" /> Comparer
                               </Button>
-                              <Button type="button" size="sm" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" disabled={restoreThemeMutation.isPending} onClick={() => restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: snapshot.id, confirmationName: selectedStore.displayName })}>
+                              <Button type="button" size="sm" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" disabled={restoreThemeMutation.isPending} onClick={() => setComparisonSnapshotId(snapshot.id)}>
                                 {restoreThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />} Restaurer
                               </Button>
                             </div>
@@ -489,8 +496,22 @@ export default function AdminStudioThemes() {
             })()}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setComparisonSnapshotId(null)}>Fermer</Button>
-              <Button type="button" className="bg-amber-700 text-white hover:bg-amber-800" disabled={!selectedStore || !comparisonSnapshotId || restoreThemeMutation.isPending} onClick={() => { if (selectedStore && comparisonSnapshotId) { restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: comparisonSnapshotId, confirmationName: selectedStore.displayName }); setComparisonSnapshotId(null); } }}><RotateCcw className="mr-2 h-4 w-4" /> Restaurer cette version</Button>
+              <Button type="button" className="bg-amber-700 text-white hover:bg-amber-800" disabled={!selectedStore || !comparisonSnapshotId || restoreThemeMutation.isPending} onClick={() => { if (comparisonSnapshotId) { setRestoreSnapshotId(comparisonSnapshotId); setComparisonSnapshotId(null); } }}><RotateCcw className="mr-2 h-4 w-4" /> Restaurer cette version</Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={Boolean(restoreSnapshotId)} onOpenChange={open => { if (!open) { setRestoreSnapshotId(null); setRestoreConfirmationName(""); setRestoreAcknowledged(false); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><RotateCcw className="h-5 w-5 text-amber-700" /> Confirmer la restauration</DialogTitle>
+              <DialogDescription>Cette action remplacera uniquement l’identité visuelle, les catégories visuelles et les bannières par la version sauvegardée. Le catalogue, les prix, les stocks, les accès et le statut public resteront inchangés.</DialogDescription>
+            </DialogHeader>
+            {selectedStore ? <div className="space-y-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><p><strong>Boutique :</strong> {selectedStore.displayName}</p><p className="mt-1">Une confirmation explicite est requise pour éviter une restauration accidentelle.</p></div>
+              <div className="space-y-2"><Label htmlFor="restore-theme-confirm-name">Recopiez le nom de la boutique</Label><Input id="restore-theme-confirm-name" value={restoreConfirmationName} onChange={event => setRestoreConfirmationName(event.target.value)} placeholder={selectedStore.displayName} /></div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"><input type="checkbox" checked={restoreAcknowledged} onChange={event => setRestoreAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-700 focus:ring-amber-600" /><span>Je confirme restaurer cette version visuelle et j’ai vérifié la comparaison avant/après.</span></label>
+            </div> : null}
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setRestoreSnapshotId(null)} disabled={restoreThemeMutation.isPending}>Annuler</Button><Button type="button" className="bg-amber-700 text-white hover:bg-amber-800" disabled={!canRestore || restoreThemeMutation.isPending} onClick={() => selectedStore && restoreSnapshotId && restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: restoreSnapshotId, confirmationName: restoreConfirmationName })}>{restoreThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />} Restaurer la version</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </main>
