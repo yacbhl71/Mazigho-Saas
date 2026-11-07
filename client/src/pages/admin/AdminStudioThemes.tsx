@@ -32,6 +32,7 @@ export default function AdminStudioThemes() {
   const [confirmationName, setConfirmationName] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [comparisonSnapshotId, setComparisonSnapshotId] = useState<string | null>(null);
   const [assignedThemeIds, setAssignedThemeIds] = useState<StorefrontThemeId[]>([]);
 
   const selectedTheme = themes.find(theme => theme.id === selectedThemeId) ?? themes[0];
@@ -39,6 +40,7 @@ export default function AdminStudioThemes() {
   const selectedStore = useMemo(() => availableStores.find(store => String(store.id) === selectedStoreId) ?? null, [availableStores, selectedStoreId]);
   const themeAccessQuery = trpc.admin.studio.getStorefrontThemeAccess.useQuery({ storeId: selectedStore?.id ?? 0 }, { enabled: Boolean(selectedStore), retry: false });
   const themeHistoryQuery = trpc.admin.studio.getStorefrontThemeHistory.useQuery({ storeId: selectedStore?.id ?? 0 }, { enabled: Boolean(selectedStore), retry: false });
+  const themeComparisonQuery = trpc.admin.studio.getStorefrontThemeComparison.useQuery({ storeId: selectedStore?.id ?? 0, snapshotId: comparisonSnapshotId ?? "none" }, { enabled: Boolean(selectedStore && comparisonSnapshotId), retry: false });
 
   useEffect(() => {
     if (themeAccessQuery.data?.themeIds) setAssignedThemeIds(themeAccessQuery.data.themeIds);
@@ -344,9 +346,14 @@ export default function AdminStudioThemes() {
                               <p className="font-medium">{themes.find(theme => theme.id === snapshot.themeId)?.label ?? "Version personnalisée"}</p>
                               <p className="text-xs text-amber-800">{new Date(snapshot.createdAt).toLocaleString("fr-FR")} · {snapshot.categoryCount} catégorie(s) concernée(s)</p>
                             </div>
-                            <Button type="button" size="sm" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" disabled={restoreThemeMutation.isPending} onClick={() => restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: snapshot.id, confirmationName: selectedStore.displayName })}>
-                              {restoreThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />} Restaurer
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                              <Button type="button" size="sm" variant="outline" className="border-slate-300 bg-white text-slate-800 hover:bg-slate-100" onClick={() => setComparisonSnapshotId(snapshot.id)}>
+                                <Eye className="mr-2 h-4 w-4" /> Comparer
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" disabled={restoreThemeMutation.isPending} onClick={() => restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: snapshot.id, confirmationName: selectedStore.displayName })}>
+                                {restoreThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />} Restaurer
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -444,6 +451,30 @@ export default function AdminStudioThemes() {
                 {applyThemeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}
                 Appliquer le thème
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={Boolean(comparisonSnapshotId)} onOpenChange={open => { if (!open) setComparisonSnapshotId(null); }}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Eye className="h-5 w-5 text-violet-700" /> Comparaison avant / après</DialogTitle>
+              <DialogDescription>Comparez l’univers actuellement actif avec la version sauvegardée avant de demander sa restauration. Aucun changement n’est effectué ici.</DialogDescription>
+            </DialogHeader>
+            {themeComparisonQuery.isLoading ? <div className="h-64 animate-pulse rounded-2xl bg-slate-100" /> : themeComparisonQuery.data && (() => {
+              const before = themes.find(theme => theme.id === themeComparisonQuery.data?.currentThemeId) ?? themes[0];
+              const after = themes.find(theme => theme.id === themeComparisonQuery.data?.snapshot.themeId) ?? themes[0];
+              return <div className="grid gap-4 md:grid-cols-2">
+                {[{ label: "Avant — actuellement actif", theme: before, tone: "border-slate-200 bg-slate-50" }, { label: "Après — version sauvegardée", theme: after, tone: "border-violet-200 bg-violet-50" }].map(panel => (
+                  <div key={panel.label} className={`overflow-hidden rounded-2xl border ${panel.tone}`}>
+                    <img src={panel.theme.visual} alt={panel.theme.visualAlt} className="h-48 w-full object-cover" />
+                    <div className="p-4"><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">{panel.label}</p><h3 className="mt-1 text-lg font-bold text-slate-950">{panel.theme.label}</h3><p className="mt-2 text-sm leading-5 text-slate-600">{panel.theme.description}</p></div>
+                  </div>
+                ))}
+              </div>;
+            })()}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setComparisonSnapshotId(null)}>Fermer</Button>
+              <Button type="button" className="bg-amber-700 text-white hover:bg-amber-800" disabled={!selectedStore || !comparisonSnapshotId || restoreThemeMutation.isPending} onClick={() => { if (selectedStore && comparisonSnapshotId) { restoreThemeMutation.mutate({ storeId: selectedStore.id, snapshotId: comparisonSnapshotId, confirmationName: selectedStore.displayName }); setComparisonSnapshotId(null); } }}><RotateCcw className="mr-2 h-4 w-4" /> Restaurer cette version</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

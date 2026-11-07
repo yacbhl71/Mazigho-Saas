@@ -8945,6 +8945,20 @@ export async function getStorefrontThemeHistory(storeId: number): Promise<Storef
   }
 }
 
+export async function getStorefrontThemeComparison(storeId: number, snapshotId: string) {
+  const history = await getStorefrontThemeHistory(storeId);
+  const snapshot = history.find(item => item.id === snapshotId);
+  if (!snapshot) throw new Error("STOREFRONT_THEME_SNAPSHOT_NOT_FOUND");
+  const activeRaw = await getStoreSettingValue(storeId, "storefront_theme_active");
+  let currentThemeId: string | null = null;
+  try {
+    currentThemeId = activeRaw ? (JSON.parse(activeRaw) as { themeId?: string }).themeId ?? null : null;
+  } catch {
+    currentThemeId = null;
+  }
+  return { currentThemeId, snapshot };
+}
+
 /** Capture only presentation state. Catalog, commerce, access and ownership are intentionally excluded. */
 export async function createStorefrontThemeSnapshot(input: { storeId: number; themeId: string | null; profile: unknown }) {
   const history = await getStorefrontThemeHistory(input.storeId);

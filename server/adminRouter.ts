@@ -2741,6 +2741,10 @@ export const adminRouter = router({
       const history = await db.getStorefrontThemeHistory(input.storeId);
       return history.map(snapshot => ({ id: snapshot.id, themeId: snapshot.themeId, createdAt: snapshot.createdAt, categoryCount: snapshot.categories.length }));
     }),
+    getStorefrontThemeComparison: platformProcedure.input(z.object({ storeId: z.number().int().positive(), snapshotId: z.string().trim().min(8).max(80) })).query(async ({ input }) => {
+      const result = await db.getStorefrontThemeComparison(input.storeId, input.snapshotId);
+      return { currentThemeId: result.currentThemeId, snapshot: { id: result.snapshot.id, themeId: result.snapshot.themeId, createdAt: result.snapshot.createdAt, categoryCount: result.snapshot.categories.length } };
+    }),
     restoreStorefrontTheme: platformProcedure.input(z.object({ storeId: z.number().int().positive(), snapshotId: z.string().trim().min(8).max(80), confirmationName: z.string().trim().min(2).max(160) })).mutation(async ({ ctx, input }) => {
       const result = await db.restoreStorefrontThemeSnapshot(input.storeId, input.snapshotId);
       logAudit(ctx, { action: "studio.storefront.theme.restore", entityType: "store", entityId: input.storeId, summary: "Version visuelle précédente restaurée", metadata: { storeId: input.storeId, snapshotId: input.snapshotId, themeId: result.themeId, categoryCount: result.categoryCount } });
