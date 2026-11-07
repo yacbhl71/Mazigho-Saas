@@ -44,6 +44,7 @@ const Account = lazy(() => import("./pages/Account"));
 const OwnerStorePanel = lazy(() => import("./pages/OwnerStorePanel"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminStudio = lazy(() => import("./pages/admin/AdminStudio"));
+const AdminStudioControlCenter = lazy(() => import("./pages/admin/AdminStudioControlCenter"));
 const AdminStudioProductionBoard = lazy(() => import("./pages/admin/AdminStudioProductionBoard"));
 const AdminStudioBranding = lazy(() => import("./pages/admin/AdminStudioBranding"));
 const AdminStudioLandingContent = lazy(() => import("./pages/admin/AdminStudioLandingContent"));
@@ -527,6 +528,7 @@ function Router() {
         <Route path={"/admin/studio/espace-proprietaire/:storeId"} component={AdminStudioOwnerWorkspacePreview} />
 	        <Route path={"/admin/studio/apercu/:storeId"} component={AdminStudioPreview} />
 	        <Route path={"/admin/studio/production"} component={AdminStudioProductionBoard} />
+        <Route path={"/admin/studio/centre-controle"} component={AdminStudioControlCenter} />
 	        <Route path={"/admin/studio/facturation"} component={AdminStudioSaasBilling} />
 	        <Route path={"/admin/studio/billing"} component={AdminStudioSaasBilling} />
 	        <Route path={"/admin/studio/abonnements"} component={AdminStudioSaasBilling} />

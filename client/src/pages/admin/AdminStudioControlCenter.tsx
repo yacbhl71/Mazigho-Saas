@@ -1,0 +1,82 @@
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
+import DashboardLayout from "@/components/DashboardLayout";
+import { trpc } from "@/lib/trpc";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Activity, ArrowRight, CheckCircle2, CircleAlert, ClipboardCheck, Database, Gauge, Globe2, Loader2, RefreshCw, Rocket, ShieldCheck, Store, Workflow } from "lucide-react";
+import { getSaasPlanEntitlements } from "@shared/saasEntitlements";
+import { saasPlanFeatureCatalog } from "@shared/saasPlanCatalog";
+
+function formatDate(value: unknown) {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("fr-CH", { dateStyle: "medium" });
+}
+
+function statusTone(status: string) {
+  if (status === "active" || status === "ready" || status === "handed_over") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "limited" || status === "to_prepare" || status === "to_analyze") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (status === "suspended" || status === "closed") return "border-rose-200 bg-rose-50 text-rose-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = { setup: "À préparer", active: "Active", limited: "Vitrine", suspended: "Suspendue", closed: "Clôturée", new_project: "Nouveau projet", to_analyze: "À analyser", to_prepare: "À préparer", ready: "Prête", handed_over: "Transmise" };
+  return labels[status] || status;
+}
+
+export default function AdminStudioControlCenter() {
+  const [search, setSearch] = useState("");
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+  const inventory = trpc.admin.studio.getInventory.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 100 }, { refetchOnWindowFocus: false });
+  const billing = trpc.admin.studio.getSaasBillingDashboard.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 100 }, { refetchOnWindowFocus: false });
+  const production = trpc.admin.studio.getProductionBoard.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 50 }, { refetchOnWindowFocus: false });
+  const health = trpc.admin.system.health.useQuery(undefined, { refetchInterval: 30000 });
+  const stores = inventory.data?.stores ?? [];
+  const billingStores = billing.data?.stores ?? [];
+  const selectedId = selectedStoreId ?? stores.find(store => !store.isPlatformStore)?.id ?? stores[0]?.id;
+  const selectedStore = stores.find(store => store.id === selectedId);
+  const selectedBilling = billingStores.find(store => store.id === selectedId);
+  const selectedProduction = production.data?.stores?.find(store => store.id === selectedId);
+  const entitlements = getSaasPlanEntitlements(selectedBilling?.planAssignment?.planId);
+  const featureLabels = (selectedBilling?.planAssignment?.features ?? []).map(feature => saasPlanFeatureCatalog.find(item => item.id === feature)?.title || feature);
+  const usageRows = useMemo(() => selectedStore ? [
+    { label: "Produits actifs", used: selectedStore.activeProductCount ?? 0, limit: entitlements.maxActiveProducts },
+    { label: "Membres actifs", used: selectedStore.activeMembers ?? 0, limit: entitlements.maxTeamMembers },
+    { label: "Requêtes IA / mois", used: 0, limit: entitlements.monthlyAiRequests },
+  ] : [], [selectedStore, entitlements.maxActiveProducts, entitlements.maxTeamMembers, entitlements.monthlyAiRequests]);
+  const refreshAll = () => { void inventory.refetch(); void billing.refetch(); void production.refetch(); void health.refetch(); };
+  const loading = inventory.isLoading || billing.isLoading || production.isLoading || health.isLoading;
+
+  return <DashboardLayout><main className="min-h-full bg-[#f7f8fb]" data-testid="studio-control-center"><div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 md:px-8 md:py-8">
+    <header className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl md:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-white/10 text-sky-200 hover:bg-white/10"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Executive Studio</Badge><Badge className="border-0 bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/15">Console opérateur</Badge></div><h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">Centre de contrôle MAZIGHO</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Une vue unique pour attribuer les capacités, préparer la livraison d’une boutique et vérifier l’état réel de la plateforme.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={refreshAll} className="min-h-11 border-white/20 bg-white/5 text-white hover:bg-white/10" disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Actualiser</Button><Link href="/admin/studio"><Button type="button" className="min-h-11 bg-white text-slate-950 hover:bg-slate-100">Ouvrir le Studio <ArrowRight className="ml-2 h-4 w-4" /></Button></Link></div></div></header>
+
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Store} label="Boutiques SaaS" value={billingStores.length || stores.filter(store => !store.isPlatformStore).length} detail={`${inventory.data?.summary?.clientStoresWithStockAttention ?? 0} point(s) à traiter`} tone="violet" /><Metric icon={Rocket} label="Prêtes à livrer" value={production.data?.summary?.readyForHandover ?? 0} detail={`${production.data?.summary?.handedOver ?? 0} déjà transmise(s)`} tone="emerald" /><Metric icon={Gauge} label="Plans attribués" value={billingStores.filter(store => store.planAssignment).length} detail="Droits calculés par boutique" tone="sky" /><Metric icon={Activity} label="Base de données" value={health.data?.database.ok ? "OK" : "À vérifier"} detail={health.data?.database.responseMs != null ? `${health.data.database.responseMs} ms` : "Contrôle en cours"} tone={health.data?.database.ok ? "emerald" : "amber"} /></section>
+
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]"><Card className="overflow-hidden border-slate-200 shadow-sm"><CardHeader className="border-b border-slate-100 bg-white"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><CardTitle className="flex items-center gap-2 text-xl"><Store className="h-5 w-5 text-violet-700" /> Portefeuille et droits par boutique</CardTitle><CardDescription>Sélectionnez une boutique pour inspecter ses capacités, quotas et prochaines actions.</CardDescription></div><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Rechercher un nom ou domaine…" className="min-h-11 max-w-sm" /></div></CardHeader><CardContent className="p-0"><div className="divide-y divide-slate-100">{stores.filter(store => !store.isPlatformStore).map(store => { const plan = billingStores.find(item => item.id === store.id)?.planAssignment; const isSelected = store.id === selectedId; return <button key={store.id} type="button" onClick={() => setSelectedStoreId(store.id)} className={`flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50 ${isSelected ? "bg-violet-50/60" : "bg-white"}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="truncate font-semibold text-slate-950">{store.displayName}</span><Badge variant="outline" className={statusTone(store.status)}>{statusLabel(store.status)}</Badge></div><p className="mt-1 truncate text-xs text-slate-500">{store.primaryDomain} · {plan?.planName || "Plan non attribué"}</p></div><div className="flex shrink-0 items-center gap-3 text-right"><div><p className="text-sm font-semibold text-slate-900">{store.activeProductCount ?? 0} produits</p><p className="text-xs text-slate-500">{store.needsAttention ? "Attention requise" : "Suivi normal"}</p></div><ArrowRight className="h-4 w-4 text-slate-400" /></div></button> })}{stores.filter(store => !store.isPlatformStore).length === 0 && <div className="p-10 text-center text-sm text-slate-500">Aucune boutique SaaS ne correspond à cette recherche.</div>}</div></CardContent></Card>
+
+      <Card className="border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 shadow-sm"><CardHeader><CardDescription>Boutique sélectionnée</CardDescription><CardTitle className="text-2xl text-slate-950">{selectedStore?.displayName || "Aucune boutique"}</CardTitle><p className="truncate text-sm text-slate-500">{selectedStore?.primaryDomain || "—"}</p></CardHeader><CardContent className="space-y-5"><div className="rounded-2xl border border-violet-200 bg-white/80 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700">Droits effectifs</p><p className="mt-1 text-xl font-bold text-slate-950">{selectedBilling?.planAssignment?.planName || "Non attribué"}</p></div><Badge variant="outline" className={selectedBilling?.planAssignment ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}>{selectedBilling?.planAssignment ? "Attribué" : "Action requise"}</Badge></div><div className="mt-4 flex flex-wrap gap-1.5">{featureLabels.length ? featureLabels.map(feature => <Badge key={feature} variant="secondary" className="bg-violet-100 text-violet-900">{feature}</Badge>) : <span className="text-sm text-slate-500">Aucune capacité enregistrée.</span>}</div></div><div className="space-y-3">{usageRows.map(row => <div key={row.label}><div className="flex items-center justify-between text-sm"><span className="text-slate-600">{row.label}</span><strong className="text-slate-950">{row.used} / {row.limit == null ? "∞" : row.limit}</strong></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-violet-600" style={{ width: `${row.limit == null ? Math.min(100, row.used > 0 ? 18 : 3) : Math.min(100, Math.round((row.used / Math.max(1, row.limit)) * 100))}%` }} /></div></div>)}</div><Link href={`/admin/studio/facturation?store=${selectedStore?.id || ""}`} className="inline-flex w-full items-center justify-center rounded-xl border border-violet-300 bg-white px-4 py-3 text-sm font-semibold text-violet-900 hover:bg-violet-50">Gérer le plan et les quotas <ArrowRight className="ml-2 h-4 w-4" /></Link></CardContent></Card></section>
+
+    <section className="grid gap-6 xl:grid-cols-2"><Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-emerald-700" /> Assistant de livraison clé en main</CardTitle><CardDescription>Un parcours guidé, sans publication implicite : chaque étape reste vérifiable et réversible.</CardDescription></CardHeader><CardContent className="space-y-3">{[
+      ["Identité et domaine", `/admin/studio/identite?store=${selectedId || ""}`, Boolean(selectedStore?.primaryDomain)],
+      ["Catalogue et visuels", `/admin/studio/catalogue-existant/${selectedId || ""}`, Boolean(selectedStore && (selectedStore.activeProductCount ?? 0) > 0)],
+      ["Prévol commercial", `/admin/studio/prevol-commercial/${selectedId || ""}`, Boolean(selectedProduction?.stage === "ready" || selectedProduction?.stage === "handed_over")],
+      ["Checklist de préparation", `/admin/studio/checklist/${selectedId || ""}`, Boolean(selectedStore?.status !== "setup")],
+      ["Ouverture et transmission", `/admin/studio/lancement/${selectedId || ""}`, selectedProduction?.stage === "handed_over"],
+    ].map(([label, href, done]) => <Link key={String(label)} href={String(href)} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-emerald-300 hover:bg-emerald-50/40"><span className="flex items-center gap-3 text-sm font-semibold text-slate-800">{done ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <CircleAlert className="h-5 w-5 text-amber-500" />}{label}</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>)}<div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950"><strong>Règle opérateur :</strong> le bouton d’ouverture publique ne peut être utilisé qu’après validation du domaine, du contenu et de la responsabilité du propriétaire.</div></CardContent></Card>
+
+      <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-sky-700" /> Santé et déploiement</CardTitle><CardDescription>Contrôles globaux de la plateforme, actualisés automatiquement.</CardDescription></CardHeader><CardContent className="space-y-3"><HealthRow icon={Database} label="Base de données" value={health.data?.database.ok ? "Connectée" : "À vérifier"} ok={Boolean(health.data?.database.ok)} /><HealthRow icon={Globe2} label="E-mails transactionnels" value={health.data?.email.configured ? "Configurés · test manuel disponible" : "À configurer"} ok={Boolean(health.data?.email.configured)} /><HealthRow icon={Workflow} label="Odoo" value={health.data?.odoo.configured ? "Activé" : "Facultatif · non activé"} ok={true} /><HealthRow icon={Rocket} label="Version déployée" value={health.data?.site.commitShort || "Version locale"} ok={true} /><div className="grid gap-2 pt-2 sm:grid-cols-2"><Link href="/admin/studio/sante" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800">Ouvrir la santé détaillée</Link><Link href="/admin/studio/production" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50">Voir la file de production</Link></div></CardContent></Card></section>
+  </div></main></DashboardLayout>;
+}
+
+function Metric({ icon: Icon, label, value, detail, tone }: { icon: typeof Store; label: string; value: string | number; detail: string; tone: "violet" | "emerald" | "sky" | "amber" }) {
+  const tones = { violet: "border-violet-200 bg-violet-50 text-violet-800", emerald: "border-emerald-200 bg-emerald-50 text-emerald-800", sky: "border-sky-200 bg-sky-50 text-sky-800", amber: "border-amber-200 bg-amber-50 text-amber-800" };
+  return <Card className="border-slate-200 shadow-sm"><CardContent className="flex items-start justify-between p-5"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{value}</p><p className="mt-1 text-xs text-slate-500">{detail}</p></div><span className={`rounded-2xl border p-3 ${tones[tone]}`}><Icon className="h-5 w-5" /></span></CardContent></Card>;
+}
+
+function HealthRow({ icon: Icon, label, value, ok }: { icon: typeof Database; label: string; value: string; ok: boolean }) {
+  return <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"><span className="flex min-w-0 items-center gap-3 text-sm font-medium text-slate-700"><Icon className="h-4 w-4 shrink-0 text-slate-500" />{label}</span><span className={`flex shrink-0 items-center gap-1.5 text-xs font-semibold ${ok ? "text-emerald-700" : "text-amber-700"}`}><span className={`h-2 w-2 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} />{value}</span></div>;
+}
