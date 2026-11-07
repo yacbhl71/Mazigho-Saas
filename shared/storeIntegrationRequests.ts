@@ -11,6 +11,9 @@ export type StoreIntegrationRequestProfile = {
   requests: StoreIntegrationRequest[];
 };
 
+export const storeIntegrationOperationalStatuses = ["active", "configured", "requested", "optional", "unavailable"] as const;
+export type StoreIntegrationOperationalStatus = (typeof storeIntegrationOperationalStatuses)[number];
+
 export const emptyStoreIntegrationRequestProfile: StoreIntegrationRequestProfile = {
   requests: [],
 };

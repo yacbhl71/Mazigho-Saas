@@ -1627,6 +1627,7 @@ export const adminRouter = router({
       page: z.number().int().positive().max(10_000).optional(),
       pageSize: z.union([z.literal(20), z.literal(50), z.literal(100)]).optional(),
     }).optional()).query(async ({ input }) => db.getStudioIntegrationRequestRegistry(input ?? {})),
+    getStoreIntegrationOperationalStatus: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => db.getStudioStoreIntegrationOperationalStatus(input.storeId)),
     checkOwnerCustomDomainDns: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       try {
         const result = await db.checkStudioOwnerCustomDomainDns(input.storeId);

@@ -72,7 +72,7 @@ import { normalizeOwnerCustomDomainRequest, normalizeOwnerDomainConnectionGuide,
 import { getStudioCustomDomainConnectionStatus, inspectStoreCustomDomainDns, makeStoreCustomDomainConnection, parseStoreCustomDomainConnection } from "./services/storeCustomDomainConnection";
 import { normalizeStoreCommercialOfferMode, type StoreCommercialOfferMode } from "../shared/storeCommercialOffer";
 import { getStoreSaasBillingDraftReadiness, makeDraftInvoice, normalizeSaasBillingPlan, parseStoreSaasBillingProfile, type SaasBillingCurrency } from "../shared/storeSaasBilling";
-import { makeStoreIntegrationRequestProfile, parseStoreIntegrationRequestProfile, type StoreIntegrationId } from "../shared/storeIntegrationRequests";
+import { makeStoreIntegrationRequestProfile, parseStoreIntegrationRequestProfile, type StoreIntegrationId, type StoreIntegrationOperationalStatus } from "../shared/storeIntegrationRequests";
 import { defaultSaasPlanCatalog, normalizeSaasPlanCatalog, parseSaasPlanCatalog, type SaasPlanCatalog, type SaasPlanFeatureId } from "../shared/saasPlanCatalog";
 import { assignStoreSaasPlanTemplate, parseStoreSaasPlanAssignment } from "../shared/storeSaasPlanAssignment";
 import { createStoreCommissionOverride, parseStoreCommissionOverride, type StoreCommissionOverride } from "../shared/storeCommissionOverride";
@@ -9889,6 +9889,35 @@ export async function getStudioIntegrationRequestRegistry(input: StudioIntegrati
       analytics: requests.filter(request => request.integrationId === "google_analytics").length,
       email: requests.filter(request => request.integrationId === "transactional_email").length,
     },
+  };
+}
+
+/** Returns only safe operational signals for one boutique; credentials never leave the server. */
+export async function getStudioStoreIntegrationOperationalStatus(storeId: number) {
+  const [store, requests, stripeTest, stripeLive, rawAnalyticsId] = await Promise.all([
+    getOwnerStoreSettingsSummary(storeId),
+    getOwnerIntegrationRequests(storeId),
+    getStoreStripeConnectSetup(storeId, "test"),
+    getStoreStripeConnectSetup(storeId, "live"),
+    getStoreSettingValue(storeId, "google_analytics_id"),
+  ]);
+  const requestedAt = new Map(requests.requests.map(request => [request.id, request.requestedAt]));
+  const requested = (id: StoreIntegrationId) => requestedAt.get(id) ?? null;
+  const state = (id: StoreIntegrationId, configured: boolean, active: boolean, unavailable = false) => ({
+    integrationId: id,
+    status: (unavailable ? "unavailable" : active ? "active" : configured ? "configured" : requested(id) ? "requested" : "optional") as StoreIntegrationOperationalStatus,
+    requestedAt: requested(id),
+  });
+  return {
+    storeId,
+    store: store.store,
+    integrations: [
+      state("stripe", Boolean(stripeTest.account || stripeLive.account), Boolean(stripeLive.paymentReadiness.enabled)),
+      state("paypal", false, false, true),
+      state("google_analytics", Boolean(rawAnalyticsId?.trim()), Boolean(rawAnalyticsId?.trim())),
+      state("transactional_email", false, false),
+    ],
+    note: "Les états sont des signaux opérateur. Aucun secret, identifiant fournisseur ou jeton n’est retourné.",
   };
 }
 
