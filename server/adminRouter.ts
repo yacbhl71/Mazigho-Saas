@@ -2445,6 +2445,10 @@ export const adminRouter = router({
       ]);
       return { exportedAt: new Date().toISOString(), store: summary.store, settingsSummary: { currencyCode: summary.currencyCode, shippingConfigured: summary.shippingConfigured, legalProfileConfigured: summary.legalProfileConfigured, paymentsConfigured: summary.paymentsConfigured, supplierConfigured: summary.supplierConfigured }, catalogue, validation: { status: validation.status, version: validation.version, sentAt: validation.sentAt, approvedAt: validation.approvedAt, lockedAt: validation.lockedAt, approvedBy: validation.approvedBy } };
     }),
+    getStoreAuditHistory: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
+      const result = await db.getAuditLogs({ storeId: input.storeId, limit: 20, offset: 0 });
+      return { storeId: input.storeId, entries: result.entries.map(entry => ({ action: entry.action, entityType: entry.entityType, entityId: entry.entityId, summary: entry.summary, actorName: entry.actorName, createdAt: entry.createdAt })) };
+    }),
     getCatalogueImportTargets: platformProcedure.query(async () => db.getStudioCatalogueImportTargets()),
     getProvisioningReviews: platformProcedure.query(async () => db.getStudioProvisioningDraftReviews()),
     getLaunchPreflight: platformProcedure.input(z.object({ draftId: z.number().int().positive() })).query(async ({ input }) => db.getStudioStoreLaunchPreflight(input.draftId)),
