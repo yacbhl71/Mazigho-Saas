@@ -2437,6 +2437,14 @@ export const adminRouter = router({
         return { storeId: input.storeId, url, finalUrl: null, status: null, durationMs: Date.now() - startedAt, checks: { https: url.startsWith("https://"), httpStatus: false, html: false, storefrontMarker: false }, passed: false, error: message, testedAt: new Date().toISOString() };
       }
     }),
+    getStoreBackupSnapshot: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
+      const [summary, catalogue, validation] = await Promise.all([
+        db.getOwnerStoreSettingsSummary(input.storeId),
+        db.getStudioOwnerExistingCatalogue(input.storeId),
+        db.getStudioClientValidation(input.storeId),
+      ]);
+      return { exportedAt: new Date().toISOString(), store: summary.store, settingsSummary: { currencyCode: summary.currencyCode, shippingConfigured: summary.shippingConfigured, legalProfileConfigured: summary.legalProfileConfigured, paymentsConfigured: summary.paymentsConfigured, supplierConfigured: summary.supplierConfigured }, catalogue, validation: { status: validation.status, version: validation.version, sentAt: validation.sentAt, approvedAt: validation.approvedAt, lockedAt: validation.lockedAt, approvedBy: validation.approvedBy } };
+    }),
     getCatalogueImportTargets: platformProcedure.query(async () => db.getStudioCatalogueImportTargets()),
     getProvisioningReviews: platformProcedure.query(async () => db.getStudioProvisioningDraftReviews()),
     getLaunchPreflight: platformProcedure.input(z.object({ draftId: z.number().int().positive() })).query(async ({ input }) => db.getStudioStoreLaunchPreflight(input.draftId)),
