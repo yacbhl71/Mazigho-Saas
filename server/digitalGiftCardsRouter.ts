@@ -11,16 +11,16 @@ import {
 export const digitalGiftCardsRouter = router({
   checkBalance: publicProcedure
     .input(z.object({ code: z.string().min(1) }))
-    .query(async ({ input }) => {
-      const card = await getGiftCardByCode(input.code);
+    .query(async ({ ctx, input }) => {
+      const card = await getGiftCardByCode(input.code, ctx.store?.id);
       if (!card) throw new Error("Carte-cadeau introuvable.");
       return card;
     }),
 
   redeem: publicProcedure
     .input(redeemGiftCardSchema)
-    .mutation(async ({ input }) => {
-      return await redeemGiftCardBalance(input);
+    .mutation(async ({ ctx, input }) => {
+      return await redeemGiftCardBalance(input, ctx.store?.id);
     }),
 
   createCard: storeOwnerProcedure

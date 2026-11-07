@@ -4,8 +4,10 @@ import {
   redeemGiftCardSchema,
 } from "../../shared/digitalGiftCards";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeGiftCardsMap = new Map<number, DigitalGiftCard[]>();
+const SETTING_KEY = "feature_digital_gift_cards";
 
 export async function createStoreGiftCard(
   storeId: number,
@@ -30,16 +32,23 @@ export async function createStoreGiftCard(
 
   storeCards.unshift(card);
   storeGiftCardsMap.set(storeId, storeCards);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, storeCards, "Cartes cadeaux isolées par boutique");
 
   return card;
 }
 
 export async function getStoreGiftCards(storeId: number): Promise<DigitalGiftCard[]> {
-  return storeGiftCardsMap.get(storeId) || [];
+  const existing = storeGiftCardsMap.get(storeId);
+  if (existing) return existing;
+  const cards = await readPersistentStoreSetting<DigitalGiftCard[]>(storeId, SETTING_KEY, []);
+  storeGiftCardsMap.set(storeId, cards);
+  return cards;
 }
 
-export async function getGiftCardByCode(code: string): Promise<DigitalGiftCard | null> {
-  for (const cards of Array.from(storeGiftCardsMap.values())) {
+export async function getGiftCardByCode(code: string, storeId?: number): Promise<DigitalGiftCard | null> {
+  const stores = storeId ? [storeId] : Array.from(storeGiftCardsMap.keys());
+  for (const currentStoreId of stores) {
+    const cards = await getStoreGiftCards(currentStoreId);
     const found = cards.find((c: DigitalGiftCard) => c.code.toUpperCase() === code.toUpperCase().trim());
     if (found) return found;
   }
@@ -47,9 +56,10 @@ export async function getGiftCardByCode(code: string): Promise<DigitalGiftCard |
 }
 
 export async function redeemGiftCardBalance(
-  input: z.infer<typeof redeemGiftCardSchema>
+  input: z.infer<typeof redeemGiftCardSchema>,
+  storeId?: number
 ): Promise<{ success: boolean; redeemedCents: number; remainingBalanceCents: number }> {
-  const card = await getGiftCardByCode(input.code);
+  const card = await getGiftCardByCode(input.code, storeId);
   if (!card) {
     throw new Error("Carte-cadeau introuvable ou code expiré.");
   }
@@ -69,6 +79,7 @@ export async function redeemGiftCardBalance(
   const idx = cards.findIndex((c) => c.id === card.id);
   cards[idx] = card;
   storeGiftCardsMap.set(card.storeId, cards);
+  await writePersistentStoreSetting(card.storeId, SETTING_KEY, cards, "Cartes cadeaux isolées par boutique");
 
   return {
     success: true,

@@ -10,6 +10,7 @@ import { readPersistentStoreSetting, writePersistentStoreSetting } from "../serv
 const storeAffConfigs = new Map<number, AffiliateProgramConfig>();
 const SETTING_KEY = "feature_affiliate_program";
 const storeAffiliatesMap = new Map<number, AffiliateAmbassador[]>();
+const AFFILIATES_KEY = "feature_affiliate_ambassadors";
 
 export async function getAffiliateConfig(
   storeId: number
@@ -73,6 +74,7 @@ export async function createAffiliateAmbassador(
 
   affiliates.unshift(newAffiliate);
   storeAffiliatesMap.set(storeId, affiliates);
+  await writePersistentStoreSetting(storeId, AFFILIATES_KEY, affiliates, "Ambassadeurs affiliés isolés par boutique");
 
   return newAffiliate;
 }
@@ -80,7 +82,11 @@ export async function createAffiliateAmbassador(
 export async function getStoreAffiliates(
   storeId: number
 ): Promise<AffiliateAmbassador[]> {
-  return storeAffiliatesMap.get(storeId) || [];
+  const existing = storeAffiliatesMap.get(storeId);
+  if (existing) return existing;
+  const affiliates = await readPersistentStoreSetting<AffiliateAmbassador[]>(storeId, AFFILIATES_KEY, []);
+  storeAffiliatesMap.set(storeId, affiliates);
+  return affiliates;
 }
 
 export async function recordAffiliateSale(
@@ -103,6 +109,7 @@ export async function recordAffiliateSale(
 
   affiliates[idx] = target;
   storeAffiliatesMap.set(storeId, affiliates);
+  await writePersistentStoreSetting(storeId, AFFILIATES_KEY, affiliates, "Ambassadeurs affiliés isolés par boutique");
 
   return target;
 }
