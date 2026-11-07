@@ -4,11 +4,17 @@ import {
   discountRuleSchema,
 } from "../../shared/advancedDiscounts";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeRulesMap = new Map<number, DiscountRule[]>();
+const SETTING_KEY = "feature_advanced_discount_rules";
 
 export async function getStoreDiscountRules(storeId: number): Promise<DiscountRule[]> {
-  return storeRulesMap.get(storeId) || [];
+  const existing = storeRulesMap.get(storeId);
+  if (existing) return existing;
+  const rules = await readPersistentStoreSetting<DiscountRule[]>(storeId, SETTING_KEY, []);
+  storeRulesMap.set(storeId, rules);
+  return rules;
 }
 
 export async function saveStoreDiscountRule(
@@ -27,6 +33,7 @@ export async function saveStoreDiscountRule(
       };
       storeRules[idx] = updated;
       storeRulesMap.set(storeId, storeRules);
+      await writePersistentStoreSetting(storeId, SETTING_KEY, storeRules, "Règles de remise isolées par boutique");
       return updated;
     }
   }
@@ -52,6 +59,7 @@ export async function saveStoreDiscountRule(
 
   storeRules.unshift(newRule);
   storeRulesMap.set(storeId, storeRules);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, storeRules, "Règles de remise isolées par boutique");
 
   return newRule;
 }
@@ -70,6 +78,7 @@ export async function toggleStoreDiscountRule(
 
   storeRules[idx].enabled = enabled;
   storeRulesMap.set(storeId, storeRules);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, storeRules, "Règles de remise isolées par boutique");
   return storeRules[idx];
 }
 
@@ -80,6 +89,7 @@ export async function deleteStoreDiscountRule(
   const storeRules = storeRulesMap.get(storeId) || [];
   const filtered = storeRules.filter((r) => r.id !== ruleId);
   storeRulesMap.set(storeId, filtered);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, filtered, "Règles de remise isolées par boutique");
   return true;
 }
 
