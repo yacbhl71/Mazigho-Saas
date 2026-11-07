@@ -9,7 +9,7 @@ import { readPersistentStoreSetting, writePersistentStoreSetting } from "../serv
 
 const storeSubConfigs = new Map<number, ProductSubscriptionsConfig>();
 const SETTING_KEY = "feature_product_subscriptions";
-const storeSubscriptionsMap = new Map<number, CustomerSubscription[]>();
+const SUBSCRIPTIONS_KEY = "feature_product_subscription_records";
 
 export async function getSubscriptionConfig(
   storeId: number
@@ -55,7 +55,7 @@ export async function createCustomerSubscription(
     throw new Error("Le service d'abonnement est désactivé actuellement.");
   }
 
-  const storeSubs = storeSubscriptionsMap.get(storeId) || [];
+  const storeSubs = await readPersistentStoreSetting<CustomerSubscription[]>(storeId, SUBSCRIPTIONS_KEY, []);
 
   const discountPercentage = config.defaultDiscountPercentage;
   const finalPriceCents = Math.round(
@@ -84,7 +84,7 @@ export async function createCustomerSubscription(
   };
 
   storeSubs.unshift(newSub);
-  storeSubscriptionsMap.set(storeId, storeSubs);
+  await writePersistentStoreSetting(storeId, SUBSCRIPTIONS_KEY, storeSubs, "Abonnements produits persistants et isolés par boutique");
 
   return newSub;
 }
@@ -93,12 +93,12 @@ export async function getCustomerSubscriptions(
   storeId: number,
   userId: number
 ): Promise<CustomerSubscription[]> {
-  const storeSubs = storeSubscriptionsMap.get(storeId) || [];
+  const storeSubs = await readPersistentStoreSetting<CustomerSubscription[]>(storeId, SUBSCRIPTIONS_KEY, []);
   return storeSubs.filter((s) => s.userId === userId);
 }
 
 export async function getStoreSubscriptions(
   storeId: number
 ): Promise<CustomerSubscription[]> {
-  return storeSubscriptionsMap.get(storeId) || [];
+  return readPersistentStoreSetting<CustomerSubscription[]>(storeId, SUBSCRIPTIONS_KEY, []);
 }
