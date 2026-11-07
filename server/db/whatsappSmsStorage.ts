@@ -22,37 +22,19 @@ export type WhatsAppSmsSettings = {
   accountSidOrApiKey: string;
   senderIdOrNumber: string;
 };
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeCampaignsMap = new Map<number, WhatsAppSmsCampaign[]>();
 const storeSettingsMap = new Map<number, WhatsAppSmsSettings>();
+const CAMPAIGNS_KEY = "feature_whatsapp_sms_campaigns";
+const SETTINGS_KEY = "feature_whatsapp_sms_settings";
 
 export async function getStoreWhatsAppSmsCampaigns(storeId: number): Promise<WhatsAppSmsCampaign[]> {
-  return storeCampaignsMap.get(storeId) || [
-    {
-      id: `WS-DEFAULT-1`,
-      storeId,
-      channel: "whatsapp",
-      title: "Relance Panier Abandonné - Suisse & Maghreb",
-      message: "Bonjour ! Votre panier sur MAZIGHO vous attend. Finalisez votre commande en 1 clic et profitez de la livraison rapide.",
-      segment: "abandoned_carts",
-      status: "sent",
-      recipientCount: 42,
-      deliveredCount: 41,
-      createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      sentAt: new Date(Date.now() - 86400000).toISOString(),
-    },
-    {
-      id: `WS-DEFAULT-2`,
-      storeId,
-      channel: "sms",
-      title: "Alerte Flash Vente - 24h",
-      message: "🔥 Vente Flash Exclusive ! -30% sur toute la collection pendant 24h sur notre boutique. Commandez vite :",
-      segment: "all_customers",
-      status: "draft",
-      recipientCount: 156,
-      createdAt: new Date().toISOString(),
-    }
-  ];
+  const existing = storeCampaignsMap.get(storeId);
+  if (existing) return existing;
+  const campaigns = await readPersistentStoreSetting<WhatsAppSmsCampaign[]>(storeId, CAMPAIGNS_KEY, []);
+  storeCampaignsMap.set(storeId, campaigns);
+  return campaigns;
 }
 
 export async function saveWhatsAppSmsCampaign(
@@ -82,6 +64,7 @@ export async function saveWhatsAppSmsCampaign(
       };
       campaigns[idx] = updated;
       storeCampaignsMap.set(storeId, campaigns);
+      await writePersistentStoreSetting(storeId, CAMPAIGNS_KEY, campaigns, "Campagnes WhatsApp/SMS isolées par boutique");
       return updated;
     }
   }
@@ -102,16 +85,16 @@ export async function saveWhatsAppSmsCampaign(
 
   campaigns.unshift(newCampaign);
   storeCampaignsMap.set(storeId, campaigns);
+  await writePersistentStoreSetting(storeId, CAMPAIGNS_KEY, campaigns, "Campagnes WhatsApp/SMS isolées par boutique");
   return newCampaign;
 }
 
 export async function getStoreWhatsAppSmsSettings(storeId: number): Promise<WhatsAppSmsSettings> {
-  return storeSettingsMap.get(storeId) || {
-    enabled: true,
-    provider: "mazigho_gateway",
-    accountSidOrApiKey: "mz_live_gateway_token_swiss_maghreb",
-    senderIdOrNumber: "+41228199100",
-  };
+  const existing = storeSettingsMap.get(storeId);
+  if (existing) return existing;
+  const settings = await readPersistentStoreSetting<WhatsAppSmsSettings>(storeId, SETTINGS_KEY, { enabled: false, provider: "brevo", accountSidOrApiKey: "", senderIdOrNumber: "" });
+  storeSettingsMap.set(storeId, settings);
+  return settings;
 }
 
 export async function saveStoreWhatsAppSmsSettings(
@@ -119,5 +102,5 @@ export async function saveStoreWhatsAppSmsSettings(
   settings: WhatsAppSmsSettings
 ): Promise<WhatsAppSmsSettings> {
   storeSettingsMap.set(storeId, settings);
-  return settings;
+  return await writePersistentStoreSetting(storeId, SETTINGS_KEY, settings, "Réglages WhatsApp/SMS isolés par boutique");
 }

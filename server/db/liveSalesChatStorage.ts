@@ -3,8 +3,10 @@ import {
   liveSalesChatConfigSchema,
 } from "../../shared/liveSalesChat";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeChatConfigs = new Map<number, LiveSalesChatConfig>();
+const SETTING_KEY = "feature_live_sales_chat";
 
 export async function getLiveSalesChatConfig(
   storeId: number
@@ -21,8 +23,10 @@ export async function getLiveSalesChatConfig(
     showMessenger: false,
   };
 
-  storeChatConfigs.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting(storeId, SETTING_KEY, defaultConfig);
+  const config = { ...defaultConfig, ...persisted, storeId };
+  storeChatConfigs.set(storeId, config);
+  return config;
 }
 
 export async function saveLiveSalesChatConfig(
@@ -37,5 +41,5 @@ export async function saveLiveSalesChatConfig(
   };
 
   storeChatConfigs.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration du chat commercial isolée par boutique");
 }

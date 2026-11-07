@@ -3,11 +3,17 @@ import {
   flashSaleCampaignSchema,
 } from "../../shared/flashSaleTimer";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeFlashSalesMap = new Map<number, FlashSaleCampaign[]>();
+const SETTING_KEY = "feature_flash_sales";
 
 export async function getStoreFlashSales(storeId: number): Promise<FlashSaleCampaign[]> {
-  return storeFlashSalesMap.get(storeId) || [];
+  const existing = storeFlashSalesMap.get(storeId);
+  if (existing) return existing;
+  const campaigns = await readPersistentStoreSetting<FlashSaleCampaign[]>(storeId, SETTING_KEY, []);
+  storeFlashSalesMap.set(storeId, campaigns);
+  return campaigns;
 }
 
 export async function saveStoreFlashSale(
@@ -26,6 +32,7 @@ export async function saveStoreFlashSale(
       };
       campaigns[idx] = updated;
       storeFlashSalesMap.set(storeId, campaigns);
+      await writePersistentStoreSetting(storeId, SETTING_KEY, campaigns, "Ventes flash isolées par boutique");
       return updated;
     }
   }
@@ -46,6 +53,7 @@ export async function saveStoreFlashSale(
 
   campaigns.unshift(newCampaign);
   storeFlashSalesMap.set(storeId, campaigns);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, campaigns, "Ventes flash isolées par boutique");
 
   return newCampaign;
 }
@@ -64,6 +72,7 @@ export async function toggleStoreFlashSale(
 
   campaigns[idx].enabled = enabled;
   storeFlashSalesMap.set(storeId, campaigns);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, campaigns, "Ventes flash isolées par boutique");
   return campaigns[idx];
 }
 
