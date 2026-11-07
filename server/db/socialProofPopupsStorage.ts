@@ -4,14 +4,18 @@ import {
   socialProofConfigSchema,
 } from "../../shared/socialProofPopups";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeSocialConfigs = new Map<number, SocialProofConfig>();
+const SETTING_KEY = "feature_social_proof";
 
 export async function getSocialProofConfig(
   storeId: number
 ): Promise<SocialProofConfig> {
   const existing = storeSocialConfigs.get(storeId);
   if (existing) return existing;
+  const persisted = await readPersistentStoreSetting<SocialProofConfig | null>(storeId, SETTING_KEY, null);
+  if (persisted) { storeSocialConfigs.set(storeId, persisted); return persisted; }
 
   const defaultConfig: SocialProofConfig = {
     storeId,
@@ -36,6 +40,7 @@ export async function saveSocialProofConfig(
   };
 
   storeSocialConfigs.set(storeId, updated);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration persistante de la fonctionnalité");
   return updated;
 }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { router, storeOwnerProcedure } from "./_core/trpc";
+import { requireStoreSaasFeature } from "./featureAccess";
 import {
   getStoreWhatsAppSmsCampaigns,
   saveWhatsAppSmsCampaign,
@@ -9,6 +10,7 @@ import {
 
 export const whatsappSmsMarketingRouter = router({
   getCampaigns: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "whatsapp_sms_marketing");
     return await getStoreWhatsAppSmsCampaigns(ctx.store.id);
   }),
 
@@ -25,10 +27,12 @@ export const whatsappSmsMarketingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireStoreSaasFeature(ctx.store.id, "whatsapp_sms_marketing");
       return await saveWhatsAppSmsCampaign(ctx.store.id, input);
     }),
 
   getSettings: storeOwnerProcedure.query(async ({ ctx }) => {
+    await requireStoreSaasFeature(ctx.store.id, "whatsapp_sms_marketing");
     return await getStoreWhatsAppSmsSettings(ctx.store.id);
   }),
 
@@ -42,6 +46,7 @@ export const whatsappSmsMarketingRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireStoreSaasFeature(ctx.store.id, "whatsapp_sms_marketing");
       return await saveStoreWhatsAppSmsSettings(ctx.store.id, input);
     }),
 });

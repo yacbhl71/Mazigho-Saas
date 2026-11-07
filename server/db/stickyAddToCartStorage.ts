@@ -3,14 +3,18 @@ import {
   stickyAddToCartConfigSchema,
 } from "../../shared/stickyAddToCart";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeStickyConfigs = new Map<number, StickyAddToCartConfig>();
+const SETTING_KEY = "feature_sticky_add_to_cart";
 
 export async function getStickyAddToCartConfig(
   storeId: number
 ): Promise<StickyAddToCartConfig> {
   const existing = storeStickyConfigs.get(storeId);
   if (existing) return existing;
+  const persisted = await readPersistentStoreSetting<StickyAddToCartConfig | null>(storeId, SETTING_KEY, null);
+  if (persisted) { storeStickyConfigs.set(storeId, persisted); return persisted; }
 
   const defaultConfig: StickyAddToCartConfig = {
     storeId,
@@ -35,5 +39,6 @@ export async function saveStickyAddToCartConfig(
   };
 
   storeStickyConfigs.set(storeId, updated);
+  await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration persistante de la fonctionnalité");
   return updated;
 }
