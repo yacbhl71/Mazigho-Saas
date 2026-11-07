@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Building2, ChevronDown, ChevronUp, Compass, LayoutDashboard, Rocket, ShoppingBag, Sparkles, Store } from "lucide-react";
+import { Building2, ChevronDown, ChevronUp, Compass, LayoutDashboard, Mail, Rocket, ShoppingBag, Sparkles, Store } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 
@@ -52,21 +52,14 @@ export function MazighoSurfaceSwitcher() {
   const [switching, setSwitching] = useState<string | null>(null);
   const [location, setLocation] = useLocation();
   const { user } = useAuth() as any;
-  const publicStoresQuery = trpc.storefront.listPublicStores.useQuery(
-    undefined,
-    { staleTime: 30_000, retry: false }
-  );
+  const ownedStoresQuery = trpc.auth.myOwnedStores.useQuery(undefined, { staleTime: 30_000, retry: false, enabled: Boolean(user) });
+  const ownedStores = ownedStoresQuery.data ?? [];
 
-  // Le Studio .com ne doit jamais proposer les boutiques hébergées dans
-  // l’environnement Principal .ch. Le filtrage reste côté interface en plus
-  // du périmètre serveur, afin d’éviter toute incohérence après un cache ou
-  // une ancienne réponse de l’API.
-  const clientStores = (publicStoresQuery.data ?? []).filter(store => {
-    const domain = store.primaryDomain.trim().toLowerCase();
-    return !domain.endsWith(".mazigho.ch");
-  });
-
-  if (user?.role !== "admin") return null;
+  // Le sélecteur ne doit jamais être un registre public. Il ne présente que
+  // les boutiques pour lesquelles le compte courant possède une membership
+  // active owner/manager, fournie par le serveur.
+  if (!user || (user.role !== "admin" && ownedStores.length === 0)) return null;
+  const canSeePlatformSurfaces = user.role === "admin";
 
   const currentPath = location.split("?")[0];
   const activeSurface =
@@ -88,10 +81,17 @@ export function MazighoSurfaceSwitcher() {
   };
 
   const handleSelectStore = (storeId: number) => {
+    const selectedStore = ownedStores.find(store => store.id === storeId);
+    if (!selectedStore) return;
     setSwitching(`store-${storeId}`);
-    setLocation(`/admin/studio/gestion-boutique/${storeId}`);
+    const currentHost = window.location.hostname.toLowerCase();
+    const targetHost = selectedStore.primaryDomain.trim().toLowerCase();
+    if (targetHost && targetHost !== currentHost) {
+      window.location.assign(`https://${targetHost}/admin`);
+    } else {
+      setLocation("/admin");
+    }
     setOpen(false);
-    setSwitching(null);
   };
 
   return (
@@ -112,10 +112,10 @@ export function MazighoSurfaceSwitcher() {
             </div>
           </div>
           <div className="space-y-1">
-            <p className="px-2 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            {canSeePlatformSurfaces && <p className="px-2 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Espaces plateforme
-            </p>
-            {SURFACES.map(surface => {
+            </p>}
+            {canSeePlatformSurfaces && SURFACES.map(surface => {
               const Icon = surface.icon;
               const isActive = activeSurface.id === surface.id;
               const isBusy = switching === surface.id;
@@ -149,13 +149,14 @@ export function MazighoSurfaceSwitcher() {
               );
             })}
 
-            {clientStores.length > 0 && (
+            {ownedStores.length > 0 && (
               <div className="pt-2 border-t border-slate-800 mt-2">
                 <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  Boutiques créées ({clientStores.length})
+                  Mes boutiques ({ownedStores.length})
                 </p>
-                {clientStores.map(st => {
-                  const isStoreActive = currentPath.includes(`/admin/studio/gestion-boutique/${st.id}`) || currentPath.includes(`/admin/studio/apercu/${st.id}`);
+                <p className="mb-2 flex items-center gap-1.5 px-2 text-[10px] text-slate-400"><Mail className="h-3 w-3" />{user.email || "Compte connecté"}</p>
+                {ownedStores.map(st => {
+                  const isStoreActive = window.location.hostname.toLowerCase() === st.primaryDomain.trim().toLowerCase();
                   const isBusy = switching === `store-${st.id}`;
                   return (
                     <button

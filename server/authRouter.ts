@@ -10,6 +10,7 @@ import {
   createPasswordUser,
   getUserByEmail,
   getFirstActiveOwnerStoreForUser,
+  getOwnerStoreSwitcherOptionsForUser,
   getStoreMembershipForUser,
   markUserSignedIn,
   requestPasswordResetToken,
@@ -108,6 +109,8 @@ export const authRouter = router({
       } : null,
     };
   }),
+
+  myOwnedStores: protectedProcedure.query(({ ctx }) => getOwnerStoreSwitcherOptionsForUser(ctx.user.id)),
 
   register: publicProcedure
     .input(
@@ -431,4 +434,3 @@ export const authRouter = router({
     return { success: true } as const;
   }),
 });
-
