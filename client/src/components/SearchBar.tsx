@@ -112,7 +112,7 @@ export default function SearchBar() {
 
   const [visualSearchOpen, setVisualSearchOpen] = useState(false);
   const visualSearchConfigQuery = trpc.visualSearch.getConfig.useQuery();
-  const visualSearchEnabled = visualSearchConfigQuery.data?.enabled !== false;
+  const visualSearchEnabled = visualSearchConfigQuery.data?.enabled === true;
 
   return (
     <div ref={searchRef} className="relative w-full max-w-md">

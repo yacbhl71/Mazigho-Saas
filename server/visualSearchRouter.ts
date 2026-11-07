@@ -1,27 +1,32 @@
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { defaultVisualSearchConfig, visualSearchConfigSchema } from "../shared/visualSearchConfig";
 import { z } from "zod";
+import { getStoreSaasEntitlements, getVisualSearchConfig, setVisualSearchConfig } from "./db";
 
-const storeVisualSearchConfig = new Map<number, typeof defaultVisualSearchConfig>();
 
 export const visualSearchRouter = router({
   getConfig: publicProcedure.query(async ({ ctx }) => {
     const storeId = ctx.store?.id || 1;
-    return storeVisualSearchConfig.get(storeId) || defaultVisualSearchConfig;
+    const entitlements = await getStoreSaasEntitlements(storeId);
+    const config = await getVisualSearchConfig(storeId);
+    return { ...config, enabled: Boolean(config.enabled && entitlements.visualSearchEnabled) };
   }),
 
   saveConfig: protectedProcedure.input(visualSearchConfigSchema).mutation(async ({ ctx, input }) => {
     const storeId = ctx.store?.id || 1;
-    storeVisualSearchConfig.set(storeId, input);
-    return input;
+    const entitlements = await getStoreSaasEntitlements(storeId);
+    const next = { ...input, enabled: Boolean(input.enabled && entitlements.visualSearchEnabled) };
+    await setVisualSearchConfig(storeId, next);
+    return next;
   }),
 
   searchByImage: publicProcedure.input(z.object({
     imageDataUrl: z.string().min(1, "Image requise"),
   })).query(async ({ ctx, input }) => {
     const storeId = ctx.store?.id || 1;
-    const config = storeVisualSearchConfig.get(storeId) || defaultVisualSearchConfig;
-    if (!config.enabled) {
+    const entitlements = await getStoreSaasEntitlements(storeId);
+    const config = await getVisualSearchConfig(storeId);
+    if (!config.enabled || !entitlements.visualSearchEnabled) {
       return { enabled: false, results: [] };
     }
 
