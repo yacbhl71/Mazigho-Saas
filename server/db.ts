@@ -4874,7 +4874,7 @@ async function getPrimaryStoreId() {
   return rows[0].id;
 }
 
-async function getStoreSettingValue(storeId: number | undefined, key: string): Promise<string | null> {
+export async function getStoreSettingValue(storeId: number | undefined, key: string): Promise<string | null> {
   await ensureMultiStoreSchema();
   const db = await getDb();
   if (!db) return getDemoStoreSettingValue(storeId, key);
@@ -4884,7 +4884,7 @@ async function getStoreSettingValue(storeId: number | undefined, key: string): P
   return rows[0]?.value ?? null;
 }
 
-async function setStoreSettingValue(storeId: number | undefined, key: string, value: string, description?: string) {
+export async function setStoreSettingValue(storeId: number | undefined, key: string, value: string, description?: string) {
   await ensureMultiStoreSchema();
   const db = await getDb();
   if (!db) {

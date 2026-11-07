@@ -5,8 +5,10 @@ import {
   currencyConverterConfigSchema,
 } from "../../shared/currencyConverter";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeCurrencyConfigs = new Map<number, CurrencyConverterConfig>();
+const SETTING_KEY = "feature_currency_converter";
 
 export async function getCurrencyConverterConfig(
   storeId: number
@@ -22,8 +24,10 @@ export async function getCurrencyConverterConfig(
     rates: defaultExchangeRates,
   };
 
-  storeCurrencyConfigs.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting(storeId, SETTING_KEY, defaultConfig);
+  const config = { ...defaultConfig, ...persisted, storeId };
+  storeCurrencyConfigs.set(storeId, config);
+  return config;
 }
 
 export async function saveCurrencyConverterConfig(
@@ -47,5 +51,5 @@ export async function saveCurrencyConverterConfig(
   };
 
   storeCurrencyConfigs.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration du convertisseur multi-devises isolée par boutique");
 }

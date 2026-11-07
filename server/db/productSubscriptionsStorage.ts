@@ -5,8 +5,10 @@ import {
   createSubscriptionSchema,
 } from "../../shared/productSubscriptions";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeSubConfigs = new Map<number, ProductSubscriptionsConfig>();
+const SETTING_KEY = "feature_product_subscriptions";
 const storeSubscriptionsMap = new Map<number, CustomerSubscription[]>();
 
 export async function getSubscriptionConfig(
@@ -22,8 +24,10 @@ export async function getSubscriptionConfig(
     supportedFrequencies: ["2_WEEKS", "1_MONTH", "2_MONTHS"],
   };
 
-  storeSubConfigs.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting(storeId, SETTING_KEY, defaultConfig);
+  const config = { ...defaultConfig, ...persisted, storeId };
+  storeSubConfigs.set(storeId, config);
+  return config;
 }
 
 export async function saveSubscriptionConfig(
@@ -38,7 +42,7 @@ export async function saveSubscriptionConfig(
   };
 
   storeSubConfigs.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration des abonnements isolée par boutique");
 }
 
 export async function createCustomerSubscription(

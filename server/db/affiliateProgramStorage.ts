@@ -5,8 +5,10 @@ import {
   affiliateConfigSchema,
 } from "../../shared/affiliateProgram";
 import { z } from "zod";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 const storeAffConfigs = new Map<number, AffiliateProgramConfig>();
+const SETTING_KEY = "feature_affiliate_program";
 const storeAffiliatesMap = new Map<number, AffiliateAmbassador[]>();
 
 export async function getAffiliateConfig(
@@ -21,8 +23,10 @@ export async function getAffiliateConfig(
     defaultCommissionPercentage: 10,
   };
 
-  storeAffConfigs.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting(storeId, SETTING_KEY, defaultConfig);
+  const config = { ...defaultConfig, ...persisted, storeId };
+  storeAffConfigs.set(storeId, config);
+  return config;
 }
 
 export async function saveAffiliateConfig(
@@ -37,7 +41,7 @@ export async function saveAffiliateConfig(
   };
 
   storeAffConfigs.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration affiliation isolée par boutique");
 }
 
 export async function createAffiliateAmbassador(

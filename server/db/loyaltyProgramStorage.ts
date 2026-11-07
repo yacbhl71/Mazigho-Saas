@@ -4,9 +4,11 @@ import type {
   LoyaltyRedemptionResult,
 } from "../../shared/loyaltyProgram";
 import { generateReferralCode } from "../../shared/loyaltyProgram";
+import { readPersistentStoreSetting, writePersistentStoreSetting } from "../services/persistentStoreSetting";
 
 // Registry for store loyalty config: storeId -> LoyaltyProgramConfig
 const loyaltyConfigRegistry = new Map<number, LoyaltyProgramConfig>();
+const SETTING_KEY = "feature_loyalty_program";
 
 // Registry for customer loyalty accounts: `${storeId}:${userId}` -> CustomerLoyaltyAccount
 const accountRegistry = new Map<string, CustomerLoyaltyAccount>();
@@ -24,8 +26,10 @@ export async function getStoreLoyaltyConfig(storeId: number): Promise<LoyaltyPro
     enabled: true,
   };
 
-  loyaltyConfigRegistry.set(storeId, defaultConfig);
-  return defaultConfig;
+  const persisted = await readPersistentStoreSetting(storeId, SETTING_KEY, defaultConfig);
+  const config = { ...defaultConfig, ...persisted, storeId };
+  loyaltyConfigRegistry.set(storeId, config);
+  return config;
 }
 
 export async function saveStoreLoyaltyConfig(
@@ -40,7 +44,7 @@ export async function saveStoreLoyaltyConfig(
   };
 
   loyaltyConfigRegistry.set(storeId, updated);
-  return updated;
+  return await writePersistentStoreSetting(storeId, SETTING_KEY, updated, "Configuration fidélité isolée par boutique");
 }
 
 export async function getCustomerLoyaltyAccount(
