@@ -2412,6 +2412,31 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    runStoreSmokeTest: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const summary = await db.getOwnerStoreSettingsSummary(input.storeId);
+      const domain = summary.store.primaryDomain?.trim();
+      if (!domain) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette boutique n’a pas encore de domaine principal." });
+      const url = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+      const startedAt = Date.now();
+      try {
+        const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(15000), headers: { "user-agent": "MAZIGHO-Studio-SmokeTest/1.0" } });
+        const body = await response.text();
+        const contentType = response.headers.get("content-type") || "";
+        const checks = {
+          https: url.startsWith("https://") && response.url.startsWith("https://"),
+          httpStatus: response.status >= 200 && response.status < 400,
+          html: contentType.includes("text/html") && /<html[\s>]/i.test(body),
+          storefrontMarker: /MAZIGHO|boutique|shop|produit|product/i.test(body),
+        };
+        const passed = Object.values(checks).every(Boolean);
+        logAudit(ctx, { action: "studio.store_smoke_test", entityType: "store", entityId: input.storeId, summary: passed ? "Recette technique publique réussie." : "Recette technique publique avec points à corriger.", metadata: { url, status: response.status, checks, durationMs: Date.now() - startedAt } });
+        return { storeId: input.storeId, url, finalUrl: response.url, status: response.status, durationMs: Date.now() - startedAt, checks, passed, testedAt: new Date().toISOString() };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erreur réseau inconnue";
+        logAudit(ctx, { action: "studio.store_smoke_test", entityType: "store", entityId: input.storeId, summary: "Recette technique publique en échec réseau.", metadata: { url, error: message, durationMs: Date.now() - startedAt } });
+        return { storeId: input.storeId, url, finalUrl: null, status: null, durationMs: Date.now() - startedAt, checks: { https: url.startsWith("https://"), httpStatus: false, html: false, storefrontMarker: false }, passed: false, error: message, testedAt: new Date().toISOString() };
+      }
+    }),
     getCatalogueImportTargets: platformProcedure.query(async () => db.getStudioCatalogueImportTargets()),
     getProvisioningReviews: platformProcedure.query(async () => db.getStudioProvisioningDraftReviews()),
     getLaunchPreflight: platformProcedure.input(z.object({ draftId: z.number().int().positive() })).query(async ({ input }) => db.getStudioStoreLaunchPreflight(input.draftId)),
