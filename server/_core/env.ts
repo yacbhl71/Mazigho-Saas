@@ -18,4 +18,7 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
   geminiApiKey: process.env.GEMINI_API_KEY ?? process.env.API_KEY ?? "",
+  clonerEnabled: (process.env.CLONER_ENABLED ?? "false").toLowerCase() === "true",
+  clonerServiceUrl: process.env.CLONER_SERVICE_URL ?? "",
+  clonerApiKey: process.env.CLONER_API_KEY ?? "",
 };

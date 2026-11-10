@@ -39,6 +39,7 @@ import { buildStoreAssistantSystemPrompt } from "./services/storeAssistantKnowle
 import { generateImage, listImageModels } from "./_core/imageGeneration";
 import { buildStudioImageGenerationPrompt, studioImageFormats, studioImageStyles } from "./services/studioImageGenerationPolicy";
 import { keyInHandLandingContentSchema, proLandingContentSchema } from "../shared/keyInHandLanding";
+import { getClonerStatus, getCloneStatus, startClone } from "./services/clonerProxy";
 
 /** Supplier imports are a Pro benefit unless Studio explicitly grants one client store. */
 async function assertDropshippingAccess(storeId: number | undefined) {
@@ -1491,6 +1492,13 @@ export const adminRouter = router({
   // MAZIGHO Studio is the platform console. This read-only inventory exposes
   // aggregate storefront signals, never customer records, secrets or catalogue details.
   studio: router({
+    clonerStatus: platformProcedure.query(() => getClonerStatus()),
+    startClone: platformProcedure.input(z.object({
+      url: z.string().trim().min(8).max(2000),
+      projectName: z.string().trim().max(160).optional(),
+      force: z.boolean().optional(),
+    })).mutation(({ ctx, input }) => startClone(ctx.user.id, input)),
+    getCloneStatus: platformProcedure.input(z.object({ jobId: z.string().uuid() })).query(({ ctx, input }) => getCloneStatus(ctx.user.id, input.jobId)),
     getInventory: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       status: z.enum(["setup", "active", "limited", "suspended", "closed"]).optional(),

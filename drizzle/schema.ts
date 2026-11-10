@@ -103,6 +103,29 @@ export const storeSettings = mysqlTable("storeSettings", {
 export type StoreSetting = typeof storeSettings.$inferSelect;
 export type InsertStoreSetting = typeof storeSettings.$inferInsert;
 
+// Individually persisted CMS pages imported in draft status. The source HTML is
+// already sanitized by the cloner and stored as MAZIGHO blocks for review.
+export const storeCmsPages = mysqlTable("storeCmsPages", {
+  id: int("id").autoincrement().primaryKey(),
+  storeId: int("storeId").notNull(),
+  handle: varchar("handle", { length: 180 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  category: varchar("category", { length: 24 }).default("à vérifier").notNull(),
+  sourceUrl: varchar("sourceUrl", { length: 1000 }),
+  blocks: text("blocks").notNull(),
+  reviewRequired: int("reviewRequired").default(1).notNull(),
+  status: varchar("status", { length: 24 }).default("draft").notNull(),
+  originalUpdatedAt: varchar("originalUpdatedAt", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  storeHandleUnique: uniqueIndex("store_cms_pages_store_handle_unique").on(table.storeId, table.handle),
+  storeCategoryIndex: index("store_cms_pages_store_category_idx").on(table.storeId, table.category),
+  storeStatusIndex: index("store_cms_pages_store_status_idx").on(table.storeId, table.status),
+}));
+export type StoreCmsPage = typeof storeCmsPages.$inferSelect;
+export type InsertStoreCmsPage = typeof storeCmsPages.$inferInsert;
+
 // Server-side monthly AI usage counter. It is scoped to one store and keeps no
 // prompt, output, customer data or document content.
 export const storeAiMonthlyUsage = mysqlTable("storeAiMonthlyUsage", {
