@@ -83,7 +83,10 @@ export async function startProductionServer() {
 export async function startDevServer() {
   const server = createServer(app);
   configureApi(app);
-  const { setupVite } = await import("./vite");
+  // Keep the development-only Vite stack out of the production/serverless
+  // bundle. Its native lightningcss binary is not needed by API functions.
+  const viteModulePath = "./vite";
+  const { setupVite } = await import(/* @vite-ignore */ viteModulePath);
   await setupVite(app, server);
 
   const preferredPort = parseInt(process.env.PORT || "3000");
