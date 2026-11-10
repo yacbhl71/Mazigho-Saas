@@ -49,13 +49,13 @@ export function getClonerStatus() {
   return { enabled: ENV.clonerEnabled, configured: Boolean(ENV.clonerServiceUrl.trim()), serviceUrl: ENV.clonerServiceUrl.trim() ? "configured" : "missing" };
 }
 
-export async function startClone(userId: number, input: { url: string; projectName?: string; force?: boolean }) {
+export async function startClone(userId: number, input: { url: string; projectName?: string; force?: boolean; shopifyPassword?: string }) {
   if (!ENV.clonerEnabled) throw new TRPCError({ code: "FORBIDDEN", message: "L’import par clonage est désactivé dans cet environnement." });
   cleanupJobs();
   let source: URL;
   try { source = new URL(input.url); } catch { throw new TRPCError({ code: "BAD_REQUEST", message: "L’URL du site est invalide." }); }
   if (!["http:", "https:"].includes(source.protocol)) throw new TRPCError({ code: "BAD_REQUEST", message: "Seules les URL HTTP et HTTPS sont acceptées." });
-  const data = await request("/clone", { method: "POST", body: JSON.stringify({ url: source.toString(), mazigho_user_id: String(userId), mazigho_project_name: input.projectName?.trim() || source.hostname, force: Boolean(input.force) }) }) as CloneResponse;
+  const data = await request("/clone", { method: "POST", body: JSON.stringify({ url: source.toString(), mazigho_user_id: String(userId), mazigho_project_name: input.projectName?.trim() || source.hostname, force: Boolean(input.force), shopify_password: input.shopifyPassword?.trim() || undefined }) }) as CloneResponse;
   if (!data?.job_id) throw new TRPCError({ code: "BAD_GATEWAY", message: "Le service de clonage n’a pas fourni d’identifiant de job." });
   ownedJobs.set(data.job_id, { userId, createdAt: Date.now() });
   return { jobId: data.job_id, status: data.status || "queued" };

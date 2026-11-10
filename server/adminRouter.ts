@@ -1496,6 +1496,7 @@ export const adminRouter = router({
     startClone: platformProcedure.input(z.object({
       url: z.string().trim().min(8).max(2000),
       projectName: z.string().trim().max(160).optional(),
+      shopifyPassword: z.string().min(1).max(256).optional(),
       force: z.boolean().optional(),
     })).mutation(({ ctx, input }) => startClone(ctx.user.id, input)),
     getCloneStatus: platformProcedure.input(z.object({ jobId: z.string().uuid() })).query(({ ctx, input }) => getCloneStatus(ctx.user.id, input.jobId)),
