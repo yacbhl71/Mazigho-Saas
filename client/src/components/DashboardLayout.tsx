@@ -72,7 +72,7 @@ const sidebarToneClasses: Record<SidebarTone, { label: string; active: string; i
   },
 };
 
-const menuSections: Array<{ label: string; tone: SidebarTone; items: Array<{ icon: typeof LayoutDashboard; label: string; path: string }> }> = [
+const menuSections: Array<{ label: string; tone: SidebarTone; items: Array<{ icon: typeof LayoutDashboard; label: string; path: string; external?: boolean }> }> = [
   {
     label: "Plateforme",
     tone: "violet",
@@ -83,6 +83,7 @@ const menuSections: Array<{ label: string; tone: SidebarTone; items: Array<{ ico
       { icon: Building2, label: "Gestion des boutiques", path: "/admin/studio#studio-boutiques" },
       { icon: Workflow, label: "Production boutiques", path: "/admin/studio/production" },
       { icon: Import, label: "Importer une boutique", path: "/admin/studio/importer-boutique" },
+      { icon: LockKeyhole, label: "Cloner un site e-commerce", path: "https://mazigho-site-cloner.onrender.com/", external: true },
       { icon: Network, label: "Domaines personnalisés", path: "/admin/studio/domaines" },
       { icon: PlugZap, label: "Demandes d’intégrations", path: "/admin/studio/integrations" },
       { icon: ReceiptText, label: "Abonnements & factures", path: "/admin/studio/facturation" },
@@ -468,6 +469,7 @@ function DashboardLayoutContent({
               const items = section.items.filter(item => {
                 const isStudioShortcut = item.path === "/admin/studio" || item.path.startsWith("/admin/studio/") || item.path.startsWith("/admin/studio#");
                 if (isStudioShortcut && !isPlatformOperator) return false;
+                if (item.external) return isPlatformOperator;
                 return isPathAllowed(effectiveRole, item.path.split("#")[0]);
               });
               const tone = sidebarToneClasses[section.tone];
@@ -480,12 +482,16 @@ function DashboardLayoutContent({
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {items.map(item => {
-                      const isActive = location === item.path;
+                      const isActive = !item.external && location === item.path;
                       return (
                         <SidebarMenuItem key={item.path}>
                           <SidebarMenuButton
                             isActive={isActive}
                             onClick={() => {
+                              if (item.external) {
+                                window.location.assign(item.path);
+                                return;
+                              }
                               const [path, targetId] = item.path.split("#");
                               setLocation(path);
                               if (targetId) window.setTimeout(() => document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
