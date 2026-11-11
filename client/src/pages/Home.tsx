@@ -148,6 +148,39 @@ export default function Home() {
     </div>;
   }
 
+  if (limitedShowcase && isClientStore) {
+    return (
+      <div className="min-h-screen bg-white text-slate-900">
+        <Header />
+        <main>
+          <section className="border-b border-slate-200 bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">
+              <p className="text-xs font-bold uppercase tracking-[0.28em] text-amber-300">Boutique clonée</p>
+              <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold tracking-tight sm:text-6xl">{profile.brandName || "Votre boutique"}</h1>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Catalogue et catégories importés depuis la boutique d’origine. Les commandes restent fermées pendant la préparation.</p>
+            </div>
+          </section>
+
+          {storeDiscoveryTiles.length > 0 && <section className="border-b border-slate-200 px-4 py-10 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">
+              <h2 className="text-2xl font-bold tracking-tight">Catégories du clone</h2>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {storeDiscoveryTiles.map(tile => <Link key={tile.href} href={tile.href} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:border-slate-400 hover:bg-white"><h3 className="font-semibold">{tile.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{tile.description}</p></Link>)}
+              </div>
+            </div>
+          </section>}
+
+          <section className="px-4 py-10 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">
+              <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Catalogue importé</p><h2 className="mt-2 text-2xl font-bold tracking-tight">Produits du clone</h2></div><span className="text-sm text-slate-500">{catalogProducts.length} produit(s)</span></div>
+              {catalogProducts.length > 0 ? <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{catalogProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={product.id} href={`/produit/${product.slug}`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:shadow-lg"><div className="aspect-[4/3] bg-slate-100">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-cover" loading="lazy" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">✦</div>}</div><div className="p-4"><h3 className="line-clamp-2 min-h-12 font-semibold">{product.name}</h3><p className="mt-3 font-bold">{formatPrice(product.price)}</p></div></Link>; })}</div> : <p className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Le catalogue cloné est en préparation.</p>}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${usesGlamourNoir ? "text-white" : "text-slate-900"}`} style={{ backgroundColor: palette.soft }}>
       <Header />
