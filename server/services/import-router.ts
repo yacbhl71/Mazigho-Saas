@@ -83,7 +83,27 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
   const testimonial = props("testimonials");
   const cta = props("cta");
   const image = (value: unknown) => url(value);
-  const bannerBlocks = blocks.filter(block => ["hero", "about", "testimonials", "cta", "newsletter"].includes(block.type));
+  const visualBlocks = blocks.filter(block => !["header", "footer", "product-grid"].includes(block.type));
+  const normalizedVisualBlocks = visualBlocks.map((block, index) => {
+    const blockProps = block.props || {};
+    const links = Array.isArray(blockProps.links) ? blockProps.links.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+    return {
+      id: `clone-visual-${index + 1}`,
+      type: block.type,
+      eyebrow: text(blockProps.eyebrow, block.type),
+      title: text(blockProps.title, payload.project_name),
+      text: text(blockProps.text || blockProps.description),
+      imageUrl: image(blockProps.imageUrl),
+      imageAlt: text(blockProps.imageAlt, text(blockProps.title, payload.project_name)),
+      buttonLabel: text(links[0]?.label),
+      buttonUrl: url(links[0]?.href),
+      layout: block.type === "hero" ? "spotlight" : block.type === "testimonials" ? "quote" : "split",
+      theme: block.type === "testimonials" ? "dark" : block.type === "cta" ? "primary" : "light",
+      galleryItems: Array.isArray(blockProps.galleryItems) ? blockProps.galleryItems : [],
+      enabled: true,
+      position: index,
+    };
+  });
   return {
     imported: true,
     source: "clone",
@@ -108,21 +128,9 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
     closingTitle: text(cta.title, "Découvrez la boutique"),
     closingText: text(cta.text),
     closingImageUrl: image(cta.imageUrl),
-    textBanners: bannerBlocks.slice(0, 8).map((block, index) => ({
-      id: `clone-${block.type}-${index + 1}`,
-      eyebrow: block.type,
-      title: text(block.props?.title, payload.project_name),
-      text: text(block.props?.text),
-      buttonLabel: text(block.props?.links && Array.isArray(block.props.links) ? block.props.links[0]?.label : ""),
-      buttonUrl: "",
-      imageUrl: image(block.props?.imageUrl),
-      imageAlt: text(block.props?.title, payload.project_name),
-      layout: block.type === "hero" ? "spotlight" : "split",
-      theme: block.type === "cta" ? "dark" : "light",
-      galleryItems: [],
-      enabled: true,
-    })),
-    homeOrder: bannerBlocks.map((block, index) => `text:clone-${block.type}-${index + 1}`),
+    textBanners: normalizedVisualBlocks.slice(0, 24),
+    visualBlocks: normalizedVisualBlocks.slice(0, 48),
+    homeOrder: normalizedVisualBlocks.map(block => `text:${block.id}`),
     navigationItems: payload.navigation.map((item, index) => ({ id: `clone-${index + 1}`, ...item, visible: true, kind: "custom" })),
   };
 }

@@ -149,34 +149,45 @@ export default function Home() {
   }
 
   if (limitedShowcase && isClientStore) {
-    const importedBanners = (profile.textBanners || []).filter(banner => banner.enabled && banner.title).slice(0, 6);
+    const cloneProducts = catalogProducts.slice(0, 12);
+    const heroProducts = cloneProducts.slice(0, 7);
+    const cloneCategories = storeDiscoveryTiles.slice(0, 6).map((tile, index) => ({
+      ...tile,
+      image: tile.image || cloneProducts[index]?.images?.[0]?.imageUrl || cloneProducts[0]?.images?.[0]?.imageUrl || "",
+    }));
+    const cloneBrand = profile.brandName || "Votre boutique";
+    const cloneIsPickyBars = /picky bars/i.test(cloneBrand);
+    const cloneManifestoTitle = cloneIsPickyBars ? "Real food. balanced energy." : (profile.highlightText || "Une sélection pensée pour chaque moment.");
+    const cloneManifestoText = cloneIsPickyBars ? "Each bite contains enough energy to power a light-speed journey (or your next marathon)." : "Découvrez une sélection importée, présentée dans une vitrine claire et inspirante.";
+    const importedVisualBlocks = (profile.textBanners || []).filter(banner => banner.enabled && (banner.imageUrl || banner.text || banner.buttonLabel));
     return (
       <div className="min-h-screen bg-white text-slate-900">
         <Header />
         <main>
-          <section className="relative overflow-hidden border-b border-slate-200 bg-slate-950 px-4 py-16 text-white sm:px-6 lg:px-8" style={profile.highlightImageUrl ? { backgroundImage: `linear-gradient(90deg, rgba(2,6,23,.94), rgba(2,6,23,.56), rgba(2,6,23,.2)), url(${profile.highlightImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
-            <div className="mx-auto max-w-7xl">
-              <p className="text-xs font-bold uppercase tracking-[0.28em]" style={{ color: palette.accent }}>{profile.highlightEyebrow || "Présentation"}</p>
-              <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold tracking-tight sm:text-6xl">{profile.highlightTitle || profile.brandName || "Votre boutique"}</h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/75">{profile.highlightText || profile.brandMessage || "Découvrez la boutique importée."}</p>
+          <section className="relative min-h-[470px] overflow-hidden bg-slate-950 text-white sm:min-h-[560px] lg:min-h-[650px]" style={profile.highlightImageUrl ? { backgroundImage: `linear-gradient(90deg, rgba(2,6,23,.72), rgba(2,6,23,.22), rgba(2,6,23,.02)), url(${profile.highlightImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-slate-950/10" />
+            <div className="relative mx-auto flex min-h-[470px] max-w-7xl items-center px-6 py-20 sm:min-h-[560px] sm:px-10 lg:min-h-[650px]">
+              <div className="max-w-xl">
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-white/85">{profile.highlightEyebrow || "Présentation"}</p>
+                <h1 className="mt-5 max-w-2xl text-5xl font-black leading-[.94] tracking-tight sm:text-7xl">{profile.highlightTitle || cloneBrand}</h1>
+                <p className="mt-7 max-w-lg text-base font-medium leading-7 text-white/90">{profile.highlightText || profile.brandMessage || "Découvrez la boutique importée."}</p>
+                <Link href="/boutique" className="mt-8 inline-flex min-h-14 items-center rounded-full border-2 border-slate-950 bg-white px-9 text-base font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:bg-slate-100">SHOP NOW <ArrowRight className="ml-3 h-5 w-5" /></Link>
+              </div>
             </div>
           </section>
 
-          {importedBanners.length > 0 && <section className="border-b border-slate-200 px-4 py-10 sm:px-6 lg:px-8"><div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-2">{importedBanners.filter(banner => banner.id !== importedBanners[0]?.id).map(banner => <article key={banner.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">{banner.imageUrl && <img src={banner.imageUrl} alt={banner.imageAlt || banner.title} className="h-56 w-full object-cover" loading="lazy" />}<div className="p-6"><p className="text-xs font-bold uppercase tracking-[0.22em]" style={{ color: palette.accent }}>{banner.eyebrow}</p><h2 className="mt-2 text-2xl font-bold tracking-tight">{banner.title}</h2>{banner.text && <p className="mt-3 text-sm leading-6 text-slate-600">{banner.text}</p>}</div></article>)}</div></section>}
+          {heroProducts.length > 0 && <section className="border-b border-slate-100 bg-white px-4 py-9 sm:px-8"><div className="mx-auto grid max-w-7xl grid-cols-3 items-center gap-5 sm:grid-cols-4 lg:grid-cols-7">{heroProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={`rail-${product.id}`} href={`/produit/${product.slug}`} aria-label={product.name} className="group flex h-20 items-center justify-center sm:h-24"><div className="h-full w-full transition duration-300 group-hover:-translate-y-1 group-hover:scale-105">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-contain" loading="lazy" /> : <span className="grid h-full place-items-center text-xs text-slate-400">{product.name}</span>}</div></Link>; })}</div></section>}
 
-          {storeDiscoveryTiles.length > 0 && <section className="border-b border-slate-200 px-4 py-10 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-7xl">
-              <h2 className="text-2xl font-bold tracking-tight">Catégories du clone</h2>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {storeDiscoveryTiles.map(tile => <Link key={tile.href} href={tile.href} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 transition hover:border-slate-400 hover:bg-white"><h3 className="font-semibold">{tile.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{tile.description}</p></Link>)}
-              </div>
-            </div>
-          </section>}
+          <section className="bg-white px-6 py-16 text-center sm:py-24"><div className="mx-auto max-w-3xl"><p className="text-3xl font-black uppercase tracking-[-0.04em] text-slate-950 sm:text-5xl">{cloneManifestoTitle}</p><p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">{cloneManifestoText}</p></div></section>
 
-          <section className="px-4 py-10 sm:px-6 lg:px-8">
+          {importedVisualBlocks.slice(0, 6).map((block, index) => <section key={block.id || `visual-${index}`} className={`${block.theme === "dark" ? "bg-slate-950 text-white" : "bg-white text-slate-950"} border-y border-slate-100 px-6 py-14 sm:px-10 sm:py-20`}><div className={`mx-auto grid max-w-7xl items-center gap-10 ${block.imageUrl ? "lg:grid-cols-2" : "max-w-3xl text-center"}`}><div className={index % 2 === 1 && block.imageUrl ? "lg:order-2" : ""}><p className="text-xs font-black uppercase tracking-[0.28em]" style={{ color: palette.accent }}>{block.eyebrow}</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">{block.title}</h2>{block.text && <p className={`mt-5 text-base leading-7 ${block.theme === "dark" ? "text-white/75" : "text-slate-600"}`}>{block.text}</p>}{block.buttonLabel && block.buttonUrl && <Link href={block.buttonUrl} className="mt-7 inline-flex rounded-full bg-slate-950 px-6 py-3 text-sm font-black text-white">{block.buttonLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link>}</div>{block.imageUrl && <div className={`overflow-hidden rounded-xl ${index % 2 === 1 ? "lg:order-1" : ""}`}><img src={block.imageUrl} alt={block.imageAlt || block.title} className="max-h-[520px] w-full object-cover" loading="lazy" /></div>}</div></section>)}
+
+          {cloneCategories.length > 0 && <section className="border-b border-slate-100 bg-white px-4 pb-16 sm:px-8"><div className="mx-auto grid max-w-7xl grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">{cloneCategories.map(tile => <Link key={tile.href} href={tile.href} className="group text-center"><div className="aspect-square overflow-hidden rounded-full bg-slate-50"><img src={tile.image} alt={tile.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" /></div><h3 className="mt-4 text-sm font-black uppercase tracking-tight text-slate-950">{tile.title}</h3></Link>)}</div></section>}
+
+          <section className="bg-slate-50 px-4 py-16 sm:px-8 sm:py-20">
             <div className="mx-auto max-w-7xl">
-              <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Catalogue importé</p><h2 className="mt-2 text-2xl font-bold tracking-tight">Produits du clone</h2></div><span className="text-sm text-slate-500">{catalogProducts.length} produit(s)</span></div>
-              {catalogProducts.length > 0 ? <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{catalogProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={product.id} href={`/produit/${product.slug}`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:shadow-lg"><div className="aspect-[4/3] bg-slate-100">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-cover" loading="lazy" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">✦</div>}</div><div className="p-4"><h3 className="line-clamp-2 min-h-12 font-semibold">{product.name}</h3><p className="mt-3 font-bold">{formatPrice(product.price)}</p></div></Link>; })}</div> : <p className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Le catalogue cloné est en préparation.</p>}
+              <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Sélection</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Shop our favorites</h2></div><Link href="/boutique" className="text-sm font-black underline underline-offset-4">SHOP ALL</Link></div>
+              {catalogProducts.length > 0 ? <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{cloneProducts.slice(0, 8).map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={product.id} href={`/produit/${product.slug}`} className="group overflow-hidden bg-white transition hover:-translate-y-1 hover:shadow-xl"><div className="aspect-square bg-white">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-contain transition duration-500 group-hover:scale-105" loading="lazy" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">✦</div>}</div><div className="p-4"><h3 className="line-clamp-2 min-h-12 font-black text-slate-950">{product.name}</h3><p className="mt-3 font-bold text-slate-700">{formatPrice(product.price)}</p></div></Link>; })}</div> : <p className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Le catalogue cloné est en préparation.</p>}
             </div>
           </section>
         </main>
