@@ -1,4 +1,4 @@
-import { and, desc, asc, count, eq, ne, gt, gte, lt, lte, isNull, inArray, sql, sum, avg } from "drizzle-orm";
+import { and, desc, asc, count, eq, ne, gt, gte, lt, lte, isNull, inArray, like, sql, sum, avg } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import * as schema from "../drizzle/schema";
@@ -3472,6 +3472,12 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
     if (["bhll.mazigho.com", "bhllvoyage.mazigho.ch", "bhll.mazigho.ch", "bhll-voyage.mazigho.com"].includes(normalizedHost)) {
       const bhllStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.id, 4)).limit(1);
       if (bhllStore[0]) return { ...bhllStore[0], primaryDomain: "bhll.mazigho.com", status: "active" };
+    }
+    if (normalizedHost === "test-pickybars.mazigho.ch") {
+      const testStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
+        .from(stores).innerJoin(storeSettings, eq(storeSettings.storeId, stores.id))
+        .where(and(eq(storeSettings.key, "clone_import_metadata"), like(storeSettings.value, "%pickybars.com%"), eq(stores.isPlatformStore, 0), inArray(stores.status, ["setup", "limited", "active"]))).limit(1);
+      if (testStore[0]) return testStore[0];
     }
     const byDomain = normalizedHost
       ? await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.primaryDomain, normalizedHost)).limit(1)
