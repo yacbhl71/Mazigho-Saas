@@ -40,6 +40,7 @@ import { generateImage, listImageModels } from "./_core/imageGeneration";
 import { buildStudioImageGenerationPrompt, studioImageFormats, studioImageStyles } from "./services/studioImageGenerationPolicy";
 import { keyInHandLandingContentSchema, proLandingContentSchema } from "../shared/keyInHandLanding";
 import { getClonerStatus, getCloneStatus, startClone } from "./services/clonerProxy";
+import { cloneImportPayloadSchema, importCloneDraft } from "./services/import-router";
 
 /** Supplier imports are a Pro benefit unless Studio explicitly grants one client store. */
 async function assertDropshippingAccess(storeId: number | undefined) {
@@ -1500,6 +1501,30 @@ export const adminRouter = router({
       force: z.boolean().optional(),
     })).mutation(({ ctx, input }) => startClone(ctx.user.id, input)),
     getCloneStatus: platformProcedure.input(z.object({ jobId: z.string().uuid() })).query(({ ctx, input }) => getCloneStatus(ctx.user.id, input.jobId)),
+    importCloneFile: platformProcedure.input(z.object({ payload: z.unknown() })).mutation(async ({ ctx, input }) => {
+      const parsed = cloneImportPayloadSchema.safeParse(input.payload);
+      if (!parsed.success) throw new TRPCError({ code: "BAD_REQUEST", message: `Fichier de clonage invalide : ${parsed.error.issues.slice(0, 3).map(issue => issue.message).join(" ; ")}` });
+      // Never trust the user_id embedded in a downloaded file: bind the import
+      // to the authenticated Studio operator that explicitly selected it.
+      const result = await importCloneDraft({ ...parsed.data, user_id: String(ctx.user.id) });
+      return {
+        storeId: result.storeId,
+        storeUrl: `/admin/stores/${result.storeId}`,
+        editorUrl: `/admin/editor/${result.storeId}`,
+        previewUrl: `/preview/${result.storeId}`,
+        summary: {
+          productsImported: result.productsImported,
+          variantsImported: result.variantsImported,
+          imagesImported: result.imagesImported,
+          pagesImported: result.pagesImported,
+          pagesEssential: result.pagesEssential,
+          pagesToReview: result.pagesToReview,
+          pagesArchived: result.pagesArchived,
+          blocksImported: result.blocksImported,
+          warnings: result.warnings,
+        },
+      };
+    }),
     getInventory: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       status: z.enum(["setup", "active", "limited", "suspended", "closed"]).optional(),
