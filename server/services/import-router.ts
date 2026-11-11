@@ -72,6 +72,61 @@ function cents(value: number | undefined) { return Math.round((value ?? 0) * 100
 function uniqueSlug(base: string, suffix: string) { return `${base.slice(0, 48)}-${suffix.slice(0, 10)}`.replace(/-+/g, "-"); }
 function imageUrl(value: string | { src?: string; url?: string }) { return typeof value === "string" ? value : value.src || value.url || null; }
 
+function buildImportedDesignProfile(payload: CloneImportPayload) {
+  const home = payload.pages.home;
+  const blocks = home?.blocks || [];
+  const props = (type: string) => blocks.find(block => block.type === type)?.props || {};
+  const text = (value: unknown, fallback = "") => typeof value === "string" ? value.trim().slice(0, 900) : fallback;
+  const url = (value: unknown) => typeof value === "string" && (/^https:\/\//i.test(value) || value.startsWith("/")) ? value.slice(0, 1000) : "";
+  const hero = props("hero");
+  const about = props("about");
+  const testimonial = props("testimonials");
+  const cta = props("cta");
+  const image = (value: unknown) => url(value);
+  const bannerBlocks = blocks.filter(block => ["hero", "about", "testimonials", "cta", "newsletter"].includes(block.type));
+  return {
+    imported: true,
+    source: "clone",
+    theme: payload.theme,
+    brandName: payload.project_name,
+    brandMessage: text(hero.title) || text(hero.text),
+    customColorsEnabled: true,
+    customPrimary: payload.theme.colors?.primary || "#1a1a2e",
+    customAccent: payload.theme.colors?.accent || "#e94560",
+    customSoft: payload.theme.colors?.background || "#ffffff",
+    typographyId: "modern",
+    headerLayout: "inline",
+    highlightEyebrow: text(hero.eyebrow, "Présentation"),
+    highlightTitle: text(hero.title, payload.project_name),
+    highlightText: text(hero.text, "Découvrez la boutique importée."),
+    highlightImageUrl: image(hero.imageUrl),
+    storyTitle: text(about.title, "Notre histoire"),
+    storyText: text(about.text),
+    storyImageUrl: image(about.imageUrl),
+    testimonialsTitle: text(testimonial.title, "Ce que nos clients disent"),
+    testimonialsText: text(testimonial.text),
+    closingTitle: text(cta.title, "Découvrez la boutique"),
+    closingText: text(cta.text),
+    closingImageUrl: image(cta.imageUrl),
+    textBanners: bannerBlocks.slice(0, 8).map((block, index) => ({
+      id: `clone-${block.type}-${index + 1}`,
+      eyebrow: block.type,
+      title: text(block.props?.title, payload.project_name),
+      text: text(block.props?.text),
+      buttonLabel: text(block.props?.links && Array.isArray(block.props.links) ? block.props.links[0]?.label : ""),
+      buttonUrl: "",
+      imageUrl: image(block.props?.imageUrl),
+      imageAlt: text(block.props?.title, payload.project_name),
+      layout: block.type === "hero" ? "spotlight" : "split",
+      theme: block.type === "cta" ? "dark" : "light",
+      galleryItems: [],
+      enabled: true,
+    })),
+    homeOrder: bannerBlocks.map((block, index) => `text:clone-${block.type}-${index + 1}`),
+    navigationItems: payload.navigation.map((item, index) => ({ id: `clone-${index + 1}`, ...item, visible: true, kind: "custom" })),
+  };
+}
+
 export async function importCloneDraft(payload: CloneImportPayload) {
   const db = await getDb();
   if (!db) throw new Error("DATABASE_UNAVAILABLE");
@@ -146,7 +201,7 @@ export async function importCloneDraft(payload: CloneImportPayload) {
     return { storeId, slug };
   });
   const cmsEntries = Object.entries(payload.pages).filter(([handle]) => handle !== "home");
-  const designProfile = { imported: true, source: "clone", theme: payload.theme, navigationItems: payload.navigation.map((item, index) => ({ id: `clone-${index + 1}`, ...item, visible: true, kind: "custom" })) };
+  const designProfile = buildImportedDesignProfile(payload);
   const pagesSetting = { home: payload.pages.home, cms: cmsEntries.map(([handle, page]) => ({ handle, title: page.title, category: page.category, reviewRequired: page.reviewRequired })) };
   const metadata = { source: "clone", sourceUrl: payload.source_url, platform: payload.platform, clonedAt: payload.settings.clonedAt || new Date().toISOString(), productsCount: payload.catalog.length, pagesCount: cmsEntries.length, sections: { theme: "success", pages: "success", catalog: "pending", navigation: "success" } };
   // Persist settings through the shared idempotent helper after the catalog

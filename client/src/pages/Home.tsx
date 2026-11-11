@@ -149,17 +149,20 @@ export default function Home() {
   }
 
   if (limitedShowcase && isClientStore) {
+    const importedBanners = (profile.textBanners || []).filter(banner => banner.enabled && banner.title).slice(0, 6);
     return (
       <div className="min-h-screen bg-white text-slate-900">
         <Header />
         <main>
-          <section className="border-b border-slate-200 bg-slate-950 px-4 py-14 text-white sm:px-6 lg:px-8">
+          <section className="relative overflow-hidden border-b border-slate-200 bg-slate-950 px-4 py-16 text-white sm:px-6 lg:px-8" style={profile.highlightImageUrl ? { backgroundImage: `linear-gradient(90deg, rgba(2,6,23,.94), rgba(2,6,23,.56), rgba(2,6,23,.2)), url(${profile.highlightImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
             <div className="mx-auto max-w-7xl">
-              <p className="text-xs font-bold uppercase tracking-[0.28em] text-amber-300">Boutique clonée</p>
-              <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold tracking-tight sm:text-6xl">{profile.brandName || "Votre boutique"}</h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Catalogue et catégories importés depuis la boutique d’origine. Les commandes restent fermées pendant la préparation.</p>
+              <p className="text-xs font-bold uppercase tracking-[0.28em]" style={{ color: palette.accent }}>{profile.highlightEyebrow || "Présentation"}</p>
+              <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold tracking-tight sm:text-6xl">{profile.highlightTitle || profile.brandName || "Votre boutique"}</h1>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/75">{profile.highlightText || profile.brandMessage || "Découvrez la boutique importée."}</p>
             </div>
           </section>
+
+          {importedBanners.length > 0 && <section className="border-b border-slate-200 px-4 py-10 sm:px-6 lg:px-8"><div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-2">{importedBanners.filter(banner => banner.id !== importedBanners[0]?.id).map(banner => <article key={banner.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">{banner.imageUrl && <img src={banner.imageUrl} alt={banner.imageAlt || banner.title} className="h-56 w-full object-cover" loading="lazy" />}<div className="p-6"><p className="text-xs font-bold uppercase tracking-[0.22em]" style={{ color: palette.accent }}>{banner.eyebrow}</p><h2 className="mt-2 text-2xl font-bold tracking-tight">{banner.title}</h2>{banner.text && <p className="mt-3 text-sm leading-6 text-slate-600">{banner.text}</p>}</div></article>)}</div></section>}
 
           {storeDiscoveryTiles.length > 0 && <section className="border-b border-slate-200 px-4 py-10 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-7xl">
