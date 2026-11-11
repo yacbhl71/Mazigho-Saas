@@ -168,6 +168,8 @@ export function registerCloneImportRoute(app: Express) {
       const base = process.env.PUBLIC_APP_URL || "https://studio.mazigho.ch";
       return res.status(201).json({ success: true, store_id: String(result.storeId), store_url: `${base}/admin/stores/${result.storeId}`, editor_url: `${base}/admin/editor/${result.storeId}`, preview_url: `${base}/preview/${result.storeId}`, import_summary: { products_imported: result.productsImported, variants_imported: result.variantsImported, images_imported: result.imagesImported, pages_imported: result.pagesImported, pages_essential: result.pagesEssential, pages_to_review: result.pagesToReview, pages_archived: result.pagesArchived, blocks_imported: result.blocksImported, warnings: result.warnings } });
     } catch (error) {
+      const dbError = error as { code?: string; errno?: number; sqlState?: string };
+      console.error("clone import failed", { code: dbError.code, errno: dbError.errno, sqlState: dbError.sqlState, message: error instanceof Error ? error.message : String(error) });
       if (error instanceof Error && error.message === "USER_NOT_FOUND") return res.status(404).json({ success: false, error: "USER_NOT_FOUND" });
       if (error instanceof Error && error.message === "DATABASE_UNAVAILABLE") return res.status(503).json({ success: false, error: "DATABASE_UNAVAILABLE" });
       return next(error);
