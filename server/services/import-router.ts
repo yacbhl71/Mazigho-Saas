@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as schema from "../../drizzle/schema";
-import { getDb } from "../db";
+import { getDb, setStoreSettingValue } from "../db";
 
 const { users, stores, storeMemberships, storeSettings, storeCmsPages, categories, products, productImages, ownerProductVariants } = schema;
 
@@ -123,25 +123,6 @@ export async function importCloneDraft(payload: CloneImportPayload) {
       const unknownCount = page.blocks.filter(block => !["header", "hero", "product-grid", "testimonials", "cta", "about", "newsletter", "footer", "rich-text", "custom-html"].includes(block.type)).length;
       if (unknownCount) warnings.push(`Page « ${pageName} » : ${unknownCount} bloc(s) non reconnu(s), converti(s) en bloc personnalisé.`);
     }
-    const designProfile = { imported: true, source: "clone", theme: payload.theme, navigationItems: payload.navigation.map((item, index) => ({ id: `clone-${index + 1}`, ...item, visible: true, kind: "custom" })) };
-    const metadata = { source: "clone", sourceUrl: payload.source_url, platform: payload.platform, clonedAt: payload.settings.clonedAt || new Date().toISOString(), productsCount: payload.catalog.length, pagesCount: cmsEntries.length, sections: { theme: "success", pages: "success", catalog: "pending", navigation: "success" } };
-    // Page HTML is persisted individually in storeCmsPages. Keep the legacy
-    // setting compact so a 125-page import cannot overflow MySQL TEXT.
-    const pagesSetting = { home: pages.home, cms: cmsEntries.map(([handle, page]) => ({ handle, title: page.title, category: page.category, reviewRequired: page.reviewRequired })) };
-    // Do not use one plain multi-row INSERT here: storeSettings is unique on
-    // (storeId, key), and a retry/re-import must update the existing setting.
-    // The MySQL upsert is atomic inside the surrounding transaction.
-    const storeSettingRows = [
-      { storeId, key: "design_profile", value: JSON.stringify(designProfile), description: "Design et navigation importés en brouillon depuis un site public." },
-      { storeId, key: "clone_import_pages", value: JSON.stringify(pagesSetting), description: "Index des pages importées ; le contenu complet est conservé dans storeCmsPages." },
-      { storeId, key: "clone_import_metadata", value: JSON.stringify(metadata), description: "Métadonnées techniques de l’import clone." },
-    ];
-    for (const setting of storeSettingRows) {
-      await tx.insert(storeSettings).values(setting).onDuplicateKeyUpdate({
-        set: { value: setting.value, description: setting.description },
-      });
-    }
-
     const categoriesByName = new Map<string, number>();
     let categoryOrder = 0;
     for (const product of payload.catalog) {
@@ -164,6 +145,16 @@ export async function importCloneDraft(payload: CloneImportPayload) {
     }
     return { storeId, slug };
   });
+  const cmsEntries = Object.entries(payload.pages).filter(([handle]) => handle !== "home");
+  const designProfile = { imported: true, source: "clone", theme: payload.theme, navigationItems: payload.navigation.map((item, index) => ({ id: `clone-${index + 1}`, ...item, visible: true, kind: "custom" })) };
+  const pagesSetting = { home: payload.pages.home, cms: cmsEntries.map(([handle, page]) => ({ handle, title: page.title, category: page.category, reviewRequired: page.reviewRequired })) };
+  const metadata = { source: "clone", sourceUrl: payload.source_url, platform: payload.platform, clonedAt: payload.settings.clonedAt || new Date().toISOString(), productsCount: payload.catalog.length, pagesCount: cmsEntries.length, sections: { theme: "success", pages: "success", catalog: "pending", navigation: "success" } };
+  // Persist settings through the shared idempotent helper after the catalog
+  // transaction. This avoids driver-specific upsert behavior inside tx and
+  // keeps retries safe on the unique (storeId, key) constraint.
+  await setStoreSettingValue(result.storeId, "design_profile", JSON.stringify(designProfile), "Design et navigation importés en brouillon depuis un site public.");
+  await setStoreSettingValue(result.storeId, "clone_import_pages", JSON.stringify(pagesSetting), "Index des pages importées ; le contenu complet est conservé dans storeCmsPages.");
+  await setStoreSettingValue(result.storeId, "clone_import_metadata", JSON.stringify(metadata), "Métadonnées techniques de l’import clone.");
   return { ...result, productsImported, variantsImported, imagesImported, pagesImported: pagesEssential + pagesToReview + pagesArchived, pagesEssential, pagesToReview, pagesArchived, blocksImported, warnings: warnings.slice(0, 50) };
 }
 
