@@ -3476,7 +3476,7 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
     if (normalizedHost === "test-pickybars.mazigho.ch") {
       const testStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
         .from(stores).innerJoin(storeSettings, eq(storeSettings.storeId, stores.id))
-        .where(and(eq(storeSettings.key, "clone_import_metadata"), like(storeSettings.value, "%pickybars.com%"), eq(stores.isPlatformStore, 0), inArray(stores.status, ["setup", "limited", "active"]))).limit(1);
+        .where(and(eq(storeSettings.key, "clone_import_metadata"), like(storeSettings.value, "%pickybars.com%"), eq(stores.isPlatformStore, 0), inArray(stores.status, ["limited", "active"]))).orderBy(desc(stores.id)).limit(1);
       if (testStore[0]) return testStore[0];
     }
     const byDomain = normalizedHost
