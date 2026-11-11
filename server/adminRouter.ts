@@ -40,7 +40,7 @@ import { generateImage, listImageModels } from "./_core/imageGeneration";
 import { buildStudioImageGenerationPrompt, studioImageFormats, studioImageStyles } from "./services/studioImageGenerationPolicy";
 import { keyInHandLandingContentSchema, proLandingContentSchema } from "../shared/keyInHandLanding";
 import { getClonerStatus, getCloneStatus, startClone } from "./services/clonerProxy";
-import { cloneImportPayloadSchema, importCloneDraft } from "./services/import-router";
+import { cloneImportPayloadSchema, ensureImportedStoreStudioProvisioning, importCloneDraft } from "./services/import-router";
 
 /** Supplier imports are a Pro benefit unless Studio explicitly grants one client store. */
 async function assertDropshippingAccess(storeId: number | undefined) {
@@ -2815,6 +2815,7 @@ export const adminRouter = router({
     }),
     getOwnerExistingCatalogue: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       try {
+        await ensureImportedStoreStudioProvisioning(input.storeId);
         return await db.getStudioOwnerExistingCatalogue(input.storeId);
       } catch (error) {
         const code = error instanceof Error ? error.message : "";

@@ -5,7 +5,7 @@ import { z } from "zod";
 import * as schema from "../../drizzle/schema";
 import { getDb, setStoreSettingValue } from "../db";
 
-const { users, stores, storeMemberships, storeSettings, storeCmsPages, categories, products, productImages, ownerProductVariants } = schema;
+const { users, stores, storeMemberships, storeSettings, storeProvisioningDrafts, storeCmsPages, categories, products, productImages, ownerProductVariants } = schema;
 
 const forbiddenKeys = /^(payment|checkout|customer|client|order|commande|token|secret|stripe|webhook|password|credential|billing|paiement)(?:_|[A-Z]|$)/i;
 const executableContent = /<\s*(script|iframe|object|embed|form)\b|javascript\s*:|(?:^|[\s<])on[a-z]+\s*=|data\s*:\s*text\/html/i;
@@ -156,6 +156,43 @@ export async function importCloneDraft(payload: CloneImportPayload) {
   await setStoreSettingValue(result.storeId, "clone_import_pages", JSON.stringify(pagesSetting), "Index des pages importées ; le contenu complet est conservé dans storeCmsPages.");
   await setStoreSettingValue(result.storeId, "clone_import_metadata", JSON.stringify(metadata), "Métadonnées techniques de l’import clone.");
   return { ...result, productsImported, variantsImported, imagesImported, pagesImported: pagesEssential + pagesToReview + pagesArchived, pagesEssential, pagesToReview, pagesArchived, blocksImported, warnings: warnings.slice(0, 50) };
+}
+
+export async function ensureImportedStoreStudioProvisioning(storeId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_UNAVAILABLE");
+  const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  if (!store) throw new Error("STORE_NOT_FOUND");
+  if (store.isPlatformStore || store.status !== "setup") return;
+  const settingRows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).where(eq(storeSettings.storeId, storeId));
+  const settings = new Map(settingRows.map(row => [row.key, row.value]));
+  if (settings.get("provisioning_mode") === "gift" && Number(settings.get("provisioning_draft_id")) > 0) return;
+  const [owner] = await db.select({ userId: storeMemberships.userId, name: users.name, email: users.email })
+    .from(storeMemberships).innerJoin(users, eq(users.id, storeMemberships.userId))
+    .where(and(eq(storeMemberships.storeId, storeId), eq(storeMemberships.role, "owner"), eq(storeMemberships.status, "active"))).limit(1);
+  if (!owner?.userId || !owner.email) throw new Error("STORE_OWNER_MISSING");
+  const preferredCurrency = (settings.get("currency") || "CHF").slice(0, 3).toUpperCase();
+  const [draft] = await db.insert(storeProvisioningDrafts).values({
+    displayName: store.displayName, requestedDomain: store.primaryDomain,
+    ownerName: (owner.name || "Opérateur MAZIGHO").slice(0, 160), ownerEmail: owner.email,
+    businessType: "autre", factoryModel: "blank", provisioningTemplate: "standard",
+    launchMarket: "custom", paymentRoute: "stripe_connect", preferredCurrency,
+    status: "ready_for_confirmation", notes: "Brouillon Studio créé automatiquement pour un import de boutique existant.",
+    provisionedStoreId: store.id, provisionedAt: new Date(), createdByUserId: owner.userId,
+  }).$returningId();
+  const draftId = Number(draft?.id);
+  if (!draftId) throw new Error("PROVISIONING_DRAFT_CREATE_FAILED");
+  await setStoreSettingValue(store.id, "provisioning_mode", "gift", "Boutique importée, sans facturation automatique ni ouverture publique.");
+  await setStoreSettingValue(store.id, "provisioning_draft_id", String(draftId), "Brouillon Studio source de la préparation de l’import.");
+  await setStoreSettingValue(store.id, "store_currency_code", preferredCurrency, "Devise détectée pour la préparation de l’import.");
+  const design = settings.get("design_profile");
+  try {
+    const profile = design ? JSON.parse(design) as Record<string, unknown> : {};
+    if (!String(profile.brandName || "").trim()) profile.brandName = store.displayName;
+    await setStoreSettingValue(store.id, "design_profile", JSON.stringify(profile), "Identité importée en préparation privée.");
+  } catch {
+    await setStoreSettingValue(store.id, "design_profile", JSON.stringify({ imported: true, brandName: store.displayName }), "Identité importée en préparation privée.");
+  }
 }
 
 export function registerCloneImportRoute(app: Express) {
