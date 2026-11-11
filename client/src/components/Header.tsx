@@ -108,7 +108,16 @@ export default function Header() {
     contact: t(locale, "contact"),
   };
 
-  const navigationItems = (profile.navigationItems || []).filter(item => item.visible && (!limitedShowcase || !["new", "best-sellers", "promos"].includes(item.id)));
+  const isImportedSourceNavigation = (item: any) => {
+    if (item.kind !== "custom" || typeof item.href !== "string") return false;
+    try {
+      const url = new URL(item.href, window.location.origin);
+      return url.hostname === "pickybars.com" || url.hostname === "www.pickybars.com";
+    } catch {
+      return false;
+    }
+  };
+  const navigationItems = (profile.navigationItems || []).filter(item => item.visible && !isImportedSourceNavigation(item) && (!limitedShowcase || !["new", "best-sellers", "promos"].includes(item.id)));
   const getNavigationItem = (id: string) => navigationItems.find(item => item.id === id);
   const navigationLabel = (id: string, fallback: string) => getNavigationItem(id)?.label?.trim() || fallback;
   const isNavigationVisible = (id: string) => Boolean(getNavigationItem(id));
