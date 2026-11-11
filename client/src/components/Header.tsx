@@ -108,7 +108,7 @@ export default function Header() {
     contact: t(locale, "contact"),
   };
 
-  const navigationItems = (profile.navigationItems || []).filter(item => item.visible && (limitedShowcase ? item.kind === "custom" : !["new", "best-sellers", "promos"].includes(item.id)));
+  const navigationItems = (profile.navigationItems || []).filter(item => item.visible && (limitedShowcase ? item.id.startsWith("clone-") : !["new", "best-sellers", "promos"].includes(item.id)));
   const getNavigationItem = (id: string) => navigationItems.find(item => item.id === id);
   const navigationLabel = (id: string, fallback: string) => getNavigationItem(id)?.label?.trim() || fallback;
   const isNavigationVisible = (id: string) => Boolean(getNavigationItem(id));
