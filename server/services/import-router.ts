@@ -95,10 +95,14 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
       text: text(blockProps.text || blockProps.description),
       imageUrl: image(blockProps.imageUrl),
       imageAlt: text(blockProps.imageAlt, text(blockProps.title, payload.project_name)),
-      buttonLabel: text(links[0]?.label),
-      buttonUrl: url(links[0]?.href),
-      layout: block.type === "hero" ? "spotlight" : block.type === "testimonials" ? "quote" : "split",
-      theme: block.type === "testimonials" ? "dark" : block.type === "cta" ? "primary" : "light",
+      buttonLabel: text(blockProps.buttonLabel || links[0]?.label),
+      buttonUrl: url(blockProps.buttonUrl || links[0]?.href),
+      layout: ["banner", "split", "framedSplit", "spotlight", "roundGallery"].includes(String(blockProps.layout))
+        ? blockProps.layout
+        : block.type === "hero" || block.type === "testimonials" ? "spotlight" : "split",
+      theme: ["primary", "dark", "soft", "light"].includes(String(blockProps.theme))
+        ? blockProps.theme
+        : block.type === "testimonials" ? "dark" : block.type === "cta" ? "primary" : "light",
       galleryItems: Array.isArray(blockProps.galleryItems) ? blockProps.galleryItems : [],
       enabled: true,
       position: index,

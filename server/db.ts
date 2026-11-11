@@ -13180,7 +13180,7 @@ export function normalizeDesignProfile(value: unknown): DesignProfile {
   // Dynamic homepage text banners (custom blocks)
   const textBanners: HomeTextBanner[] = [];
   if (Array.isArray(source.textBanners)) {
-    for (const raw of source.textBanners.slice(0, 8)) {
+    for (const raw of source.textBanners.slice(0, 16)) {
       if (!raw || typeof raw !== "object") continue;
       const b = raw as Record<string, unknown>;
       const id = typeof b.id === "string" && b.id.trim() ? b.id.trim().slice(0, 60) : null;
