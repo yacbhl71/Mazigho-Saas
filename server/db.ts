@@ -13329,7 +13329,18 @@ export async function getDesignProfile(storeId?: number): Promise<DesignProfile>
   const value = await getStoreSettingValue(storeId, "design_profile");
   if (!value) return { ...defaultDesignProfile };
   try {
-    return normalizeDesignProfile(JSON.parse(value));
+    const raw = JSON.parse(value) as Record<string, any>;
+    const cloneTheme = raw.imported && raw.theme && typeof raw.theme === "object" ? raw.theme : null;
+    if (cloneTheme?.colors && typeof cloneTheme.colors === "object") {
+      const colors = cloneTheme.colors as Record<string, unknown>;
+      const validHex = (input: unknown) => typeof input === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(input.trim());
+      if (validHex(colors.primary)) raw.customPrimary = String(colors.primary).trim();
+      if (validHex(colors.accent)) raw.customAccent = String(colors.accent).trim();
+      if (validHex(colors.background)) raw.customSoft = String(colors.background).trim();
+      raw.customColorsEnabled = true;
+    }
+    if (cloneTheme?.fonts && typeof cloneTheme.fonts === "object") raw.typographyId = "modern";
+    return normalizeDesignProfile(raw);
   } catch {
     return { ...defaultDesignProfile };
   }
