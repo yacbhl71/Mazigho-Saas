@@ -511,6 +511,7 @@ function Router() {
         <Route path={"/admin/studio/revue-passage/:storeId"} component={AdminStudioOwnerManualCommercialPassageReview} />
         <Route path={"/admin/studio/publication-catalogue/:storeId"} component={AdminStudioOwnerCataloguePublication} />
         <Route path={"/admin/studio/catalogue-existant/:storeId"} component={AdminStudioOwnerExistingCatalogueEditor} />
+        <Route path={"/admin/editor/:storeId"} component={AdminStudioOwnerExistingCatalogueEditor} />
         <Route path={"/admin/studio/importer-boutique"} component={AdminStudioUniversalImport} />
         <Route path={"/admin/studio/copier-boutique"} component={AdminStudioStoreCopy} />
         <Route path={"/admin/studio/creer-image"} component={AdminStudioImageGenerator} />

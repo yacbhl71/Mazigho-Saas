@@ -1510,7 +1510,7 @@ export const adminRouter = router({
       return {
         storeId: result.storeId,
         storeUrl: `/admin/stores/${result.storeId}`,
-        editorUrl: `/admin/editor/${result.storeId}`,
+        editorUrl: `/admin/studio/catalogue-existant/${result.storeId}`,
         previewUrl: `/preview/${result.storeId}`,
         summary: {
           productsImported: result.productsImported,
