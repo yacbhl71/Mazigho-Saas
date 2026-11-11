@@ -128,11 +128,19 @@ export async function importCloneDraft(payload: CloneImportPayload) {
     // Page HTML is persisted individually in storeCmsPages. Keep the legacy
     // setting compact so a 125-page import cannot overflow MySQL TEXT.
     const pagesSetting = { home: pages.home, cms: cmsEntries.map(([handle, page]) => ({ handle, title: page.title, category: page.category, reviewRequired: page.reviewRequired })) };
-    await tx.insert(storeSettings).values([
+    // Do not use one plain multi-row INSERT here: storeSettings is unique on
+    // (storeId, key), and a retry/re-import must update the existing setting.
+    // The MySQL upsert is atomic inside the surrounding transaction.
+    const storeSettingRows = [
       { storeId, key: "design_profile", value: JSON.stringify(designProfile), description: "Design et navigation importés en brouillon depuis un site public." },
       { storeId, key: "clone_import_pages", value: JSON.stringify(pagesSetting), description: "Index des pages importées ; le contenu complet est conservé dans storeCmsPages." },
       { storeId, key: "clone_import_metadata", value: JSON.stringify(metadata), description: "Métadonnées techniques de l’import clone." },
-    ]);
+    ];
+    for (const setting of storeSettingRows) {
+      await tx.insert(storeSettings).values(setting).onDuplicateKeyUpdate({
+        set: { value: setting.value, description: setting.description },
+      });
+    }
 
     const categoriesByName = new Map<string, number>();
     let categoryOrder = 0;
