@@ -162,7 +162,7 @@ export default function Home() {
     const heroText = cloneIsPickyBars ? "" : (profile.highlightText || profile.brandMessage || "Découvrez la boutique importée.");
     const cloneManifestoTitle = cloneIsPickyBars ? "DE LA VRAIE NOURRITURE. UNE ÉNERGIE ÉQUILIBRÉE." : (profile.highlightText || "Une sélection pensée pour chaque moment.");
     const cloneManifestoText = cloneIsPickyBars ? "Chaque bouchée contient suffisamment d’énergie pour alimenter un voyage à la vitesse de la lumière (ou votre prochain marathon)." : "Découvrez une sélection importée, présentée dans une vitrine claire et inspirante.";
-    const productLabel = (product: typeof cloneProducts[number] | undefined) => product?.name || product?.title || "";
+    const productLabel = (product: typeof cloneProducts[number] | undefined) => product?.title || product?.name || "";
     const pickyCategoryProducts: Array<{ label: string; product: typeof cloneProducts[number] | undefined; image?: string }> = cloneIsPickyBars ? [
       { label: "TOUS LES EN-CAS", product: cloneProducts.find(product => /10 Bar Mix Pack/i.test(productLabel(product))) || cloneProducts[0] },
       { label: "BARRES PROTÉINÉES AU BEURRE DE NOIX", product: cloneProducts.find(product => /Peanut Butterlicious/i.test(productLabel(product))) || cloneProducts[1] },
@@ -193,13 +193,7 @@ export default function Home() {
         <main>
           {pickyCategoryProducts.length > 0 && <section className="bg-white px-5 py-7 sm:px-10 lg:px-12"><div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-5 lg:grid-cols-4">{pickyCategoryProducts.map((item, index) => { const image = item.image || item.product?.images?.[0]?.imageUrl; return <Link key={`${item.label}-${index}`} href="/boutique" className="group text-center"><div className="aspect-square overflow-hidden border-[3px] border-black bg-white p-4 sm:p-7"><img src={image} alt={item.label} className="h-full w-full object-contain transition duration-300 group-hover:scale-105" loading={index > 1 ? "lazy" : "eager"} /></div><p className="mt-3 text-sm font-black uppercase leading-tight sm:text-lg">{item.label}</p></Link>; })}</div></section>}
           <section className="relative min-h-[430px] overflow-hidden bg-slate-950 text-white sm:min-h-[560px] lg:min-h-[650px]" style={heroImage ? { backgroundImage: `linear-gradient(90deg, rgba(0,0,0,.42), rgba(0,0,0,.02)), url(${heroImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
-            <div className="relative mx-auto flex min-h-[430px] max-w-[1440px] items-center px-7 py-16 sm:min-h-[560px] sm:px-16 lg:min-h-[650px]">
-              <div className="max-w-[600px]">
-                <h1 className="max-w-xl text-4xl font-black leading-[.98] tracking-tight sm:text-6xl lg:text-7xl">{heroTitle}</h1>
-                {heroText && <p className="mt-6 max-w-lg text-base font-medium leading-7 text-white/90">{heroText}</p>}
-                <Link href="/boutique" className="mt-8 inline-flex min-h-14 items-center rounded-full border-[3px] border-black bg-white px-9 text-xl font-black text-slate-950 shadow-[4px_4px_0_#000] transition hover:translate-y-0.5 hover:shadow-[2px_2px_0_#000]">SHOP NOW <ArrowRight className="ml-3 h-6 w-6" /></Link>
-              </div>
-            </div>
+            {!cloneIsPickyBars && <div className="relative mx-auto flex min-h-[430px] max-w-[1440px] items-center px-7 py-16 sm:min-h-[560px] sm:px-16 lg:min-h-[650px]"><div className="max-w-[600px]"><h1 className="max-w-xl text-4xl font-black leading-[.98] tracking-tight sm:text-6xl lg:text-7xl">{heroTitle}</h1>{heroText && <p className="mt-6 max-w-lg text-base font-medium leading-7 text-white/90">{heroText}</p>}<Link href="/boutique" className="mt-8 inline-flex min-h-14 items-center rounded-full border-[3px] border-black bg-white px-9 text-xl font-black text-slate-950 shadow-[4px_4px_0_#000] transition hover:translate-y-0.5 hover:shadow-[2px_2px_0_#000]">SHOP NOW <ArrowRight className="ml-3 h-6 w-6" /></Link></div></div>}
           </section>
 
           {heroProducts.length > 0 && <section className="border-b border-slate-100 bg-white px-4 py-8 sm:px-8"><div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 overflow-hidden">{heroProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={`rail-${product.id}`} href={`/produit/${product.slug}`} aria-label={product.name} className="group flex h-16 min-w-[80px] flex-1 items-center justify-center sm:h-24"><div className="h-full w-full transition duration-300 group-hover:-translate-y-1 group-hover:scale-105">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-contain" loading="lazy" /> : null}</div></Link>; })}</div></section>}
