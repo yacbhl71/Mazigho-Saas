@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { ArrowRight, ArrowUpRight, Check, ChevronRight, Quote, Sparkles, Star } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, ChevronRight, Quote, Search, ShoppingCart, Sparkles, Star, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useStorePrice } from "@/hooks/useStorePrice";
@@ -151,38 +151,60 @@ export default function Home() {
   if (limitedShowcase && isClientStore) {
     const cloneProducts = catalogProducts.slice(0, 12);
     const heroProducts = cloneProducts.slice(0, 7);
-    const cloneCategories = storeDiscoveryTiles.slice(0, 6).map((tile, index) => ({
-      ...tile,
-      image: tile.image || cloneProducts[index]?.images?.[0]?.imageUrl || cloneProducts[0]?.images?.[0]?.imageUrl || "",
-    }));
     const cloneBrand = profile.brandName || "Votre boutique";
     const cloneIsPickyBars = /picky bars/i.test(cloneBrand);
-    const cloneManifestoTitle = cloneIsPickyBars ? "Real food. balanced energy." : (profile.highlightText || "Une sélection pensée pour chaque moment.");
-    const cloneManifestoText = cloneIsPickyBars ? "Each bite contains enough energy to power a light-speed journey (or your next marathon)." : "Découvrez une sélection importée, présentée dans une vitrine claire et inspirante.";
     const importedVisualBlocks = (profile.textBanners || []).filter(banner => banner.enabled && (banner.imageUrl || banner.text || banner.buttonLabel));
+    const sourceHero = importedVisualBlocks.find(block => /Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || ""));
+    const sourceBlocks = importedVisualBlocks.filter(block => !/Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || ""));
+    const heroImage = cloneIsPickyBars ? (sourceHero?.imageUrl || profile.highlightImageUrl) : profile.highlightImageUrl;
+    const heroTitle = cloneIsPickyBars ? "Food for “I’m on top of the world” moments." : (profile.highlightTitle || cloneBrand);
+    const heroText = cloneIsPickyBars ? "" : (profile.highlightText || profile.brandMessage || "Découvrez la boutique importée.");
+    const cloneManifestoTitle = cloneIsPickyBars ? "DE LA VRAIE NOURRITURE. UNE ÉNERGIE ÉQUILIBRÉE." : (profile.highlightText || "Une sélection pensée pour chaque moment.");
+    const cloneManifestoText = cloneIsPickyBars ? "Chaque bouchée contient suffisamment d’énergie pour alimenter un voyage à la vitesse de la lumière (ou votre prochain marathon)." : "Découvrez une sélection importée, présentée dans une vitrine claire et inspirante.";
+    const pickyCategoryProducts: Array<{ label: string; product: typeof cloneProducts[number] | undefined; image?: string }> = cloneIsPickyBars ? [
+      { label: "TOUS LES EN-CAS", product: cloneProducts.find(product => /10 Bar Mix Pack/i.test(product.name)) || cloneProducts[0] },
+      { label: "BARRES PROTÉINÉES AU BEURRE DE NOIX", product: cloneProducts.find(product => /Peanut Butterlicious/i.test(product.name)) || cloneProducts[1] },
+      { label: "GRUAU DE PERFORMANCE", product: cloneProducts.find(product => /Performance Oatmeal/i.test(product.name)) || cloneProducts[2] },
+      { label: "MEILLEURES VENTES", product: cloneProducts.find(product => /20 Bar Mix Pack/i.test(product.name)) || cloneProducts[3] },
+    ] : storeDiscoveryTiles.slice(0, 4).map(tile => ({ label: tile.title, product: cloneProducts[0], image: tile.image }));
+    const internalUrl = (url: string | undefined) => url && url.startsWith("/") ? url : "/boutique";
     return (
-      <div className="min-h-screen bg-white text-slate-900">
-        <Header />
+      <div className="min-h-screen bg-white text-slate-950">
+        <div className="bg-black px-4 py-2 text-center text-[11px] font-bold uppercase tracking-[0.08em] text-white sm:text-sm">{cloneIsPickyBars ? "LIVRAISON GRATUITE POUR LES COMMANDES DE 50 $ ET PLUS" : "Vitrine en préparation · commandes momentanément fermées"}</div>
+        <header className="relative z-20 bg-white px-5 py-4 sm:px-10 lg:px-12">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-6">
+            <Link href="/" aria-label={`Accueil ${cloneBrand}`} className="shrink-0">
+              {profile.brandLogoUrl ? <img src={profile.brandLogoUrl} alt={cloneBrand} className="h-16 w-16 object-contain" /> : <div className="grid h-16 w-16 place-items-center bg-black px-2 text-center text-xs font-black uppercase leading-none text-white">{cloneBrand}</div>}
+            </Link>
+            <nav className="hidden items-center gap-8 text-sm font-black uppercase tracking-tight md:flex">
+              <Link href="/boutique" className="hover:underline">EN-CAS⌄</Link>
+              <Link href="/a-propos" className="hover:underline">NOTRE HISTOIRE⌄</Link>
+              <Link href="/a-propos" className="hover:underline">CLUB DES DIFFICILES</Link>
+            </nav>
+            <div className="flex items-center gap-4" aria-label="Actions boutique">
+              <Link href="/mon-compte" aria-label="Mon compte"><UserRound className="h-6 w-6" strokeWidth={1.8} /></Link>
+              <Link href="/boutique" aria-label="Rechercher"><Search className="h-6 w-6" strokeWidth={1.8} /></Link>
+              <Link href="/panier" aria-label="Panier" className="pointer-events-none opacity-40"><ShoppingCart className="h-6 w-6" strokeWidth={1.8} /></Link>
+            </div>
+          </div>
+        </header>
         <main>
-          <section className="relative min-h-[470px] overflow-hidden bg-slate-950 text-white sm:min-h-[560px] lg:min-h-[650px]" style={profile.highlightImageUrl ? { backgroundImage: `linear-gradient(90deg, rgba(2,6,23,.72), rgba(2,6,23,.22), rgba(2,6,23,.02)), url(${profile.highlightImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-slate-950/10" />
-            <div className="relative mx-auto flex min-h-[470px] max-w-7xl items-center px-6 py-20 sm:min-h-[560px] sm:px-10 lg:min-h-[650px]">
-              <div className="max-w-xl">
-                <p className="text-xs font-black uppercase tracking-[0.3em] text-white/85">{profile.highlightEyebrow || "Présentation"}</p>
-                <h1 className="mt-5 max-w-2xl text-5xl font-black leading-[.94] tracking-tight sm:text-7xl">{profile.highlightTitle || cloneBrand}</h1>
-                <p className="mt-7 max-w-lg text-base font-medium leading-7 text-white/90">{profile.highlightText || profile.brandMessage || "Découvrez la boutique importée."}</p>
-                <Link href="/boutique" className="mt-8 inline-flex min-h-14 items-center rounded-full border-2 border-slate-950 bg-white px-9 text-base font-black text-slate-950 shadow-xl transition hover:-translate-y-0.5 hover:bg-slate-100">SHOP NOW <ArrowRight className="ml-3 h-5 w-5" /></Link>
+          {pickyCategoryProducts.length > 0 && <section className="bg-white px-5 py-7 sm:px-10 lg:px-12"><div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-5 lg:grid-cols-4">{pickyCategoryProducts.map((item, index) => { const image = item.image || item.product?.images?.[0]?.imageUrl; return <Link key={`${item.label}-${index}`} href="/boutique" className="group text-center"><div className="aspect-square overflow-hidden border-[3px] border-black bg-white p-4 sm:p-7"><img src={image} alt={item.label} className="h-full w-full object-contain transition duration-300 group-hover:scale-105" loading={index > 1 ? "lazy" : "eager"} /></div><p className="mt-3 text-sm font-black uppercase leading-tight sm:text-lg">{item.label}</p></Link>; })}</div></section>}
+          <section className="relative min-h-[430px] overflow-hidden bg-slate-950 text-white sm:min-h-[560px] lg:min-h-[650px]" style={heroImage ? { backgroundImage: `linear-gradient(90deg, rgba(0,0,0,.42), rgba(0,0,0,.02)), url(${heroImage})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+            <div className="relative mx-auto flex min-h-[430px] max-w-[1440px] items-center px-7 py-16 sm:min-h-[560px] sm:px-16 lg:min-h-[650px]">
+              <div className="max-w-[600px]">
+                <h1 className="max-w-xl text-4xl font-black leading-[.98] tracking-tight sm:text-6xl lg:text-7xl">{heroTitle}</h1>
+                {heroText && <p className="mt-6 max-w-lg text-base font-medium leading-7 text-white/90">{heroText}</p>}
+                <Link href="/boutique" className="mt-8 inline-flex min-h-14 items-center rounded-full border-[3px] border-black bg-white px-9 text-xl font-black text-slate-950 shadow-[4px_4px_0_#000] transition hover:translate-y-0.5 hover:shadow-[2px_2px_0_#000]">SHOP NOW <ArrowRight className="ml-3 h-6 w-6" /></Link>
               </div>
             </div>
           </section>
 
-          {heroProducts.length > 0 && <section className="border-b border-slate-100 bg-white px-4 py-9 sm:px-8"><div className="mx-auto grid max-w-7xl grid-cols-3 items-center gap-5 sm:grid-cols-4 lg:grid-cols-7">{heroProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={`rail-${product.id}`} href={`/produit/${product.slug}`} aria-label={product.name} className="group flex h-20 items-center justify-center sm:h-24"><div className="h-full w-full transition duration-300 group-hover:-translate-y-1 group-hover:scale-105">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-contain" loading="lazy" /> : <span className="grid h-full place-items-center text-xs text-slate-400">{product.name}</span>}</div></Link>; })}</div></section>}
+          {heroProducts.length > 0 && <section className="border-b border-slate-100 bg-white px-4 py-8 sm:px-8"><div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 overflow-hidden">{heroProducts.map(product => { const imageUrl = product.images?.[0]?.imageUrl; return <Link key={`rail-${product.id}`} href={`/produit/${product.slug}`} aria-label={product.name} className="group flex h-16 min-w-[80px] flex-1 items-center justify-center sm:h-24"><div className="h-full w-full transition duration-300 group-hover:-translate-y-1 group-hover:scale-105">{imageUrl ? <img src={imageUrl} alt={product.name} className="h-full w-full object-contain" loading="lazy" /> : null}</div></Link>; })}</div></section>}
 
           <section className="bg-white px-6 py-16 text-center sm:py-24"><div className="mx-auto max-w-3xl"><p className="text-3xl font-black uppercase tracking-[-0.04em] text-slate-950 sm:text-5xl">{cloneManifestoTitle}</p><p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">{cloneManifestoText}</p></div></section>
 
-          {importedVisualBlocks.slice(0, 6).map((block, index) => <section key={block.id || `visual-${index}`} className={`${block.theme === "dark" ? "bg-slate-950 text-white" : "bg-white text-slate-950"} border-y border-slate-100 px-6 py-14 sm:px-10 sm:py-20`}><div className={`mx-auto grid max-w-7xl items-center gap-10 ${block.imageUrl ? "lg:grid-cols-2" : "max-w-3xl text-center"}`}><div className={index % 2 === 1 && block.imageUrl ? "lg:order-2" : ""}><p className="text-xs font-black uppercase tracking-[0.28em]" style={{ color: palette.accent }}>{block.eyebrow}</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">{block.title}</h2>{block.text && <p className={`mt-5 text-base leading-7 ${block.theme === "dark" ? "text-white/75" : "text-slate-600"}`}>{block.text}</p>}{block.buttonLabel && block.buttonUrl && <Link href={block.buttonUrl} className="mt-7 inline-flex rounded-full bg-slate-950 px-6 py-3 text-sm font-black text-white">{block.buttonLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link>}</div>{block.imageUrl && <div className={`overflow-hidden rounded-xl ${index % 2 === 1 ? "lg:order-1" : ""}`}><img src={block.imageUrl} alt={block.imageAlt || block.title} className="max-h-[520px] w-full object-cover" loading="lazy" /></div>}</div></section>)}
-
-          {cloneCategories.length > 0 && <section className="border-b border-slate-100 bg-white px-4 pb-16 sm:px-8"><div className="mx-auto grid max-w-7xl grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">{cloneCategories.map(tile => <Link key={tile.href} href={tile.href} className="group text-center"><div className="aspect-square overflow-hidden rounded-full bg-slate-50"><img src={tile.image} alt={tile.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" /></div><h3 className="mt-4 text-sm font-black uppercase tracking-tight text-slate-950">{tile.title}</h3></Link>)}</div></section>}
+          {sourceBlocks.slice(0, 6).map((block, index) => <section key={block.id || `visual-${index}`} className={`${index % 2 === 0 ? "bg-white" : "bg-slate-950 text-white"} border-y border-slate-100 px-6 py-14 sm:px-10 sm:py-20`}><div className={`mx-auto grid max-w-7xl items-center gap-10 ${block.imageUrl ? "lg:grid-cols-2" : "max-w-3xl text-center"}`}><div className={index % 2 === 1 && block.imageUrl ? "lg:order-2" : ""}><p className="text-xs font-black uppercase tracking-[0.28em]" style={{ color: palette.accent }}>{block.eyebrow}</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">{block.title}</h2>{block.text && <p className={`mt-5 text-base leading-7 ${index % 2 === 0 ? "text-slate-600" : "text-white/75"}`}>{block.text}</p>}{block.buttonLabel && <Link href={internalUrl(block.buttonUrl)} className="mt-7 inline-flex rounded-full bg-black px-6 py-3 text-sm font-black text-white">{block.buttonLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link>}</div>{block.imageUrl && <div className={`overflow-hidden ${index % 2 === 1 ? "lg:order-1" : ""}`}><img src={block.imageUrl} alt={block.imageAlt || block.title} className="max-h-[520px] w-full object-cover" loading="lazy" /></div>}</div></section>)}
 
           <section className="bg-slate-50 px-4 py-16 sm:px-8 sm:py-20">
             <div className="mx-auto max-w-7xl">
@@ -191,6 +213,7 @@ export default function Home() {
             </div>
           </section>
         </main>
+        {cloneIsPickyBars && <div className="sticky bottom-0 z-30 bg-[#08a9a2] px-4 py-2 text-center text-xs font-black uppercase tracking-[0.18em] text-white">GAGNEZ DES POINTS SPÉCIAUX⌃</div>}
       </div>
     );
   }
