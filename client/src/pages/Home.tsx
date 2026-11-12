@@ -157,16 +157,17 @@ export default function Home() {
     const importedVisualBlocks = (profile.textBanners || []).filter(banner => banner.enabled && (banner.imageUrl || banner.text || banner.buttonLabel));
     const sourceHero = importedVisualBlocks.find(block => /Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || ""));
     const sourceBlocks = importedVisualBlocks.filter(block => !/Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || ""));
-    const heroImage = cloneIsPickyBars ? (sourceHero?.imageUrl || profile.highlightImageUrl) : profile.highlightImageUrl;
+    const heroImage = cloneIsPickyBars ? (sourceHero?.imageUrl || "https://pickybars.com/cdn/shop/files/Dec_Hero_Picky.png?v=1764698108&width=2000") : profile.highlightImageUrl;
     const heroTitle = cloneIsPickyBars ? "Food for “I’m on top of the world” moments." : (profile.highlightTitle || cloneBrand);
     const heroText = cloneIsPickyBars ? "" : (profile.highlightText || profile.brandMessage || "Découvrez la boutique importée.");
     const cloneManifestoTitle = cloneIsPickyBars ? "DE LA VRAIE NOURRITURE. UNE ÉNERGIE ÉQUILIBRÉE." : (profile.highlightText || "Une sélection pensée pour chaque moment.");
     const cloneManifestoText = cloneIsPickyBars ? "Chaque bouchée contient suffisamment d’énergie pour alimenter un voyage à la vitesse de la lumière (ou votre prochain marathon)." : "Découvrez une sélection importée, présentée dans une vitrine claire et inspirante.";
+    const productLabel = (product: typeof cloneProducts[number] | undefined) => product?.name || product?.title || "";
     const pickyCategoryProducts: Array<{ label: string; product: typeof cloneProducts[number] | undefined; image?: string }> = cloneIsPickyBars ? [
-      { label: "TOUS LES EN-CAS", product: cloneProducts.find(product => /10 Bar Mix Pack/i.test(product.name)) || cloneProducts[0] },
-      { label: "BARRES PROTÉINÉES AU BEURRE DE NOIX", product: cloneProducts.find(product => /Peanut Butterlicious/i.test(product.name)) || cloneProducts[1] },
-      { label: "GRUAU DE PERFORMANCE", product: cloneProducts.find(product => /Performance Oatmeal/i.test(product.name)) || cloneProducts[2] },
-      { label: "MEILLEURES VENTES", product: cloneProducts.find(product => /20 Bar Mix Pack/i.test(product.name)) || cloneProducts[3] },
+      { label: "TOUS LES EN-CAS", product: cloneProducts.find(product => /10 Bar Mix Pack/i.test(productLabel(product))) || cloneProducts[0] },
+      { label: "BARRES PROTÉINÉES AU BEURRE DE NOIX", product: cloneProducts.find(product => /Peanut Butterlicious/i.test(productLabel(product))) || cloneProducts[1] },
+      { label: "GRUAU DE PERFORMANCE", product: cloneProducts.find(product => /Performance Oatmeal/i.test(productLabel(product))) || cloneProducts[2] },
+      { label: "MEILLEURES VENTES", product: cloneProducts.find(product => /20 Bar Mix Pack/i.test(productLabel(product))) || cloneProducts[3] },
     ] : storeDiscoveryTiles.slice(0, 4).map(tile => ({ label: tile.title, product: cloneProducts[0], image: tile.image }));
     const internalUrl = (url: string | undefined) => url && url.startsWith("/") ? url : "/boutique";
     return (
