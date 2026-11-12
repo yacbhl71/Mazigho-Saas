@@ -38,6 +38,7 @@ export type HomeTextBanner = {
   buttonLabel: string;
   buttonUrl: string;
   imageUrl?: string;
+  mobileImageUrl?: string;
   imageAlt?: string;
   layout?: "banner" | "split" | "framedSplit" | "spotlight" | "roundGallery";
   theme?: "primary" | "dark" | "soft" | "light";

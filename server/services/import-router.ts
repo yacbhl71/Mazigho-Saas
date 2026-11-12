@@ -87,6 +87,19 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
   const normalizedVisualBlocks = visualBlocks.map((block, index) => {
     const blockProps = block.props || {};
     const links = Array.isArray(blockProps.links) ? blockProps.links.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+    const galleryItems = Array.isArray(blockProps.galleryItems)
+      ? blockProps.galleryItems.slice(0, 16).map((item, galleryIndex) => {
+        const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return {
+          id: text(entry.id, `gallery-${index + 1}-${galleryIndex + 1}`),
+          label: text(entry.title || entry.label),
+          text: text(entry.text || entry.description),
+          imageUrl: image(entry.imageUrl || entry.image || entry.src),
+          imageAlt: text(entry.imageAlt || entry.alt, text(entry.title || entry.label, payload.project_name)),
+          href: url(entry.href || entry.url),
+        };
+      }).filter(item => item.imageUrl || item.label || item.text)
+      : [];
     return {
       id: `clone-visual-${index + 1}`,
       type: block.type,
@@ -94,6 +107,7 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
       title: text(blockProps.title, payload.project_name),
       text: text(blockProps.text || blockProps.description),
       imageUrl: image(blockProps.imageUrl),
+      mobileImageUrl: image(blockProps.mobileImageUrl || blockProps.mobileImage || blockProps.imageMobile),
       imageAlt: text(blockProps.imageAlt, text(blockProps.title, payload.project_name)),
       buttonLabel: text(blockProps.buttonLabel || links[0]?.label),
       buttonUrl: url(blockProps.buttonUrl || links[0]?.href),
@@ -103,7 +117,7 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
       theme: ["primary", "dark", "soft", "light"].includes(String(blockProps.theme))
         ? blockProps.theme
         : block.type === "testimonials" ? "dark" : block.type === "cta" ? "primary" : "light",
-      galleryItems: Array.isArray(blockProps.galleryItems) ? blockProps.galleryItems : [],
+      galleryItems,
       enabled: true,
       position: index,
     };
