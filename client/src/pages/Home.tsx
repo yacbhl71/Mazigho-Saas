@@ -132,6 +132,7 @@ export default function Home() {
     };
   });
   const localizedDiscoveryTiles = isClientStore ? storeDiscoveryTiles : platformDiscoveryTiles;
+  const importedCloneStore = isClientStore && /picky bars/i.test(profile.brandName || "");
 
   const orderedKeys = profile.homeOrder?.length ? profile.homeOrder : ["discovery", "story", "testimonials", "editorial", "featured"];
   const orderIndex = (key: string) => { const index = orderedKeys.indexOf(key); return index === -1 ? 90 : index; };
@@ -148,7 +149,7 @@ export default function Home() {
     </div>;
   }
 
-  if (limitedShowcase && isClientStore) {
+  if ((limitedShowcase || importedCloneStore) && isClientStore) {
     const cloneProducts = catalogProducts.slice(0, 12);
     const heroProducts = cloneProducts.slice(0, 7);
     const cloneBrand = profile.brandName || "Votre boutique";
