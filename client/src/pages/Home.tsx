@@ -159,7 +159,7 @@ export default function Home() {
     const cloneBrand = profile.brandName || "Votre boutique";
     const cloneIsPickyBars = /picky bars/i.test(cloneBrand);
     const importedVisualBlocks = (profile.textBanners || []).filter(banner => banner.enabled && (banner.imageUrl || banner.text || banner.buttonLabel));
-    const sourceHero = importedVisualBlocks.find(block => /Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || "")) || importedVisualBlocks.find(block => block.imageUrl);
+    const sourceHero = importedVisualBlocks.find(block => block.type === "hero") || importedVisualBlocks.find(block => /Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || "")) || importedVisualBlocks.find(block => block.imageUrl);
     const sourceBlocks = importedVisualBlocks.filter(block => block !== sourceHero && !/Dec_Hero_Picky|Picky_Hero_mobile/i.test(block.imageUrl || ""));
     const galleryBlocks = sourceBlocks.filter(block => (block.galleryItems?.length || 0) > 0);
     const heroImage = sourceHero?.imageUrl || profile.highlightImageUrl;

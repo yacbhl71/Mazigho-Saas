@@ -12709,6 +12709,7 @@ export type DesignProfileInput = Partial<Omit<DesignProfile, "navigationItems">>
 
 export type HomeTextBanner = {
   id: string;
+  type?: string;
   eyebrow: string;
   title: string;
   text: string;
@@ -13202,6 +13203,7 @@ export function normalizeDesignProfile(value: unknown): DesignProfile {
       }
       textBanners.push({
         id,
+        type: typeof b.type === "string" ? b.type.trim().slice(0, 80) : "custom",
         title,
         eyebrow: typeof b.eyebrow === "string" ? b.eyebrow.trim().slice(0, 120) : "",
       text: typeof b.text === "string" ? b.text.trim().slice(0, 600) : "",

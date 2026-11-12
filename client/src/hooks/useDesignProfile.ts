@@ -32,6 +32,7 @@ export type RoundGalleryItem = {
 
 export type HomeTextBanner = {
   id: string;
+  type?: string;
   eyebrow: string;
   title: string;
   text: string;
