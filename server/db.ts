@@ -1793,8 +1793,22 @@ export async function getStudioOwnerCommercialPublicationPreflight(storeId: numb
     getStudioOwnerProductDrafts(storeId),
     getStudioOwnerProductOperationDrafts(storeId),
   ]);
+  let preparedProducts = products.products;
+  if (!preparedProducts.length) {
+    const existing = await getStudioOwnerExistingCatalogue(storeId);
+    preparedProducts = existing.products
+      .filter(product => product.status === "active")
+      .map(product => ({
+        id: String(product.id),
+        name: product.name,
+        description: product.description || "Fiche produit privée préparée pour la revue.",
+        collectionId: String(product.categoryId),
+        priceCents: product.price,
+        featured: product.featured,
+      }));
+  }
   const simulation = buildStudioPrivateCartSimulation({
-    products: products.products,
+    products: preparedProducts,
     collections: products.collections,
     operations: operations.operations,
     lines: [],
@@ -1804,9 +1818,9 @@ export async function getStudioOwnerCommercialPublicationPreflight(storeId: numb
     status: builder.store.status,
     hasSavedBuilderConfiguration: builder.hasSavedConfiguration,
     collectionCount: collections.collections.length,
-    hasSavedProducts: products.hasSavedProducts,
-    productCount: products.products.length,
-    pricedProductCount: products.products.filter(product => product.priceCents > 0).length,
+    hasSavedProducts: products.hasSavedProducts || preparedProducts.length > 0,
+    productCount: preparedProducts.length,
+    pricedProductCount: preparedProducts.filter(product => product.priceCents > 0).length,
     hasSavedOperations: operations.hasSavedOperations,
     cartEligibleProductCount,
   });
