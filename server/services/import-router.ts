@@ -291,7 +291,8 @@ export function registerCloneImportRoute(app: Express) {
     } catch (error) {
       if (error instanceof Error && error.message === "USER_NOT_FOUND") return res.status(404).json({ success: false, error: "USER_NOT_FOUND" });
       if (error instanceof Error && error.message === "DATABASE_UNAVAILABLE") return res.status(503).json({ success: false, error: "DATABASE_UNAVAILABLE" });
-      return next(error);
+      console.error("[clone-import] import failed", error instanceof Error ? error.message : "unknown error");
+      return res.status(500).json({ success: false, error: "IMPORT_FAILED", message: error instanceof Error ? error.message.slice(0, 240) : "Import failed" });
     }
   });
 }
