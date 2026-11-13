@@ -1709,7 +1709,15 @@ export async function getStudioOwnerProductOperationDrafts(storeId: number) {
   } catch {
     storedDrafts = null;
   }
-  const products = productSnapshot.products.map(product => ({ id: product.id, name: product.name }));
+  // Some Studio boutiques are prepared through the existing-catalogue editor
+  // rather than the separate product-draft wizard. In that case the former
+  // implementation returned an empty stock screen even though private
+  // catalogue fiches already existed. Keep draft-wizard precedence, then
+  // fall back to the private catalogue without exposing or changing anything
+  // public.
+  const products = productSnapshot.products.length
+    ? productSnapshot.products.map(product => ({ id: product.id, name: product.name }))
+    : (await getStudioOwnerExistingCatalogue(storeId)).products.map(product => ({ id: String(product.id), name: product.name }));
   const operations = normalizeStudioProductOperationDrafts(storedDrafts, products);
   return {
     privateProductOperationsEditor: true as const,
