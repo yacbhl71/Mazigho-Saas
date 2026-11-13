@@ -12736,6 +12736,7 @@ export type FooterSocialLink = {
 };
 
 export type DesignProfile = {
+  themeId?: StorefrontThemeId;
   paletteId: "terracotta" | "sage" | "midnight" | "rose" | "violet";
   typographyId: "editorial" | "modern" | "classic";
   brandName: string;
@@ -12867,6 +12868,7 @@ export type DesignProfile = {
 };
 
 export const defaultDesignProfile: DesignProfile = {
+  themeId: undefined,
   paletteId: "terracotta",
   typographyId: "editorial",
   brandName: "MAZIGHO",
@@ -13019,6 +13021,9 @@ const optimizedBuiltInImageUrls: Record<string, string> = {
 export function normalizeDesignProfile(value: unknown): DesignProfile {
   if (!value || typeof value !== "object") return { ...defaultDesignProfile };
   const source = value as Record<string, unknown>;
+  const themeId = storefrontThemeIds.includes(String(source.themeId) as StorefrontThemeId)
+    ? String(source.themeId) as StorefrontThemeId
+    : undefined;
   const paletteId = ["terracotta", "sage", "midnight", "rose", "violet"].includes(String(source.paletteId))
     ? source.paletteId as DesignProfile["paletteId"]
     : defaultDesignProfile.paletteId;
@@ -13042,7 +13047,7 @@ export function normalizeDesignProfile(value: unknown): DesignProfile {
     "footerDescription", "footerNavigationTitle", "footerCategoriesTitle", "footerHelpTitle", "footerContactText", "footerContactUrl",
     "footerDeliveryTitle", "footerDeliveryText", "footerSecureTitle", "footerSecureText", "footerServiceTitle", "footerServiceText", "footerCopyrightText",
   ] as const;
-  const normalized = { ...defaultDesignProfile, paletteId, typographyId };
+  const normalized = { ...defaultDesignProfile, themeId, paletteId, typographyId };
   for (const field of textFields) {
     if (typeof source[field] !== "string") continue;
     const value = source[field].trim();

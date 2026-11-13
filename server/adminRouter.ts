@@ -253,16 +253,16 @@ const fashionThemeTemplate = {
   paletteId: "midnight" as const,
   typographyId: "editorial" as const,
   brandName: "Atelier Urbain",
-  brandMessage: "Des pièces pensées pour composer votre silhouette.",
+  brandMessage: "Une sélection mode claire, éditoriale et facile à porter.",
   highlightEyebrow: "La sélection de saison",
-  highlightTitle: "Composez votre silhouette, à votre façon.",
-  highlightText: "Des essentiels bien coupés et des pièces fortes pour passer du quotidien aux occasions avec naturel.",
+  highlightTitle: "Les pièces qui donnent le ton.",
+  highlightText: "Des essentiels bien coupés, des nouveautés et des pièces fortes pour composer une silhouette qui vous ressemble.",
   highlightImageUrl: "/assets/themes/fashion/category-clothing.webp",
   storyTitle: "Le style se construit dans les détails.",
-  storyText: "Atelier Urbain réunit vêtements, chaussures et accessoires dans une sélection claire, moderne et facile à faire évoluer selon votre univers de marque.",
+  storyText: "Atelier Urbain réunit vêtements, chaussures et accessoires dans une sélection claire, moderne et facile à parcourir, de la nouveauté aux pièces essentielles.",
   storyImageUrl: "/assets/themes/fashion/category-accessories.webp",
-  editorialEyebrow: "Journal de saison",
-  editorialTitle: "Des matières, des silhouettes, des idées à porter.",
+  editorialEyebrow: "Le journal de la maison",
+  editorialTitle: "Des matières, des silhouettes et des idées à porter.",
   editorialImageUrl: "/assets/themes/fashion/category-shoes.webp",
   reassuranceItems: [
     { icon: "sparkles" as const, title: "Sélection éditoriale", text: "Des pièces pensées pour créer des silhouettes qui vous ressemblent." },
@@ -270,10 +270,12 @@ const fashionThemeTemplate = {
     { icon: "arrow" as const, title: "À votre rythme", text: "Des collections à parcourir selon vos envies et votre saison." },
   ],
   discoveryEyebrow: "Explorer la collection",
-  discoveryTitle: "Les essentiels de votre vestiaire",
-  discoveryText: "Découvrez les catégories de la boutique et composez votre style pièce après pièce.",
-  discoveryAllShopLabel: "Voir la collection",
+  discoveryTitle: "Un vestiaire pensé par univers",
+  discoveryText: "Découvrez les nouveautés, les mailles, les vestes, les manteaux et les accessoires qui structurent la saison.",
+  discoveryAllShopLabel: "Voir toute la collection",
   discoveryBrowseShopLabel: "Découvrir les pièces",
+  homeOrder: ["featured", "discovery", "story", "editorial", "reassurance"],
+  showTestimonials: false,
   testimonialsEyebrow: "La communauté Atelier Urbain",
   testimonialsTitle: "Vos looks inspirent la sélection.",
   testimonialsText: "Les retours vérifiés pourront être publiés ici lorsqu’ils existeront.",
@@ -299,6 +301,9 @@ const fashionThemeTemplate = {
     { id: "best-sellers", label: "", href: "/best-sellers", visible: false, kind: "system" as const },
     { id: "promos", label: "", href: "/promos", visible: false, kind: "system" as const },
     { id: "contact", label: "Journal", href: "/contact", visible: true, kind: "system" as const },
+    { id: "custom-robes", label: "Robes", href: "/boutique", visible: true, kind: "custom" as const },
+    { id: "custom-mailles", label: "Pulls & mailles", href: "/boutique", visible: true, kind: "custom" as const },
+    { id: "custom-vestes", label: "Vestes & manteaux", href: "/boutique", visible: true, kind: "custom" as const },
     { id: "custom-chaussures", label: "Chaussures", href: "/boutique", visible: true, kind: "custom" as const },
     { id: "custom-accessoires", label: "Sacs & accessoires", href: "/boutique", visible: true, kind: "custom" as const },
   ],
@@ -1316,7 +1321,7 @@ export async function applyStorefrontTheme(ctx: any, storeId: number, themeId: S
     closingVisualColor: presetProfile.closingVisualColor ?? currentProfile.closingVisualColor ?? "#1F2937",
   });
   const navigationItems = z.array(navigationItem).min(1).max(16).parse(preset.profile.navigationItems);
-  const nextProfile = { ...current, ...preset.profile, ...sections, navigationItems };
+  const nextProfile = { ...current, ...preset.profile, ...sections, navigationItems, themeId };
   const profile = source === "owner"
     ? await db.updateDesignProfile(nextProfile, storeId)
     : await db.saveStudioOwnerPublicStorefrontProfile({ storeId, profile: nextProfile });

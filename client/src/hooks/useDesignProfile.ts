@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import type { StorefrontThemeId } from "@shared/storefrontThemeCatalog";
 
 export type NavigationLabels = {
   navigationHome: string;
@@ -65,6 +66,7 @@ export type FooterSocialLink = {
 };
 
 export type DesignProfile = {
+  themeId?: StorefrontThemeId;
   paletteId: "terracotta" | "sage" | "midnight" | "rose" | "violet";
   typographyId: "editorial" | "modern" | "classic";
   brandName: string;
@@ -197,6 +199,7 @@ export type DesignProfile = {
 };
 
 export const defaultDesignProfile: DesignProfile = {
+  themeId: undefined,
   paletteId: "terracotta",
   typographyId: "editorial",
   brandName: "MAZIGHO",
