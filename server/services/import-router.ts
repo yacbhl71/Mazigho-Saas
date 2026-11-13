@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as schema from "../../drizzle/schema";
-import { getDb, setStoreSettingValue } from "../db";
+import { ensureCloneImportSchema, getDb, setStoreSettingValue } from "../db";
 
 const { users, stores, storeMemberships, storeSettings, storeProvisioningDrafts, storeCmsPages, categories, products, productImages, ownerProductVariants } = schema;
 
@@ -157,6 +157,7 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
 }
 
 export async function importCloneDraft(payload: CloneImportPayload) {
+  await ensureCloneImportSchema();
   const db = await getDb();
   if (!db) throw new Error("DATABASE_UNAVAILABLE");
   const [target] = await db.select({ id: users.id }).from(users).where(
@@ -291,8 +292,11 @@ export function registerCloneImportRoute(app: Express) {
     } catch (error) {
       if (error instanceof Error && error.message === "USER_NOT_FOUND") return res.status(404).json({ success: false, error: "USER_NOT_FOUND" });
       if (error instanceof Error && error.message === "DATABASE_UNAVAILABLE") return res.status(503).json({ success: false, error: "DATABASE_UNAVAILABLE" });
-      console.error("[clone-import] import failed", error instanceof Error ? error.message : "unknown error");
-      return res.status(500).json({ success: false, error: "IMPORT_FAILED", message: error instanceof Error ? error.message.slice(0, 240) : "Import failed" });
+      const detail = error instanceof Error
+        ? (error.cause instanceof Error ? error.cause.message : error.message)
+        : "Import failed";
+      console.error("[clone-import] import failed", detail);
+      return res.status(500).json({ success: false, error: "IMPORT_FAILED", message: detail.slice(0, 900) });
     }
   });
 }

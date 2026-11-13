@@ -5929,6 +5929,14 @@ async function ensureOwnerProductVariantsSchema() {
   return _ownerProductVariantsSchemaReady;
 }
 
+/** Ensures every catalog column/table used by the isolated clone importer exists. */
+export async function ensureCloneImportSchema() {
+  await ensureStoreCatalogScopeSchema();
+  await ensureSupplierWeightSchema();
+  await ensureSupplierVariantMappingsSchema();
+  await ensureOwnerProductVariantsSchema();
+}
+
 async function ensureProductCategorySchema() {
   if (_productCategorySchemaReady) return _productCategorySchemaReady;
 
