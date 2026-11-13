@@ -1752,9 +1752,25 @@ export async function getStudioOwnerPrivateCartSimulation(input: { storeId: numb
     getStudioOwnerProductDrafts(input.storeId),
     getStudioOwnerProductOperationDrafts(input.storeId),
   ]);
+  let products = productSnapshot.products;
+  let collections = productSnapshot.collections;
+  if (!products.length) {
+    const existing = await getStudioOwnerExistingCatalogue(input.storeId);
+    collections = existing.categories.map(category => ({ id: String(category.id), title: category.name }));
+    products = existing.products
+      .filter(product => product.status === "active")
+      .map(product => ({
+        id: String(product.id),
+        name: product.name,
+        description: product.description || "Fiche produit privée préparée pour la simulation.",
+        collectionId: String(product.categoryId),
+        priceCents: product.price,
+        featured: product.featured,
+      }));
+  }
   const simulation = buildStudioPrivateCartSimulation({
-    products: productSnapshot.products,
-    collections: productSnapshot.collections,
+    products,
+    collections,
     operations: operationSnapshot.operations,
     lines: input.lines,
   });
