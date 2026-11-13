@@ -137,6 +137,12 @@ export default function Home() {
     || (profile as unknown as { source?: string }).source === "clone"
     || profile.textBanners.some(banner => banner.id.startsWith("clone-")),
   );
+  // Older provisioned boutiques may have a null themeId even though their
+  // persisted profile already contains the fashion asset family. Detect that
+  // shape as well so the public storefront does not fall back to the generic
+  // limited showcase.
+  const usesFashionTheme = profile.themeId === "fashion"
+    || (profile.highlightImageUrl.includes("/assets/themes/fashion/") && profile.storyImageUrl.includes("/assets/themes/fashion/"));
 
   const orderedKeys = profile.homeOrder?.length ? profile.homeOrder : ["discovery", "story", "testimonials", "editorial", "featured"];
   const orderIndex = (key: string) => { const index = orderedKeys.indexOf(key); return index === -1 ? 90 : index; };
@@ -157,7 +163,7 @@ export default function Home() {
   // ayant déjà reçu un thème doit conserver sa page complète (hero, produits,
   // univers et catégories) en mode vitrine publique. Les imports clonés
   // gardent leur rendu dédié.
-  if ((importedCloneStore || (limitedShowcase && profile.themeId !== "fashion")) && isClientStore) {
+  if ((importedCloneStore || (limitedShowcase && !usesFashionTheme)) && isClientStore) {
     const cloneProducts = catalogProducts.slice(0, 12);
     const heroProducts = cloneProducts.slice(0, 7);
     const cloneBrand = profile.brandName || "Votre boutique";
@@ -237,7 +243,7 @@ export default function Home() {
     );
   }
 
-  if (profile.themeId === "fashion" && isClientStore) {
+  if (usesFashionTheme && isClientStore) {
     const fashionProducts = catalogProducts.slice(0, 4);
     const fashionFallbackTiles = [
       "/assets/themes/fashion/category-clothing.webp",
