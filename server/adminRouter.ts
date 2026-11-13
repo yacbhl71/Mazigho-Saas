@@ -1091,6 +1091,36 @@ const storefrontThemePresets = {
     hero: { title: "L’éclat éternel des pièces d’exception.", subtitle: "L’excellence absolue des thèmes Haute Joaillerie : onyx profond, or champagne et écrin VIP.", imageUrl: "/assets/themes/jewelry-hero.webp", linkUrl: "/boutique" },
     categoryImages: ["/assets/themes/jewelry-hero.webp", "/assets/themes/jewelry-hero.webp", "/assets/themes/jewelry-hero.webp"],
   },
+  mazighoJardinObjets: {
+    profile: { ...homeThemeTemplate, paletteId: "terracotta" as const, customColorsEnabled: true, customPrimary: "#7C4A2D", customAccent: "#C2783C", customSoft: "#FFF7ED", headerLayout: "split" as const },
+    hero: { title: "Des détails qui rendent chaque jour plus doux.", subtitle: "Accessoires, cadeaux et objets utiles réunis dans un univers chaleureux et facile à explorer.", imageUrl: "/assets/category-maison-hero.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/category-maison.webp", "/assets/category-maison-sm.webp", "/assets/category-maison-hero.webp"],
+  },
+  mazighoAtelierEditorial: {
+    profile: { ...fashionThemeTemplate, paletteId: "sage" as const, customColorsEnabled: true, customPrimary: "#334E68", customAccent: "#4E91A8", customSoft: "#F7FAFC", headerLayout: "inline" as const },
+    hero: { title: "Des pièces qui trouvent naturellement leur place.", subtitle: "Une sélection contemporaine pensée pour composer un vestiaire simple, personnel et durable.", imageUrl: "/assets/themes/fashion/hero.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/themes/fashion/category-clothing.webp", "/assets/themes/fashion/category-shoes.webp", "/assets/themes/fashion/category-accessories.webp"],
+  },
+  mazighoEditorialMatiere: {
+    profile: { ...fashionThemeTemplate, paletteId: "sage" as const, customColorsEnabled: true, customPrimary: "#334E3B", customAccent: "#8A9A78", customSoft: "#F6F4EE", headerLayout: "gallery" as const },
+    hero: { title: "Comprendre ce que l’on porte.", subtitle: "Un thème documentaire pour présenter les textures, les coupes et les choix qui donnent du sens à chaque pièce.", imageUrl: "/assets/themes/fashion/category-clothing.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/themes/fashion/category-clothing.webp", "/assets/themes/fashion/category-accessories.webp", "/assets/themes/fashion/hero.webp"],
+  },
+  mazighoCleanBeauty: {
+    profile: { ...beautyThemeTemplate, paletteId: "rose" as const, customColorsEnabled: true, customPrimary: "#5B234F", customAccent: "#C47A91", customSoft: "#FFF8FA", headerLayout: "inline" as const },
+    hero: { title: "Une routine claire, des gestes qui comptent.", subtitle: "Des soins présentés par besoin, texture et moment de la journée, avec des informations faciles à comprendre.", imageUrl: "/assets/themes/beauty/hero.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/themes/beauty/category-face-body.webp", "/assets/themes/beauty/category-hair.webp", "/assets/themes/beauty/category-wellbeing.webp"],
+  },
+  mazighoDailyDelight: {
+    profile: { ...beautyThemeTemplate, paletteId: "terracotta" as const, customColorsEnabled: true, customPrimary: "#C2410C", customAccent: "#F59E0B", customSoft: "#FFF7ED", headerLayout: "split" as const },
+    hero: { title: "Des essentiels qui donnent le sourire.", subtitle: "Une boutique vive et directe pour découvrir des produits utiles, des idées cadeaux et des routines faciles.", imageUrl: "/assets/themes/beauty/category-face-body.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/themes/beauty/category-face-body.webp", "/assets/themes/beauty/category-hair.webp", "/assets/themes/beauty/category-wellbeing.webp"],
+  },
+  mazighoAtelierTemps: {
+    profile: { ...jewelryThemeTemplate, paletteId: "midnight" as const, customColorsEnabled: true, customPrimary: "#0F172A", customAccent: "#B08D57", customSoft: "#F8FAFC", headerLayout: "gallery" as const },
+    hero: { title: "Le détail donne sa valeur au temps.", subtitle: "Une direction premium pour présenter les matières, les finitions et les choix techniques avec clarté.", imageUrl: "/assets/themes/jewelry-hero.webp", linkUrl: "/boutique" },
+    categoryImages: ["/assets/themes/jewelry-hero.webp", "/assets/themes/jewelry-hero.webp", "/assets/themes/jewelry-hero.webp"],
+  },
 } as const;
 
 const storefrontThemeIdSchema = z.enum(storefrontThemeIds);

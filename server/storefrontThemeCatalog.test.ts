@@ -8,9 +8,9 @@ import {
 } from "../shared/storefrontThemeCatalog";
 
 describe("shared storefront theme catalog", () => {
-  it("exposes twenty-two unique owner-selectable theme identifiers", () => {
-    expect(storefrontThemeIds).toHaveLength(22);
-    expect(new Set(storefrontThemeIds).size).toBe(22);
+  it("exposes twenty-eight unique owner-selectable theme identifiers", () => {
+    expect(storefrontThemeIds).toHaveLength(28);
+    expect(new Set(storefrontThemeIds).size).toBe(28);
     expect(storefrontThemeCatalog.map(theme => theme.id)).toEqual(storefrontThemeIds);
     expect(storefrontThemeIds).toEqual(
       expect.arrayContaining([

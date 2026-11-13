@@ -240,6 +240,12 @@ const storefrontThemePresetBusinessTypes: Record<StorefrontThemePreset, Provisio
   velvetApothecary: "autre",
   apexAthletics: "autre",
   auraJewelry: "bijoux",
+  mazighoJardinObjets: "autre",
+  mazighoAtelierEditorial: "vetements",
+  mazighoEditorialMatiere: "vetements",
+  mazighoCleanBeauty: "autre",
+  mazighoDailyDelight: "autre",
+  mazighoAtelierTemps: "bijoux",
 };
 
 const storeStatusPresentation = {
