@@ -56,7 +56,7 @@ const importSchema = z.object({
   pages: z.record(z.string().max(180), pageSchema).refine(value => Object.keys(value).length <= 2500),
   catalog: z.array(productSchema).max(2500),
   navigation: z.array(z.object({ label: safeText(80), href: safeUrl }).strict()).max(50),
-  settings: z.object({ currency: safeText(3).optional(), clonedFrom: z.string().url().optional(), clonedPlatform: safeText(30).optional(), clonedAt: safeText(80).optional(), robotsStatus: safeText(24).optional(), robotsForceConfirmed: z.boolean().optional() }).strict(),
+  settings: z.object({ currency: safeText(3).optional(), clonedFrom: z.string().url().optional(), clonedPlatform: safeText(30).optional(), clonedAt: safeText(80).optional(), robotsStatus: safeText(24).optional(), robotsForceConfirmed: z.boolean().optional(), recommendedTheme: z.object({ themeId: safeText(40), confidence: z.enum(["low", "medium", "high"]), reasons: z.array(safeText(240)).max(5) }).strict().optional() }).strict(),
 }).strict().superRefine((value, ctx) => rejectForbiddenKeys(value, ctx));
 
 export type CloneImportPayload = z.infer<typeof importSchema>;
@@ -82,6 +82,7 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
   const about = props("about");
   const testimonial = props("testimonials");
   const cta = props("cta");
+  const recommendedTheme = payload.settings.recommendedTheme;
   const image = (value: unknown) => url(value);
   const visualBlocks = blocks.filter(block => !["header", "footer", "product-grid"].includes(block.type));
   const normalizedVisualBlocks = visualBlocks.map((block, index) => {
@@ -126,6 +127,8 @@ function buildImportedDesignProfile(payload: CloneImportPayload) {
     imported: true,
     source: "clone",
     theme: payload.theme,
+    themeId: recommendedTheme?.themeId,
+    themeRecommendation: recommendedTheme,
     brandName: payload.project_name,
     brandMessage: text(hero.title) || text(hero.text),
     customColorsEnabled: true,

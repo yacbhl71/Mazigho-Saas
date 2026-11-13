@@ -22,6 +22,16 @@ describe("contrat d’import clone", () => {
   it("accepte un projet strictement structuré", () => {
     expect(cloneImportPayloadSchema.safeParse(validPayload).success).toBe(true);
   });
+  it("accepte une recommandation de thème sans l’imposer à la boutique", () => {
+    const result = cloneImportPayloadSchema.safeParse({
+      ...validPayload,
+      settings: {
+        ...validPayload.settings,
+        recommendedTheme: { themeId: "fashion", confidence: "high", reasons: ["Signaux mode détectés"] },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
   it("rejette les champs inattendus", () => {
     expect(cloneImportPayloadSchema.safeParse({ ...validPayload, payment_secret: "x" }).success).toBe(false);
   });
