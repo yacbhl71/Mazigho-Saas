@@ -78,6 +78,7 @@ export async function getCloneStatus(userId: number, jobId: string) {
     message: data?.message || null,
     error: data?.error || null,
     projectUrl: data?.mazigho_project_url || null,
+    recommendedTheme: data?.recommended_theme || null,
     warnings: [...(data?.warnings || []), ...(data?.robots_warning ? [data.robots_warning] : []), ...(data?.import_summary?.warnings || [])].filter((value, index, values) => typeof value === "string" && values.indexOf(value) === index),
   };
 }
