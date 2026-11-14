@@ -12220,6 +12220,35 @@ export async function createPaymentIntent(input: {
   return record ?? null;
 }
 
+export async function applyPaymentIntentEvent(input: {
+  storeId: number;
+  intentId: number;
+  eventId: string;
+  targetStatus: "processing" | "succeeded" | "failed" | "expired";
+  providerReference?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const eventId = input.eventId.trim();
+  if (!/^[A-Za-z0-9._:-]{8,255}$/.test(eventId)) throw new Error("EVENT_ID_INVALID");
+  const [rows] = await db.execute(sql`SELECT id, storeId, orderId, status, lastEventId, providerReference
+    FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
+  const current = (rows as any[])[0];
+  if (!current) throw new Error("PAYMENT_INTENT_NOT_FOUND");
+  if (current.lastEventId === eventId) return { ...current, duplicate: true };
+  const allowed: Record<string, string[]> = {
+    created: ["processing", "failed", "expired"],
+    processing: ["succeeded", "failed", "expired"],
+    succeeded: ["succeeded"],
+    failed: ["failed"],
+    expired: ["expired"],
+  };
+  if (!allowed[current.status]?.includes(input.targetStatus)) throw new Error("PAYMENT_STATUS_TRANSITION_INVALID");
+  await db.execute(sql`UPDATE paymentIntents SET status = ${input.targetStatus}, lastEventId = ${eventId}, providerReference = COALESCE(${input.providerReference ?? null}, providerReference)
+    WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND (lastEventId IS NULL OR lastEventId <> ${eventId})`);
+  return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false };
+}
+
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
   await ensureStoreRelationshipScopeSchema();
   const db = await getDb();

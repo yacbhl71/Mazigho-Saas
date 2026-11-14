@@ -5,6 +5,7 @@ import {
   getProductById,
   getPaymentCartById,
   createPaymentIntent,
+  applyPaymentIntentEvent,
   getPublicOwnerProductVariantsForProducts,
   getStoreCurrencyConfig,
   getStoreMembershipForUser,
@@ -128,6 +129,25 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_INTENT_CREATE_FAILED";
       return fail(res, code === "CART_EMPTY_OR_NOT_FOUND" ? 404 : 400, code);
+    }
+  });
+
+  targetApp.post("/api/internal/payment/stores/:storeId/intents/:intentId/events", async (req, res) => {
+    if (!bridgeGuard(req, res)) return;
+    const storeId = storeIdParam(req);
+    const intentId = Number(req.params.intentId);
+    const body = req.body ?? {};
+    const eventId = typeof body.eventId === "string" ? body.eventId : "";
+    const targetStatus = body.targetStatus;
+    if (!storeId || !Number.isInteger(intentId) || intentId <= 0 || !eventId || !["processing", "succeeded", "failed", "expired"].includes(targetStatus)) {
+      return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
+    }
+    try {
+      const result = await applyPaymentIntentEvent({ storeId, intentId, eventId, targetStatus, providerReference: typeof body.providerReference === "string" ? body.providerReference : undefined });
+      return res.json({ data: result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "PAYMENT_EVENT_REJECTED";
+      return fail(res, code === "PAYMENT_INTENT_NOT_FOUND" ? 404 : 409, code);
     }
   });
 }
