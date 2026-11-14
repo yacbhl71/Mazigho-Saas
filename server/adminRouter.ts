@@ -2570,6 +2570,26 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    getVisualBuilderProject: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
+      await db.getStudioManagedStore(input.storeId);
+      return db.getStudioVisualBuilderProject(input.storeId);
+    }),
+    saveVisualBuilderProject: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      mode: z.enum(["blank", "theme", "clone"]),
+      project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      const saved = await db.saveStudioVisualBuilderProject(input);
+      logAudit(ctx, {
+        action: "studio.visual_builder.project.save",
+        entityType: "store",
+        entityId: store.id,
+        summary: `Projet visuel privé enregistré : ${store.displayName}`,
+        metadata: { mode: input.mode, publicationExecuted: false },
+      });
+      return saved;
+    }),
     saveOwnerBuilderConfiguration: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       brandName: z.string().trim().min(2).max(160),

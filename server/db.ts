@@ -4973,6 +4973,34 @@ export async function setStoreSettingValue(storeId: number | undefined, key: str
   return { success: true } as const;
 }
 
+const STUDIO_VISUAL_BUILDER_PROJECT_KEY = "studio_visual_builder_project_v1";
+
+export async function getStudioVisualBuilderProject(storeId: number) {
+  const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      storeId,
+      mode: typeof parsed.mode === "string" ? parsed.mode : "blank",
+      project: parsed.project && typeof parsed.project === "object" ? parsed.project : null,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
+  await setStoreSettingValue(
+    input.storeId,
+    STUDIO_VISUAL_BUILDER_PROJECT_KEY,
+    JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString() }),
+    "Projet GrapesJS privé du constructeur visuel ; sans publication automatique.",
+  );
+  return { success: true, storeId: input.storeId } as const;
+}
+
 const STUDIO_CLIENT_VALIDATION_KEY = "studio_client_validation";
 type StudioClientValidationStatus = "draft" | "sent" | "approved" | "locked";
 
