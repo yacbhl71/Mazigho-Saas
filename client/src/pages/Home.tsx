@@ -419,8 +419,8 @@ export default function Home() {
                   const imageUrl = product.images?.[0]?.imageUrl;
                   const hasDiscount = Boolean(product.originalPrice && product.originalPrice > product.price);
                   return (
-                    <Link key={product.id} href={`/produit/${product.slug}`}>
-                      <Card className={`group h-full overflow-hidden border shadow-none transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${usesGlamourNoir ? "border-white/10 bg-[#22212a]" : "border-[#e5d8cb] bg-white"}`}>
+                    <Link key={product.id} href={`/produit/${product.slug}`} className="block min-w-0">
+                      <Card className={`group h-full min-w-0 overflow-hidden border shadow-none transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${usesGlamourNoir ? "border-white/10 bg-[#22212a]" : "border-[#e5d8cb] bg-white"}`}>
                         <CardContent className="p-0">
                           <div className="relative aspect-[4/3] overflow-hidden bg-[#f5f0ea]">
                             {imageUrl ? (
@@ -435,8 +435,8 @@ export default function Home() {
                               <Star className="h-3.5 w-3.5" style={{ fill: palette.accent, color: palette.accent }} />
                               <span>{(product as any).averageRating || copy.featured.new}</span>
                             </div>
-                            <h3 className={`line-clamp-2 min-h-[3.5rem] text-base font-semibold leading-6 transition-colors group-hover:text-[var(--mazigho-accent)] ${usesGlamourNoir ? "text-white" : "text-slate-900"}`}>{product.name}</h3>
-                            <div className="flex items-baseline gap-2">
+                            <h3 className={`line-clamp-2 min-h-[3.5rem] break-words text-base font-semibold leading-6 transition-colors group-hover:text-[var(--mazigho-accent)] ${usesGlamourNoir ? "text-white" : "text-slate-900"}`}>{product.name}</h3>
+                            <div className="flex flex-wrap items-baseline gap-2">
                               <span className="text-lg font-bold" style={{ color: visualAccent }}>{formatPrice(product.price, locale)}</span>
                               {hasDiscount && <span className="text-sm text-slate-400 line-through">{formatPrice(product.originalPrice!, locale)}</span>}
                             </div>
