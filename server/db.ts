@@ -1104,7 +1104,7 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       description: products.description,
       featured: products.featured,
     }).from(products)
-      .where(and(eq(products.storeId, store.id), eq(products.status, "active")))
+      .where(and(eq(products.storeId, store.id), inArray(products.status, ["active", "draft"])))
       .orderBy(desc(products.featured), asc(products.name))
       .limit(24),
     db.select({
