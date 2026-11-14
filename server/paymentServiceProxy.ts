@@ -39,7 +39,9 @@ export async function callPaymentService<T>(ctx: ProxyContext, path: string, ini
       method: init.method ?? "GET",
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      signal: AbortSignal.timeout(15_000),
+      // Render Free peut sortir de veille en 50 secondes environ.
+      // Le proxy doit laisser ce réveil aboutir plutôt que d’afficher un faux indisponible.
+      signal: AbortSignal.timeout(60_000),
     });
   } catch {
     throw proxyError(503);
