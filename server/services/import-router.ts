@@ -36,8 +36,8 @@ const productSchema = z.object({
   id: safeText(100).optional(), title: safeText(200), name: safeText(200).optional(),
   description: safeText(10000).optional(), body_html: safeText(10000).optional(), longDescription: safeText(10000).optional(),
   price: z.number().finite().nonnegative().optional(), compareAtPrice: z.number().finite().nonnegative().optional(),
-  currency: safeText(3).optional(), images: z.array(z.union([safeUrl, z.object({ src: safeUrl.optional(), url: safeUrl.optional() }).strict()])).max(50).optional(),
-  variants: z.array(variantSchema).max(100).optional(), tags: z.array(safeText(80)).max(50).optional(), type: safeText(100).optional(), vendor: safeText(160).optional(), category: safeText(100).optional(),
+  currency: safeText(3).optional(), images: z.array(z.union([safeUrl, z.object({ src: safeUrl.optional(), url: safeUrl.optional() }).strict())).max(250).optional(),
+  variants: z.array(variantSchema).max(250).optional(), tags: z.array(safeText(80)).max(250).optional(), type: safeText(100).optional(), vendor: safeText(160).optional(), category: safeText(100).optional(),
 }).strict();
 
 const blockSchema = z.object({ id: safeText(100).optional(), type: safeText(80), component: safeText(100).optional(), props: looseProps.optional(), reviewRequired: z.boolean().optional() }).strict();
@@ -55,7 +55,7 @@ const importSchema = z.object({
   theme: z.object({ colors: z.record(z.string(), safeText(30)).optional(), fonts: z.record(z.string(), safeText(120)).optional(), borderRadius: safeText(30).optional() }).strict(),
   pages: z.record(z.string().max(180), pageSchema).refine(value => Object.keys(value).length <= 2500),
   catalog: z.array(productSchema).max(2500),
-  navigation: z.array(z.object({ label: safeText(80), href: safeUrl }).strict()).max(50),
+  navigation: z.array(z.object({ label: safeText(80), href: safeUrl }).strict()).max(250),
   settings: z.object({ currency: safeText(3).optional(), clonedFrom: z.string().url().optional(), clonedPlatform: safeText(30).optional(), clonedAt: safeText(80).optional(), robotsStatus: safeText(24).optional(), robotsForceConfirmed: z.boolean().optional(), recommendedTheme: z.object({ themeId: safeText(40), confidence: z.enum(["low", "medium", "high"]), reasons: z.array(safeText(240)).max(5) }).strict().optional() }).strict(),
 }).strict().superRefine((value, ctx) => rejectForbiddenKeys(value, ctx));
 
