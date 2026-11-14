@@ -2603,6 +2603,19 @@ export const adminRouter = router({
         products: catalogue.products.slice(0, 12).map(product => ({ name: product.name, price: product.price, description: product.description, images: product.images.slice(0, 1) })),
       };
     }),
+    uploadVisualBuilderImage: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      dataUrl: z.string().max(7_100_000),
+      fileName: z.string().trim().min(1).max(160),
+    })).mutation(async ({ ctx, input }) => {
+      await db.getStudioManagedStore(input.storeId);
+      const image = decodeDesignImage(input.dataUrl);
+      const safeName = input.fileName.replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-").slice(0, 80) || "image";
+      const entitlements = await db.getStoreSaasEntitlements(input.storeId);
+      const { url } = await storagePut(`studio-builder/${input.storeId}/${Date.now()}-${safeName}.${image.extension}`, image.buffer, image.contentType, { storeId: input.storeId, quotaBytes: entitlements.mediaQuotaBytes });
+      logAudit(ctx, { action: "studio.visual_builder.image.upload", entityType: "store", entityId: input.storeId, summary: "Image téléversée dans le constructeur visuel", metadata: { publicationExecuted: false, publicStorefront: false } });
+      return { url };
+    }),
     saveOwnerBuilderConfiguration: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       brandName: z.string().trim().min(2).max(160),
