@@ -1102,6 +1102,8 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       name: products.name,
       slug: products.slug,
       description: products.description,
+      price: products.price,
+      originalPrice: products.originalPrice,
       featured: products.featured,
     }).from(products)
       .where(and(eq(products.storeId, store.id), inArray(products.status, ["active", "draft"])))
@@ -1125,10 +1127,21 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       .where(and(eq(productImages.storeId, store.id), inArray(productImages.productId, productIds)))
       .orderBy(asc(productImages.displayOrder), asc(productImages.id))
     : [];
+  const variantRows = productIds.length
+    ? await db.select({ productId: schema.ownerProductVariants.productId, variantCount: count() })
+      .from(schema.ownerProductVariants)
+      .where(and(eq(schema.ownerProductVariants.storeId, store.id), inArray(schema.ownerProductVariants.productId, productIds), eq(schema.ownerProductVariants.status, "active")))
+      .groupBy(schema.ownerProductVariants.productId)
+    : [];
   const firstImageByProductId = new Map<number, string>();
+  const imageUrlsByProductId = new Map<number, string[]>();
   for (const image of imageRows) {
     if (!firstImageByProductId.has(image.productId)) firstImageByProductId.set(image.productId, image.imageUrl);
+    const urls = imageUrlsByProductId.get(image.productId) ?? [];
+    urls.push(image.imageUrl);
+    imageUrlsByProductId.set(image.productId, urls);
   }
+  const variantCountByProductId = new Map(variantRows.map(row => [row.productId, Number(row.variantCount)]));
 
   return {
     privatePreview: true as const,
@@ -1188,8 +1201,12 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       name: product.name,
       slug: product.slug,
       description: product.description,
+      price: product.price,
+      originalPrice: product.originalPrice,
+      variantCount: variantCountByProductId.get(product.id) ?? 0,
       featured: Boolean(product.featured),
       imageUrl: firstImageByProductId.get(product.id) ?? null,
+      imageUrls: imageUrlsByProductId.get(product.id) ?? [],
       availability: "not_for_sale" as const,
     })),
   };
