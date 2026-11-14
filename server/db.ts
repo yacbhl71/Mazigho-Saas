@@ -12246,7 +12246,32 @@ export async function applyPaymentIntentEvent(input: {
   if (!allowed[current.status]?.includes(input.targetStatus)) throw new Error("PAYMENT_STATUS_TRANSITION_INVALID");
   await db.execute(sql`UPDATE paymentIntents SET status = ${input.targetStatus}, lastEventId = ${eventId}, providerReference = COALESCE(${input.providerReference ?? null}, providerReference)
     WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND (lastEventId IS NULL OR lastEventId <> ${eventId})`);
+  if (input.targetStatus === "succeeded" && current.orderId) {
+    await db.execute(sql`UPDATE orders SET paymentStatus = 'paid', status = 'processing'
+      WHERE id = ${current.orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
+  }
   return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false };
+}
+
+export async function attachPaymentIntentOrder(input: {
+  storeId: number;
+  intentId: number;
+  userId: number;
+  shippingAddress: string;
+  billingAddress?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [rows] = await db.execute(sql`SELECT id, orderId, status, amountMinor, currency FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
+  const intent = (rows as any[])[0];
+  if (!intent) throw new Error("PAYMENT_INTENT_NOT_FOUND");
+  if (intent.orderId) return { orderId: intent.orderId, alreadyAttached: true };
+  if (intent.status !== "created") throw new Error("PAYMENT_INTENT_NOT_ATTACHABLE");
+  const order = await createOrder(input.userId, { shippingAddress: input.shippingAddress, billingAddress: input.billingAddress, paymentMethod: `byok:${intent.currency}` }, input.storeId);
+  const updated = await db.execute(sql`UPDATE paymentIntents SET orderId = ${order.id}
+    WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND orderId IS NULL AND status = 'created'`);
+  if ((updated as any)[0]?.affectedRows !== 1) throw new Error("PAYMENT_INTENT_ORDER_RACE");
+  return { orderId: order.id, alreadyAttached: false };
 }
 
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {

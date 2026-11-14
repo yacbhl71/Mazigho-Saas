@@ -6,6 +6,7 @@ import {
   getPaymentCartById,
   createPaymentIntent,
   applyPaymentIntentEvent,
+  attachPaymentIntentOrder,
   getPublicOwnerProductVariantsForProducts,
   getStoreCurrencyConfig,
   getStoreMembershipForUser,
@@ -147,6 +148,26 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
       return res.json({ data: result });
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_EVENT_REJECTED";
+      return fail(res, code === "PAYMENT_INTENT_NOT_FOUND" ? 404 : 409, code);
+    }
+  });
+
+  targetApp.post("/api/internal/payment/stores/:storeId/intents/:intentId/order", async (req, res) => {
+    if (!bridgeGuard(req, res)) return;
+    const storeId = storeIdParam(req);
+    const intentId = Number(req.params.intentId);
+    const userId = Number(req.body?.userId);
+    const shippingAddress = typeof req.body?.shippingAddress === "string" ? req.body.shippingAddress.trim() : "";
+    if (!storeId || !Number.isInteger(intentId) || intentId <= 0 || !Number.isInteger(userId) || userId <= 0 || !shippingAddress) {
+      return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
+    }
+    const membership = await getStoreMembershipForUser(storeId, userId);
+    if (!membership || membership.status !== "active") return fail(res, 403, "PAYMENT_BRIDGE_STORE_ACCESS_DENIED");
+    try {
+      const result = await attachPaymentIntentOrder({ storeId, intentId, userId, shippingAddress, billingAddress: typeof req.body?.billingAddress === "string" ? req.body.billingAddress : undefined });
+      return res.status(result.alreadyAttached ? 200 : 201).json({ data: result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "PAYMENT_ORDER_ATTACH_FAILED";
       return fail(res, code === "PAYMENT_INTENT_NOT_FOUND" ? 404 : 409, code);
     }
   });
