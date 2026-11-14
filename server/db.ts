@@ -1104,6 +1104,7 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       description: products.description,
       price: products.price,
       originalPrice: products.originalPrice,
+      options: products.options,
       featured: products.featured,
     }).from(products)
       .where(and(eq(products.storeId, store.id), inArray(products.status, ["active", "draft"])))
@@ -1142,6 +1143,14 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
     imageUrlsByProductId.set(image.productId, urls);
   }
   const variantCountByProductId = new Map(variantRows.map(row => [row.productId, Number(row.variantCount)]));
+  const importedOptionCountByProductId = new Map(productRows.map(product => {
+    try {
+      const parsed = product.options ? JSON.parse(product.options) : [];
+      return [product.id, Array.isArray(parsed) ? parsed.length : 0] as const;
+    } catch {
+      return [product.id, 0] as const;
+    }
+  }));
 
   return {
     privatePreview: true as const,
@@ -1204,6 +1213,7 @@ export async function getStudioPrivateStorefrontPreview(storeId: number) {
       price: product.price,
       originalPrice: product.originalPrice,
       variantCount: variantCountByProductId.get(product.id) ?? 0,
+      importedOptionCount: importedOptionCountByProductId.get(product.id) ?? 0,
       featured: Boolean(product.featured),
       imageUrl: firstImageByProductId.get(product.id) ?? null,
       imageUrls: imageUrlsByProductId.get(product.id) ?? [],
