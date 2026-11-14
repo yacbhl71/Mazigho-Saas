@@ -3,6 +3,7 @@ import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import {
   getProductById,
+  getPaymentCartById,
   getPublicOwnerProductVariantsForProducts,
   getStoreCurrencyConfig,
   getStoreMembershipForUser,
@@ -92,5 +93,20 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     const variantsByProduct = await getPublicOwnerProductVariantsForProducts([productId], storeId);
     const variants = variantsByProduct.get(productId) ?? [];
     return res.json({ data: { id: String(product.id), storeId: String(storeId), name: product.name, active: product.status === "active", variants: variants.map((variant) => ({ id: String(variant.id), name: variant.label, active: true, stockAvailable: variant.stock, pricesMinor: { CHF: product.price + variant.priceAdjustmentCents } })) } });
+  });
+
+  targetApp.get("/api/internal/payment/stores/:storeId/carts/:cartId", async (req, res) => {
+    if (!bridgeGuard(req, res)) return;
+    const storeId = storeIdParam(req);
+    const cartId = Number(req.params.cartId);
+    if (!storeId || !Number.isInteger(cartId) || cartId <= 0) return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
+    const cart = await getPaymentCartById(cartId, storeId);
+    if (!cart) return res.json({ data: null });
+    return res.json({ data: {
+      id: String(cart.id),
+      storeId: String(cart.storeId),
+      currency: "CHF",
+      items: cart.items.map((item) => ({ productId: String(item.productId), variantId: "default", quantity: item.quantity })),
+    } });
   });
 }

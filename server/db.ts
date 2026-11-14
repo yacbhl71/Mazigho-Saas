@@ -12172,6 +12172,27 @@ export async function getCart(userId: number, storeId?: number) {
   };
 }
 
+/** Read-only cart projection for the standalone payment service. */
+export async function getPaymentCartById(cartId: number, storeId: number) {
+  await ensureStoreRelationshipScopeSchema();
+  const db = await getDb();
+  if (!db) return null;
+  const [cart] = await db.select({ id: carts.id, storeId: carts.storeId })
+    .from(carts)
+    .where(and(eq(carts.id, cartId), eq(carts.storeId, storeId)))
+    .limit(1);
+  if (!cart) return null;
+  const items = await db.select({
+    productId: cartItems.productId,
+    quantity: cartItems.quantity,
+    name: products.name,
+    price: products.price,
+  }).from(cartItems)
+    .innerJoin(products, and(eq(cartItems.productId, products.id), eq(cartItems.storeId, products.storeId)))
+    .where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cart.id), eq(products.status, "active")));
+  return { id: cart.id, storeId: cart.storeId, items };
+}
+
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
   await ensureStoreRelationshipScopeSchema();
   const db = await getDb();
