@@ -1,11 +1,11 @@
-export type OwnerModule = "overview" | "assistant" | "creer_image" | "readiness" | "help" | "simulation" | "public_view" | "team" | "catalogue" | "dropshipping" | "catalogue_pages" | "shop_page" | "stock" | "themes" | "vitrine" | "navigation" | "pages" | "orders" | "returns" | "customers" | "customer_relations" | "custom_requests" | "marketing" | "emails" | "support" | "markets" | "operations" | "algeria_payments" | "legal" | "seo" | "integrations" | "exports" | "settings";
+export type OwnerModule = "overview" | "assistant" | "creer_image" | "readiness" | "help" | "simulation" | "public_view" | "team" | "catalogue" | "dropshipping" | "catalogue_pages" | "shop_page" | "stock" | "themes" | "vitrine" | "navigation" | "pages" | "orders" | "returns" | "customers" | "customer_relations" | "custom_requests" | "marketing" | "emails" | "support" | "markets" | "operations" | "algeria_payments" | "byok_payments" | "legal" | "seo" | "integrations" | "exports" | "settings";
 
 export type OwnerMenuItem = { id: string; label: string; href: string; visible: boolean; kind: "system" | "custom"; parentId?: string };
 export type OwnerCatalogueItem = { id: number; name: string; slug: string; description?: string | null; catalogSection?: "standard" | "creations" | null };
 export type OwnerAdminTarget = { module: OwnerModule; categoryId?: number; productId?: number };
 
 const ownerModules: OwnerModule[] = [
-  "overview", "assistant", "creer_image", "readiness", "help", "simulation", "public_view", "team", "catalogue", "dropshipping", "catalogue_pages", "shop_page", "stock", "themes", "vitrine", "navigation", "pages", "orders", "returns", "customers", "customer_relations", "custom_requests", "marketing", "emails", "support", "markets", "operations", "algeria_payments", "legal", "seo", "integrations", "exports", "settings",
+  "overview", "assistant", "creer_image", "readiness", "help", "simulation", "public_view", "team", "catalogue", "dropshipping", "catalogue_pages", "shop_page", "stock", "themes", "vitrine", "navigation", "pages", "orders", "returns", "customers", "customer_relations", "custom_requests", "marketing", "emails", "support", "markets", "operations", "algeria_payments", "byok_payments", "legal", "seo", "integrations", "exports", "settings",
 ];
 
 export function readOwnerPanelModule(search: string): OwnerModule {
@@ -74,7 +74,7 @@ const moduleKeywords: Partial<Record<OwnerModule, string>> = {
   pages: "contact faq à propos page retours", navigation: "menu onglets sous menu lien",
   marketing: "promotions nouveautés meilleures ventes promos campagne", stock: "inventaire quantité",
   operations: "livraison frais expédition retour", custom_requests: "sur mesure personnalisation demande projet création client", markets: "langues traduction pays devise",
-  settings: "paramètres réglages domaine", assistant: "copilote rédaction seo ia",
+  settings: "paramètres réglages domaine", byok_payments: "paiement stripe paypal clés autonomes sans abonnement byok", assistant: "copilote rédaction seo ia",
 };
 
 export function searchOwnerWorkspace(query: string, modules: Array<{ id: OwnerModule; title: string; description: string }>, categories: OwnerCatalogueItem[], products: OwnerCatalogueItem[]): OwnerSearchEntry[] {

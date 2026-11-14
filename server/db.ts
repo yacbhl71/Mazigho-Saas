@@ -12233,7 +12233,7 @@ export async function applyPaymentIntentEvent(input: {
   if (!/^[A-Za-z0-9._:-]{8,255}$/.test(eventId)) throw new Error("EVENT_ID_INVALID");
   const [rows] = await db.execute(sql`SELECT id, storeId, orderId, status, lastEventId, providerReference
     FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
-  const current = (rows as any[])[0];
+  const current = (rows as unknown as any[])[0];
   if (!current) throw new Error("PAYMENT_INTENT_NOT_FOUND");
   if (current.lastEventId === eventId) return { ...current, duplicate: true };
   const allowed: Record<string, string[]> = {
@@ -12263,7 +12263,7 @@ export async function attachPaymentIntentOrder(input: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [rows] = await db.execute(sql`SELECT id, orderId, status, amountMinor, currency FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
-  const intent = (rows as any[])[0];
+  const intent = (rows as unknown as any[])[0];
   if (!intent) throw new Error("PAYMENT_INTENT_NOT_FOUND");
   if (intent.orderId) return { orderId: intent.orderId, alreadyAttached: true };
   if (intent.status !== "created") throw new Error("PAYMENT_INTENT_NOT_ATTACHABLE");

@@ -30,6 +30,7 @@ import { OWNER_KNOWLEDGE_MAX_DATA_URL_CHARS, getOwnerKnowledgeDocumentSizeMessag
 import { isSafeOwnerManualTrackingUrl, OWNER_MANUAL_TRACKING_LIMITS } from "../shared/ownerManualTracking";
 import { STORE_PRODUCT_BUNDLE_LIMITS } from "../shared/storeProductBundles";
 import { PROMOTION_TARGET_PRODUCT_LIMIT } from "../shared/promotionTargetProducts";
+import { callPaymentService } from "./paymentServiceProxy";
 
 const ownerTransactionalEmailTemplate = z.object({
   subject: z.string().trim().min(2).max(200),
@@ -724,6 +725,35 @@ const ownerPrivateCartSimulation = z.object({
 });
 
 export const ownerRouter = router({
+  byokPayments: router({
+    list: storeOwnerProcedure.query(async ({ ctx }) => {
+      const result = await callPaymentService<{ configs: unknown[] }>(ctx, "/api/admin/payments", { storeId: ctx.store!.id });
+      return result.configs;
+    }),
+    save: storeOwnerProcedure.input(z.object({
+      provider: z.enum(["stripe", "paypal"]),
+      isEnabled: z.boolean(),
+      isTestMode: z.boolean(),
+      merchantLabel: z.string().trim().max(120).optional(),
+      supportedCurrencies: z.array(z.string().regex(/^[A-Z]{3}$/)).min(1).max(20),
+      instructions: z.string().trim().max(2000).optional(),
+      confirmProduction: z.boolean().optional(),
+      publicKey: z.string().trim().max(255).optional(),
+      secretKey: z.string().trim().max(255).optional(),
+      webhookSecret: z.string().trim().max(255).optional(),
+      enabledMethods: z.array(z.string()).min(1).max(8).optional(),
+      settings: z.record(z.string(), z.unknown()).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await callPaymentService<{ config: unknown }>(ctx, "/api/admin/payments", { storeId: ctx.store!.id, method: "POST", body: input });
+      return result.config;
+    }),
+    test: storeOwnerProcedure.input(z.object({ provider: z.enum(["stripe", "paypal"]) })).mutation(async ({ ctx, input }) => {
+      return await callPaymentService<{ result: unknown; config: unknown }>(ctx, `/api/admin/payments/${input.provider}/test`, { storeId: ctx.store!.id, method: "POST", body: {} });
+    }),
+    remove: storeOwnerProcedure.input(z.object({ provider: z.enum(["stripe", "paypal"]) })).mutation(async ({ ctx, input }) => {
+      return await callPaymentService<{ deleted: boolean }>(ctx, `/api/admin/payments/${input.provider}`, { storeId: ctx.store!.id, method: "DELETE" });
+    }),
+  }),
   getStoreSwitcherOptions: protectedProcedure.query(async ({ ctx }) => {
     return await db.getOwnerStoreSwitcherOptionsForUser(ctx.user.id);
   }),
