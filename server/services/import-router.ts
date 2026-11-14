@@ -265,7 +265,7 @@ export async function ensureImportedStoreStudioProvisioning(storeId: number) {
     displayName: store.displayName, requestedDomain: store.primaryDomain,
     ownerName: (owner.name || "Opérateur MAZIGHO").slice(0, 160), ownerEmail: owner.email,
     businessType: "autre", factoryModel: "blank", provisioningTemplate: "standard",
-    launchMarket: "custom", paymentRoute: "stripe_connect", preferredCurrency,
+    launchMarket: "custom", paymentRoute: "byok", preferredCurrency,
     status: "ready_for_confirmation", notes: "Brouillon Studio créé automatiquement pour un import de boutique existant.",
     provisionedStoreId: store.id, provisionedAt: new Date(), createdByUserId: owner.userId,
   }).$returningId();

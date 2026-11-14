@@ -973,7 +973,7 @@ export const DEMO_PROVISIONING_DRAFTS: DemoProvisioningDraft[] = [
     factoryModel: "clothing",
     provisioningTemplate: "standard",
     launchMarket: "switzerland",
-    paymentRoute: "stripe_connect",
+    paymentRoute: "byok",
     preferredCurrency: "CHF",
     requestedPlan: "pro",
     copySourceStoreId: null,

@@ -32,6 +32,7 @@ const migrations = [
   ["0049_store_provisioning_payment_route", "drizzle/0049_store_provisioning_payment_route.sql"],
   ["0050_store_provisioning_launch_market", "drizzle/0050_store_provisioning_launch_market.sql"],
   ["0051_store_cms_pages", "drizzle/0051_store_cms_pages.sql"],
+  ["0052_default_byok_for_unsubscribed_stores", "drizzle/0052_default_byok_for_unsubscribed_stores.sql"],
 ];
 
 const databaseUrl = process.env.DATABASE_URL?.trim();

@@ -398,13 +398,13 @@ async function ensureStoreProvisioningDraftSchema() {
   _storeProvisioningDraftSchemaReady = (async () => {
     const db = await getDb();
     if (!db) return;
-    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `storeProvisioningDrafts` (`id` int AUTO_INCREMENT PRIMARY KEY, `displayName` varchar(160) NOT NULL, `requestedDomain` varchar(255) NOT NULL, `ownerName` varchar(160) NOT NULL, `ownerEmail` varchar(320) NOT NULL, `businessType` enum('animalier','bijoux','vetements','autre') NOT NULL DEFAULT 'autre', `customBusinessTheme` varchar(160) NULL, `themePreset` varchar(32) NULL, `factoryModel` varchar(32) NOT NULL DEFAULT 'blank', `provisioningTemplate` varchar(32) NOT NULL DEFAULT 'standard', `launchMarket` varchar(32) NOT NULL DEFAULT 'custom', `paymentRoute` varchar(32) NOT NULL DEFAULT 'stripe_connect', `preferredCurrency` varchar(3) NOT NULL DEFAULT 'CHF', `requestedPlan` varchar(16) NULL, `copySourceStoreId` int NULL, `copySelection` text NULL, `status` enum('draft','ready_for_confirmation','archived') NOT NULL DEFAULT 'draft', `notes` text, `provisionedStoreId` int NULL, `provisionedAt` timestamp NULL, `createdByUserId` int NOT NULL, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX `store_provisioning_drafts_status_updated_idx` (`status`,`updatedAt`), INDEX `store_provisioning_drafts_domain_idx` (`requestedDomain`), INDEX `store_provisioning_drafts_provisioned_store_idx` (`provisionedStoreId`), INDEX `store_provisioning_drafts_copy_source_idx` (`copySourceStoreId`))"));
+    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `storeProvisioningDrafts` (`id` int AUTO_INCREMENT PRIMARY KEY, `displayName` varchar(160) NOT NULL, `requestedDomain` varchar(255) NOT NULL, `ownerName` varchar(160) NOT NULL, `ownerEmail` varchar(320) NOT NULL, `businessType` enum('animalier','bijoux','vetements','autre') NOT NULL DEFAULT 'autre', `customBusinessTheme` varchar(160) NULL, `themePreset` varchar(32) NULL, `factoryModel` varchar(32) NOT NULL DEFAULT 'blank', `provisioningTemplate` varchar(32) NOT NULL DEFAULT 'standard', `launchMarket` varchar(32) NOT NULL DEFAULT 'custom', `paymentRoute` varchar(32) NOT NULL DEFAULT 'byok', `preferredCurrency` varchar(3) NOT NULL DEFAULT 'CHF', `requestedPlan` varchar(16) NULL, `copySourceStoreId` int NULL, `copySelection` text NULL, `status` enum('draft','ready_for_confirmation','archived') NOT NULL DEFAULT 'draft', `notes` text, `provisionedStoreId` int NULL, `provisionedAt` timestamp NULL, `createdByUserId` int NOT NULL, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX `store_provisioning_drafts_status_updated_idx` (`status`,`updatedAt`), INDEX `store_provisioning_drafts_domain_idx` (`requestedDomain`), INDEX `store_provisioning_drafts_provisioned_store_idx` (`provisionedStoreId`), INDEX `store_provisioning_drafts_copy_source_idx` (`copySourceStoreId`))"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `customBusinessTheme` varchar(160) NULL"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `themePreset` varchar(32) NULL"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `factoryModel` varchar(32) NOT NULL DEFAULT 'blank'"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `provisioningTemplate` varchar(32) NOT NULL DEFAULT 'standard'"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `launchMarket` varchar(32) NOT NULL DEFAULT 'custom'"));
-    await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `paymentRoute` varchar(32) NOT NULL DEFAULT 'stripe_connect'"));
+    await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `paymentRoute` varchar(32) NOT NULL DEFAULT 'byok'"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `requestedPlan` varchar(16) NULL"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `copySourceStoreId` int NULL"));
     await db.execute(sql.raw("ALTER TABLE `storeProvisioningDrafts` ADD COLUMN IF NOT EXISTS `copySelection` text NULL"));
@@ -3212,7 +3212,7 @@ export async function provisionGiftStoreFromDraft(input: { draftId: number; conf
       { storeId, key: "provisioning_launch_market", value: launchMarket.id, description: "Profil de marché de vitrine choisi dans Studio ; il reste modifiable par le propriétaire." },
       ...(launchMarket.market && normalizeStoreProvisioningTemplate(draft.provisioningTemplate) !== "algeria" ? [{ storeId, key: "owner_market_settings", value: JSON.stringify(launchMarket.market), description: `Marché ${launchMarket.label} prérempli par Studio ; pays et langues restent modifiables par le propriétaire.` }] : []),
       ...(draft.preferredCurrency !== "CHF" ? [{ storeId, key: "store_currency_rate_review_required", value: "true", description: "La devise de départ est préremplie ; le propriétaire doit définir et contrôler son taux manuel avant une vente." }] : []),
-      { storeId, key: "payment_route", value: draft.paymentRoute || "stripe_connect", description: "Route d’encaissement choisie par l’opérateur dans Studio ; aucune méthode n’est activée automatiquement." },
+      { storeId, key: "payment_route", value: draft.paymentRoute || "byok", description: "Route d’encaissement choisie par l’opérateur dans Studio ; aucune méthode n’est activée automatiquement." },
       ...(isControlledCopy && copySelection ? [{ storeId, key: "store_copy_provenance", value: JSON.stringify({ sourceStoreId: draft.copySourceStoreId, selectedScopes: selectedStudioStoreCopyScopes(copySelection), preparedAt: now.toISOString() }), description: "Provenance d’une copie Studio contrôlée ; aucune donnée client, paiement, accès, secret ou fournisseur n’est copiée." }] : []),
     ];
 
@@ -3295,7 +3295,7 @@ export type StudioProvisioningDraftInput = {
   factoryModel?: StoreFactoryModelId | null;
   provisioningTemplate?: StoreProvisioningTemplate;
   launchMarket?: StoreLaunchMarketId;
-  paymentRoute?: "stripe_connect" | "algeria_cash_on_delivery" | "both";
+  paymentRoute?: "byok" | "stripe_connect" | "algeria_cash_on_delivery" | "both";
   preferredCurrency: string;
   /** Intent only: the active SaaS plan remains a Studio-only assignment. */
   requestedPlan?: "free" | "basic" | "pro" | null;
@@ -3305,7 +3305,7 @@ export type StudioProvisioningDraftInput = {
 function normalizeStudioProvisioningDraft(input: StudioProvisioningDraftInput) {
   const customBusinessTheme = input.businessType === "autre" ? input.customBusinessTheme?.trim() || null : null;
   if (input.businessType === "autre" && !customBusinessTheme) throw new Error("PROVISIONING_CUSTOM_THEME_REQUIRED");
-  const paymentRoute = input.paymentRoute === "algeria_cash_on_delivery" || input.paymentRoute === "both" ? input.paymentRoute : "stripe_connect";
+  const paymentRoute = input.paymentRoute === "algeria_cash_on_delivery" || input.paymentRoute === "both" || input.paymentRoute === "stripe_connect" ? input.paymentRoute : "byok";
   const launchMarket = normalizeStoreLaunchMarket(input.launchMarket);
   const provisioningTemplate = launchMarket === "algeria" ? "algeria" : normalizeStoreProvisioningTemplate(input.provisioningTemplate);
   const market = getStoreLaunchMarket(launchMarket);
@@ -4953,6 +4953,20 @@ export async function getStoreSettingValue(storeId: number | undefined, key: str
   const rows = await db.select({ value: storeSettings.value }).from(storeSettings)
     .where(and(eq(storeSettings.storeId, effectiveStoreId), eq(storeSettings.key, key))).limit(1);
   return rows[0]?.value ?? null;
+}
+
+export const storePaymentRoutes = ["byok", "stripe_connect", "algeria_cash_on_delivery", "both"] as const;
+export type StorePaymentRoute = typeof storePaymentRoutes[number];
+
+export async function getStorePaymentRoute(storeId: number): Promise<StorePaymentRoute> {
+  const raw = await getStoreSettingValue(storeId, "payment_route");
+  return storePaymentRoutes.includes(raw as StorePaymentRoute) ? raw as StorePaymentRoute : "byok";
+}
+
+export async function setStorePaymentRoute(storeId: number, route: StorePaymentRoute) {
+  await getStudioManagedStore(storeId).then(store => { if (!store) throw new Error("STORE_NOT_FOUND"); });
+  await setStoreSettingValue(storeId, "payment_route", route, "Route de paiement choisie par MAZIGHO Studio. Aucun secret ni paiement réel n'est activé par ce réglage.");
+  return { storeId, route } as const;
 }
 
 export async function setStoreSettingValue(storeId: number | undefined, key: string, value: string, description?: string) {

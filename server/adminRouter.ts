@@ -1147,7 +1147,7 @@ export const studioProvisioningDraftInputSchema = z.object({
   factoryModel: z.enum(storeFactoryModelIds).default("blank"),
   provisioningTemplate: z.enum(["standard", "algeria"]).default("standard"),
   launchMarket: z.string().refine(isStoreLaunchMarketId, "Choisissez un marché de lancement valide.").default("custom"),
-  paymentRoute: z.enum(["stripe_connect", "algeria_cash_on_delivery", "both"]).default("stripe_connect"),
+  paymentRoute: z.enum(["byok", "stripe_connect", "algeria_cash_on_delivery", "both"]).default("byok"),
   preferredCurrency: z.enum(["CHF", "EUR", "USD", "GBP", "CAD", "MAD", "MXN", "DZD"]).default("CHF"),
   notes: z.string().trim().max(2000).optional(),
 });
@@ -2570,6 +2570,20 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    getStorePaymentRoute: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
+      await db.getStudioManagedStore(input.storeId).then(store => { if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." }); });
+      return db.getStorePaymentRoute(input.storeId);
+    }),
+    setStorePaymentRoute: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      route: z.enum(["byok", "stripe_connect", "algeria_cash_on_delivery", "both"]),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      const saved = await db.setStorePaymentRoute(input.storeId, input.route);
+      logAudit(ctx, { action: "studio.store.payment_route.update", entityType: "store", entityId: input.storeId, summary: `Route de paiement réglée pour ${store.displayName}`, metadata: { route: input.route, paymentActivated: false, secretsChanged: false } });
+      return saved;
+    }),
     getVisualBuilderProject: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       await db.getStudioManagedStore(input.storeId);
       return db.getStudioVisualBuilderProject(input.storeId);
@@ -2580,6 +2594,7 @@ export const adminRouter = router({
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
     })).mutation(async ({ ctx, input }) => {
       const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
       const saved = await db.saveStudioVisualBuilderProject(input);
       logAudit(ctx, {
         action: "studio.visual_builder.project.save",

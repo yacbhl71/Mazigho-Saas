@@ -47,7 +47,7 @@ describe("provisionGiftStoreFromDraft schema prerequisites", () => {
     const implementation = databaseSource.slice(start, end);
 
     expect(implementation).toContain('key: "payment_route"');
-    expect(implementation).toContain('value: draft.paymentRoute || "stripe_connect"');
+    expect(implementation).toContain('value: draft.paymentRoute || "byok"');
     expect(implementation).toContain("aucune méthode n’est activée automatiquement");
     expect(implementation).not.toContain("stripeAccountId");
   });
