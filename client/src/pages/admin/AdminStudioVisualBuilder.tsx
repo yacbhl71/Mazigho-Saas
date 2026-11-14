@@ -37,6 +37,21 @@ function initialComponents(mode: BuilderMode) {
   return `${editorBlocks[0].content}${editorBlocks[3].content}${editorBlocks[2].content}`;
 }
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character] ?? character));
+}
+
+function clonedSourceComponents(source: any) {
+  const brand = escapeHtml(source.store?.displayName || source.profile?.brandName || "Votre boutique");
+  const banner = source.banners?.[0];
+  const heroImage = banner?.imageUrl || source.profile?.highlightImageUrl || source.profile?.storyImageUrl;
+  const heroTitle = escapeHtml(banner?.title || source.profile?.highlightTitle || `Bienvenue chez ${brand}`);
+  const heroText = escapeHtml(banner?.subtitle || source.profile?.highlightText || "Une première composition issue de votre boutique clonée.");
+  const categories = (source.categories || []).slice(0, 6).map((category: any) => `<article style="padding:18px;background:#f3eee8;border-radius:14px"><div style="height:120px;background:${category.imageUrl ? `url('${escapeHtml(category.imageUrl)}') center/cover` : "#ddd4cb"};border-radius:10px"></div><h3 style="margin:12px 0 0">${escapeHtml(category.name)}</h3></article>`).join("");
+  const products = (source.products || []).slice(0, 6).map((product: any) => `<article><div style="height:190px;background:${product.images?.[0] ? `url('${escapeHtml(product.images[0])}') center/cover` : "#e5e1dc"};border-radius:10px"></div><h3 style="margin:12px 0 4px">${escapeHtml(product.name)}</h3><p style="margin:0;color:#6b6259">${(Number(product.price || 0) / 100).toFixed(2)} CHF</p></article>`).join("");
+  return `<section style="padding:76px 32px;color:#fff;background:${heroImage ? `linear-gradient(90deg,rgba(20,26,38,.78),rgba(20,26,38,.22)),url('${escapeHtml(heroImage)}') center/cover` : "#172033"}"><p style="letter-spacing:.18em;text-transform:uppercase;color:#f5b98f">${brand}</p><h1 style="font-size:44px;max-width:700px;margin:14px 0">${heroTitle}</h1><p style="max-width:600px;line-height:1.7;opacity:.9">${heroText}</p></section>${categories ? `<section style="padding:48px 28px"><p style="text-transform:uppercase;letter-spacing:.12em;color:#a45f46">Explorer</p><h2 style="font-size:30px;margin:8px 0 22px">Nos univers</h2><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">${categories}</div></section>` : ""}${products ? `<section style="padding:48px 28px;background:#faf8f5"><p style="text-transform:uppercase;letter-spacing:.12em;color:#a45f46">Sélection</p><h2 style="font-size:30px;margin:8px 0 22px">Les pièces à découvrir</h2><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px">${products}</div></section>` : ""}`;
+}
+
 export default function AdminStudioVisualBuilder() {
   const [selectedMode, setSelectedMode] = useState<BuilderMode>("blank");
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
@@ -47,6 +62,7 @@ export default function AdminStudioVisualBuilder() {
   const inventoryQuery = trpc.admin.studio.getInventory.useQuery({ includeAllForInternalProjection: true, page: 1, pageSize: 100 }, { refetchOnWindowFocus: false });
   const stores = inventoryQuery.data?.stores ?? [];
   const projectQuery = trpc.admin.studio.getVisualBuilderProject.useQuery({ storeId: selectedStoreId ?? 0 }, { enabled: selectedStoreId !== null, refetchOnWindowFocus: false });
+  const cloneSourceQuery = trpc.admin.studio.getVisualBuilderCloneSource.useQuery({ storeId: selectedStoreId ?? 0 }, { enabled: selectedMode === "clone" && selectedStoreId !== null, refetchOnWindowFocus: false });
   const saveProjectMutation = trpc.admin.studio.saveVisualBuilderProject.useMutation();
   const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode), blockManager: { blocks: editorBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode]);
 
@@ -63,10 +79,16 @@ export default function AdminStudioVisualBuilder() {
     if (editor && savedProject) editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]);
   }, [projectQuery.data]);
 
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && selectedMode === "clone" && cloneSourceQuery.data) editor.setComponents(clonedSourceComponents(cloneSourceQuery.data));
+  }, [cloneSourceQuery.data, selectedMode]);
+
   const handleEditor = (editor: Editor) => {
     editorRef.current = editor;
     const savedProject = projectQuery.data?.project;
     if (savedProject) editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]);
+    else if (selectedMode === "clone" && cloneSourceQuery.data) editor.setComponents(clonedSourceComponents(cloneSourceQuery.data));
   };
 
   const saveProject = () => {

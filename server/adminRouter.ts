@@ -2590,6 +2590,19 @@ export const adminRouter = router({
       });
       return saved;
     }),
+    getVisualBuilderCloneSource: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
+      const [content, catalogue] = await Promise.all([
+        db.getStudioOwnerPublicStorefrontContent(input.storeId),
+        db.getStudioOwnerExistingCatalogue(input.storeId),
+      ]);
+      return {
+        store: content.store,
+        profile: content.profile,
+        banners: content.banners.slice(0, 8).map(banner => ({ title: banner.title, subtitle: banner.subtitle, imageUrl: banner.imageUrl })),
+        categories: catalogue.categories.slice(0, 8).map(category => ({ name: category.name, imageUrl: category.imageUrl })),
+        products: catalogue.products.slice(0, 12).map(product => ({ name: product.name, price: product.price, description: product.description, images: product.images.slice(0, 1) })),
+      };
+    }),
     saveOwnerBuilderConfiguration: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       brandName: z.string().trim().min(2).max(160),
