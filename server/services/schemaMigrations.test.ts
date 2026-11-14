@@ -108,6 +108,15 @@ describe("deployment schema migrations", () => {
     expect(migration).toContain("payment_route");
   });
 
+  it("backfills BYOK for every existing non-platform store", () => {
+    const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
+    const migration = worktreeFile("drizzle/0053_backfill_byok_store_settings.sql");
+    expect(runner).toContain('["0053_backfill_byok_store_settings", "drizzle/0053_backfill_byok_store_settings.sql"]');
+    expect(migration).toContain("s.`isPlatformStore` = 0");
+    expect(migration).toContain("INSERT INTO `storeSettings`");
+    expect(migration).toContain("payment_route");
+  });
+
   it("registers the operator-selected payment route without payment credentials", () => {
     const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
     const migration = worktreeFile("drizzle/0049_store_provisioning_payment_route.sql");
