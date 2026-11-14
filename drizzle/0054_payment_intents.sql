@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `paymentIntents` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `storeId` int NOT NULL,
+  `orderId` bigint NULL,
+  `idempotencyKey` varchar(255) NOT NULL,
+  `provider` varchar(32) NOT NULL,
+  `method` varchar(32) NOT NULL,
+  `isTestMode` tinyint(1) NOT NULL DEFAULT 1,
+  `amountMinor` int NOT NULL,
+  `currency` varchar(3) NOT NULL,
+  `status` varchar(32) NOT NULL,
+  `providerSessionId` varchar(255) NULL,
+  `providerReference` varchar(255) NULL,
+  `cartFingerprint` char(64) NOT NULL,
+  `lastEventId` varchar(255) NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `paymentIntents_store_idempotency_unique` (`storeId`, `idempotencyKey`),
+  UNIQUE KEY `paymentIntents_provider_session_unique` (`provider`, `storeId`, `providerSessionId`),
+  KEY `paymentIntents_store_status_idx` (`storeId`, `status`),
+  KEY `paymentIntents_order_idx` (`storeId`, `orderId`)
+) ENGINE=InnoDB;

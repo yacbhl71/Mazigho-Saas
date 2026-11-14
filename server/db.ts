@@ -12193,6 +12193,33 @@ export async function getPaymentCartById(cartId: number, storeId: number) {
   return { id: cart.id, storeId: cart.storeId, items };
 }
 
+export async function createPaymentIntent(input: {
+  storeId: number;
+  cartId: number;
+  idempotencyKey: string;
+  provider: string;
+  method: string;
+  currency: string;
+  isTestMode: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const cart = await getPaymentCartById(input.cartId, input.storeId);
+  if (!cart || cart.items.length === 0) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  const amountMinor = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartFingerprint = createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart.items })).digest("hex");
+  const key = input.idempotencyKey.trim();
+  if (!/^[A-Za-z0-9._:-]{16,255}$/.test(key)) throw new Error("IDEMPOTENCY_KEY_INVALID");
+  await db.execute(sql`INSERT INTO paymentIntents
+    (storeId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, cartFingerprint)
+    VALUES (${input.storeId}, ${key}, ${input.provider}, ${input.method}, ${input.isTestMode ? 1 : 0}, ${amountMinor}, ${input.currency}, 'created', ${cartFingerprint})
+    ON DUPLICATE KEY UPDATE id=id`);
+  const rows = await db.execute(sql`SELECT id, storeId, orderId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, providerSessionId, providerReference, cartFingerprint, lastEventId, createdAt, updatedAt
+    FROM paymentIntents WHERE storeId = ${input.storeId} AND idempotencyKey = ${key} LIMIT 1`);
+  const record = (rows as any)[0]?.[0] ?? (rows as any)[0];
+  return record ?? null;
+}
+
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
   await ensureStoreRelationshipScopeSchema();
   const db = await getDb();
