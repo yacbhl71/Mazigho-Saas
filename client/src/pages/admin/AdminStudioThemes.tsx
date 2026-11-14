@@ -44,7 +44,7 @@ function ThemePreviewFrame({ theme, label }: { theme: (typeof themes)[number]; l
 
 export default function AdminStudioThemes() {
   const [, setLocation] = useLocation();
-  const inventoryQuery = trpc.admin.studio.getInventory.useQuery(undefined, { refetchOnWindowFocus: false });
+  const inventoryQuery = trpc.admin.studio.getInventory.useQuery({ includeAllForInternalProjection: true }, { refetchOnWindowFocus: false });
   const utils = trpc.useUtils();
   const [selectedThemeId, setSelectedThemeId] = useState<StorefrontThemeId>("violetCraft");
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");

@@ -1567,6 +1567,7 @@ export const adminRouter = router({
       needsAttention: z.boolean().optional(),
       page: z.number().int().positive().max(10_000).optional(),
       pageSize: z.union([z.literal(20), z.literal(50), z.literal(100)]).optional(),
+      includeAllForInternalProjection: z.boolean().optional(),
     }).optional()).query(async ({ input }) => db.getStudioStoreInventory(input ?? {})),
     purgeExternalChStores: platformProcedure.input(z.object({ confirmation: z.literal("SUPPRIMER LES BOUTIQUES .CH") })).mutation(async ({ input }) => {
       if (input.confirmation !== "SUPPRIMER LES BOUTIQUES .CH") throw new TRPCError({ code: "BAD_REQUEST", message: "Confirmation invalide." });
