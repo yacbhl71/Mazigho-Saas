@@ -36,7 +36,7 @@ const productSchema = z.object({
   id: safeText(100).optional(), title: safeText(200), name: safeText(200).optional(),
   description: safeText(10000).optional(), body_html: safeText(10000).optional(), longDescription: safeText(10000).optional(),
   price: z.number().finite().nonnegative().optional(), compareAtPrice: z.number().finite().nonnegative().optional(),
-  currency: safeText(3).optional(), images: z.array(z.union([safeUrl, z.object({ src: safeUrl.optional(), url: safeUrl.optional() }).strict())).max(250).optional(),
+  currency: safeText(3).optional(), images: z.array(z.union([safeUrl, z.object({ src: safeUrl.optional(), url: safeUrl.optional() }).strict()])).max(250).optional(),
   variants: z.array(variantSchema).max(250).optional(), tags: z.array(safeText(80)).max(250).optional(), type: safeText(100).optional(), vendor: safeText(160).optional(), category: safeText(100).optional(),
 }).strict();
 
