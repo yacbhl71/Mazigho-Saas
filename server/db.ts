@@ -3801,7 +3801,7 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
       createdAt: stores.createdAt,
       updatedAt: stores.updatedAt,
     }).from(stores)
-      .where(sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
+      .where(input.includeAllForInternalProjection ? sql`1 = 1` : sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
       .orderBy(desc(stores.isPlatformStore), asc(stores.displayName)),
     db.select({
       storeId: storeMemberships.storeId,
@@ -3851,7 +3851,7 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
       createdAt: stores.createdAt,
       updatedAt: stores.updatedAt,
     }).from(stores)
-      .where(sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
+      .where(input.includeAllForInternalProjection ? sql`1 = 1` : sql`${stores.isPlatformStore} = 1 OR LOWER(${stores.primaryDomain}) NOT LIKE '%.mazigho.ch'`)
       .orderBy(desc(stores.isPlatformStore), asc(stores.displayName));
     return [fallbackStores, [], [], [], [], [], [], [], [], []] as const;
   });
