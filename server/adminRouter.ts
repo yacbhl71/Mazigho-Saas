@@ -2543,6 +2543,10 @@ export const adminRouter = router({
     getGiftStoreActivationPreflight: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => db.getGiftStoreActivationPreflight(input.storeId)),
     getPrivateStorefrontPreview: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       try {
+        // Un import clone peut être ouvert directement en aperçu, sans passage
+        // préalable par l’éditeur. Préparer le brouillon ici rend ce parcours
+        // idempotent et indépendant de l’ordre de navigation dans Studio.
+        await ensureImportedStoreStudioProvisioning(input.storeId);
         return await db.getStudioPrivateStorefrontPreview(input.storeId);
       } catch (error) {
         const code = error instanceof Error ? error.message : "";
