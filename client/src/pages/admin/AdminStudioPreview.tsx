@@ -51,6 +51,7 @@ export default function AdminStudioPreview() {
     { label: "Produits vedettes", visible: preview.homepageSections.featured },
     { label: "Bloc final", visible: preview.homepageSections.closing },
   ].filter(section => section.visible).map(section => section.label) : [];
+  const visibleCategories = preview ? Array.from(new Map(preview.categories.map(category => [category.name.trim().toLocaleLowerCase(), category])).values()) : [];
 
   return (
     <DashboardLayout>
@@ -118,9 +119,9 @@ export default function AdminStudioPreview() {
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div><p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: primary }}>Univers de la boutique</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Catégories préparées</h2></div>
-                <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">{preview.categories.length} catégorie{preview.categories.length > 1 ? "s" : ""}</Badge>
+                <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">{visibleCategories.length} catégorie{visibleCategories.length > 1 ? "s" : ""}</Badge>
               </div>
-              {preview.categories.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">Aucune catégorie n’est encore préparée pour cette boutique.</div> : <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{preview.categories.map(category => <article key={category.id} className="min-h-36 min-w-0 rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ backgroundColor: soft, color: primary }}><PawPrint className="h-5 w-5" /></div><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} /></div><h3 className="mt-5 break-words font-bold text-slate-950">{category.name}</h3><p className="mt-2 break-words text-sm leading-6 text-slate-600">{category.description || "Catégorie à compléter avant l’ouverture publique."}</p></article>)}</div>}
+              {visibleCategories.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">Aucune catégorie n’est encore préparée pour cette boutique.</div> : <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{visibleCategories.map(category => <article key={category.id} className="min-h-36 min-w-0 rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl" style={{ backgroundColor: soft, color: primary }}><PawPrint className="h-5 w-5" /></div><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} /></div><h3 className="mt-5 break-words font-bold text-slate-950">{category.name.trim()}</h3><p className="mt-2 break-words text-sm leading-6 text-slate-600">{cleanPreviewText(category.description) || "Catégorie à compléter avant l’ouverture publique."}</p></article>)}</div>}
             </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7">
