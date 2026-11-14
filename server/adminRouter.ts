@@ -1098,7 +1098,7 @@ const storefrontThemePresets = {
   },
   mazighoAtelierEditorial: {
     profile: { ...homeThemeTemplate, brandName: "Atelier éditorial", brandMessage: "Une sélection sensible de matières, d’objets et d’essentiels à personnaliser.", paletteId: "sage" as const, customColorsEnabled: true, customPrimary: "#334E68", customAccent: "#4E91A8", customSoft: "#F7FAFC", headerLayout: "inline" as const },
-    hero: { title: "Des pièces qui trouvent naturellement leur place.", subtitle: "Une sélection contemporaine pensée pour composer un vestiaire simple, personnel et durable.", imageUrl: "/assets/themes/fashion/hero.webp", linkUrl: "/boutique" },
+    hero: { title: "Des objets qui trouvent naturellement leur place.", subtitle: "Une sélection sensible de textiles, accessoires et petits essentiels pour accompagner chaque moment du quotidien.", imageUrl: "/assets/category-maison-hero.webp", linkUrl: "/boutique" },
     categoryImages: ["/assets/themes/fashion/category-clothing.webp", "/assets/themes/fashion/category-shoes.webp", "/assets/themes/fashion/category-accessories.webp"],
   },
   mazighoEditorialMatiere: {
