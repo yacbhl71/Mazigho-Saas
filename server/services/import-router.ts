@@ -69,7 +69,11 @@ function slugify(value: string) {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "boutique-clone";
 }
 function cents(value: number | undefined) { return Math.round((value ?? 0) * 100); }
-function uniqueSlug(base: string, suffix: string) { return `${base.slice(0, 48)}-${suffix.slice(0, 10)}`.replace(/-+/g, "-"); }
+function uniqueSlug(base: string, suffix: string) {
+  const normalizedSuffix = slugify(suffix).slice(0, 40);
+  const maxBaseLength = Math.max(1, 190 - normalizedSuffix.length);
+  return `${base.slice(0, maxBaseLength)}-${normalizedSuffix}`.replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+}
 function imageUrl(value: string | { src?: string; url?: string }) { return typeof value === "string" ? value : value.src || value.url || null; }
 
 function buildImportedDesignProfile(payload: CloneImportPayload) {
