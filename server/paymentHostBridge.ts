@@ -46,10 +46,12 @@ function bridgeGuard(req: Request, res: Response) {
 async function authenticateForwardedRequest(req: Request) {
   const forwardedCookie = req.header("x-forwarded-cookie");
   const forwardedAuthorization = req.header("x-forwarded-authorization");
+  const forwardedMazighoSession = req.header("x-forwarded-mazigho-session");
   const authRequest = Object.create(req) as Request;
   authRequest.headers = { ...req.headers };
   if (forwardedCookie) authRequest.headers.cookie = forwardedCookie;
   if (forwardedAuthorization) authRequest.headers.authorization = forwardedAuthorization;
+  if (forwardedMazighoSession) authRequest.headers["x-mazigho-session"] = forwardedMazighoSession;
   return sdk.authenticateRequest(authRequest).catch(() => null);
 }
 

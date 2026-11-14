@@ -27,8 +27,10 @@ export async function callPaymentService<T>(ctx: ProxyContext, path: string, ini
   };
   const cookie = headerValue(ctx.req.headers.cookie);
   const authorization = headerValue(ctx.req.headers.authorization);
+  const mazighoSession = headerValue(ctx.req.headers["x-mazigho-session"]);
   if (cookie) headers["x-forwarded-cookie"] = cookie;
   if (authorization) headers["x-forwarded-authorization"] = authorization;
+  if (mazighoSession) headers["x-forwarded-mazigho-session"] = mazighoSession;
   if (init.body !== undefined) headers["content-type"] = "application/json";
 
   let response: Response;
