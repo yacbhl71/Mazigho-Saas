@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ArrowRight, CheckCircle2, CopyPlus, ImagePlus, Layers3, LockKeyhole, Palette, Plus, Save, Sparkles } from "lucide-react";
 
 type BuilderMode = "blank" | "theme" | "clone";
+type ImageRole = "free" | "logo" | "banner" | "category";
 
 const modes: Array<{ id: BuilderMode; title: string; eyebrow: string; description: string; icon: typeof Plus; tone: string; steps: string[] }> = [
   { id: "blank", title: "Créer de zéro", eyebrow: "Page vierge", description: "Construisez une boutique à partir d’une structure propre, puis ajoutez progressivement vos sections, images, produits et boutons.", icon: Plus, tone: "violet", steps: ["Choisir une structure de départ", "Ajouter des sections et des blocs", "Personnaliser l’identité visuelle", "Prévisualiser avant publication"] },
@@ -42,6 +43,17 @@ function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character] ?? character));
 }
 
+function imageMarkup(url: string, role: ImageRole) {
+  const styles: Record<ImageRole, string> = {
+    free: "display:block;width:100%;max-height:520px;object-fit:cover;border-radius:14px",
+    logo: "display:block;width:auto;max-width:260px;height:96px;object-fit:contain;margin:0 auto",
+    banner: "display:block;width:100%;aspect-ratio:16/6;object-fit:cover;object-position:center;border-radius:14px",
+    category: "display:block;width:100%;aspect-ratio:4/3;object-fit:cover;object-position:center;border-radius:14px",
+  };
+  const labels: Record<ImageRole, string> = { free: "Image ajoutée dans le constructeur", logo: "Logo de la boutique", banner: "Bannière de la boutique", category: "Image de catégorie" };
+  return `<figure data-mazigho-image-role="${role}" style="margin:0;padding:24px;text-align:center"><img src="${escapeHtml(url)}" alt="${labels[role]}" style="${styles[role]}" /></figure>`;
+}
+
 function clonedSourceComponents(source: any) {
   const brand = escapeHtml(source.store?.displayName || source.profile?.brandName || "Votre boutique");
   const banner = source.banners?.[0];
@@ -57,10 +69,12 @@ export default function AdminStudioVisualBuilder() {
   const [selectedMode, setSelectedMode] = useState<BuilderMode>("blank");
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [hasSelectedImage, setHasSelectedImage] = useState(false);
+  const [imageRole, setImageRole] = useState<ImageRole>("free");
   const editorRef = useRef<Editor | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const selectedImageRef = useRef<any>(null);
   const uploadIntentRef = useRef<"add" | "replace">("add");
+  const uploadRoleRef = useRef<ImageRole>("free");
   const selected = modes.find(mode => mode.id === selectedMode) ?? modes[0];
   const tone = toneClasses[selected.tone];
   const Icon = selected.icon;
@@ -71,10 +85,13 @@ export default function AdminStudioVisualBuilder() {
   const saveProjectMutation = trpc.admin.studio.saveVisualBuilderProject.useMutation();
   const uploadImageMutation = trpc.admin.studio.uploadVisualBuilderImage.useMutation({
     onSuccess: result => {
+      const role = uploadRoleRef.current;
       if (uploadIntentRef.current === "replace" && selectedImageRef.current) {
-        selectedImageRef.current.addAttributes({ src: result.url, alt: "Image remplacée dans le constructeur" });
+        const image = selectedImageRef.current;
+        image.addAttributes({ src: result.url, alt: role === "free" ? "Image remplacée dans le constructeur" : `${role} de la boutique` });
+        image.addStyle(role === "logo" ? "width:auto;max-width:260px;height:96px;object-fit:contain;margin:0 auto" : role === "banner" ? "width:100%;aspect-ratio:16/6;object-fit:cover;object-position:center" : role === "category" ? "width:100%;aspect-ratio:4/3;object-fit:cover;object-position:center" : "width:100%;max-height:520px;object-fit:cover");
       } else {
-        editorRef.current?.addComponents(`<figure style="margin:0;padding:24px;text-align:center"><img src="${result.url}" alt="Image ajoutée dans le constructeur" style="display:block;width:100%;max-height:520px;object-fit:cover;border-radius:14px" /></figure>`);
+        editorRef.current?.addComponents(imageMarkup(result.url, role));
       }
       selectedImageRef.current = null;
       setHasSelectedImage(false);
@@ -134,6 +151,7 @@ export default function AdminStudioVisualBuilder() {
 
   const openImagePicker = (intent: "add" | "replace") => {
     uploadIntentRef.current = intent;
+    uploadRoleRef.current = imageRole;
     uploadInputRef.current?.click();
   };
 
@@ -141,7 +159,7 @@ export default function AdminStudioVisualBuilder() {
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-slate-950 text-white hover:bg-slate-950"><Layers3 className="mr-1.5 h-3.5 w-3.5" /> MAZIGHO Studio</Badge><Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-950">Constructeur open source</Badge></div><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Constructeur visuel</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Un canvas inspiré des meilleurs éditeurs visuels, construit sur GrapesJS open source et spécialisé pour les boutiques MAZIGHO.</p></div><Link href="/admin/studio"><Button type="button" variant="outline" className="min-h-11 w-fit">Retour au Studio</Button></Link></header>
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7"><div className="flex flex-col gap-3 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-fuchsia-700">Point de départ</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Comment voulez-vous commencer ?</h2><p className="mt-2 text-sm leading-6 text-slate-600">Le choix recharge une composition de démonstration dans le canvas privé.</p></div><Badge variant="outline" className="w-fit border-slate-300 bg-slate-50 text-slate-700">Étape 1 · Choisir une base</Badge></div><div className="mt-6 grid gap-4 lg:grid-cols-3">{modes.map(mode => { const ModeIcon = mode.icon; const active = selectedMode === mode.id; const modeTone = toneClasses[mode.tone]; return <button key={mode.id} type="button" onClick={() => setSelectedMode(mode.id)} className={`rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${active ? `${modeTone.card} ring-2 ring-slate-950/10` : "border-slate-200 bg-white hover:border-slate-300"}`}><div className="flex items-start justify-between gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl ${modeTone.icon}`}><ModeIcon className="h-5 w-5" /></span>{active && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}</div><p className="mt-5 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{mode.eyebrow}</p><h3 className="mt-2 text-xl font-bold text-slate-950">{mode.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{mode.description}</p><span className={`mt-5 inline-flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-semibold text-white ${active ? modeTone.button : "bg-slate-700 hover:bg-slate-800"}`}>{active ? "Parcours sélectionné" : "Choisir ce parcours"}<ArrowRight className="ml-2 h-4 w-4" /></span></button>; })}</div></section>
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Étape 2 · Boutique cible</p><h2 className="mt-1 text-xl font-bold text-slate-950">Où enregistrer ce brouillon ?</h2><p className="mt-1 text-sm text-slate-600">Le projet reste isolé dans les réglages privés de la boutique choisie.</p></div><select value={selectedStoreId ?? ""} onChange={event => setSelectedStoreId(Number(event.target.value) || null)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-950/20"><option value="">Sélectionner une boutique</option>{stores.map(store => <option key={store.id} value={store.id}>{store.displayName} · {store.primaryDomain}</option>)}</select></div></section>
-    <section className="rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-3"><div className={`grid h-10 w-10 place-items-center rounded-xl ${tone.icon}`}><Icon className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Canvas privé · {selected.title}</p><h2 className="mt-1 text-xl font-bold text-slate-950">Composition MAZIGHO</h2></div></div><p className="mt-3 text-sm text-slate-600">Glissez les blocs depuis la colonne de gauche. Sélectionnez une image pour la remplacer, puis enregistrez le brouillon.</p></div><div className="flex flex-wrap items-center gap-2"><input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadImage} /><Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">{projectQuery.data?.updatedAt ? "Brouillon chargé" : "Nouveau brouillon"}</Badge><Button type="button" variant="outline" onClick={() => openImagePicker("add")} disabled={!selectedStoreId || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Ajouter une image</Button><Button type="button" variant="outline" onClick={() => openImagePicker("replace")} disabled={!hasSelectedImage || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Remplacer l’image</Button><Button type="button" onClick={saveProject} disabled={!selectedStoreId || saveProjectMutation.isPending} className="min-h-10 bg-slate-950 text-white hover:bg-slate-800"><Save className="mr-2 h-4 w-4" />{saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}</Button></div></div><div className="overflow-hidden rounded-b-3xl"><GjsEditor key={`${selectedMode}-${selectedStoreId ?? "none"}`} grapesjs={grapesjs} options={editorOptions} onEditor={handleEditor} /></div></section>
+    <section className="rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-3"><div className={`grid h-10 w-10 place-items-center rounded-xl ${tone.icon}`}><Icon className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Canvas privé · {selected.title}</p><h2 className="mt-1 text-xl font-bold text-slate-950">Composition MAZIGHO</h2></div></div><p className="mt-3 text-sm text-slate-600">Choisissez un rôle d’image pour appliquer automatiquement ses proportions et son recadrage.</p></div><div className="flex flex-wrap items-center gap-2"><input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadImage} /><select value={imageRole} onChange={event => setImageRole(event.target.value as ImageRole)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-800"><option value="free">Image libre</option><option value="logo">Logo</option><option value="banner">Bannière</option><option value="category">Catégorie</option></select><Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">{projectQuery.data?.updatedAt ? "Brouillon chargé" : "Nouveau brouillon"}</Badge><Button type="button" variant="outline" onClick={() => openImagePicker("add")} disabled={!selectedStoreId || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Ajouter</Button><Button type="button" variant="outline" onClick={() => openImagePicker("replace")} disabled={!hasSelectedImage || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Remplacer</Button><Button type="button" onClick={saveProject} disabled={!selectedStoreId || saveProjectMutation.isPending} className="min-h-10 bg-slate-950 text-white hover:bg-slate-800"><Save className="mr-2 h-4 w-4" />{saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}</Button></div></div><div className="overflow-hidden rounded-b-3xl"><GjsEditor key={`${selectedMode}-${selectedStoreId ?? "none"}`} grapesjs={grapesjs} options={editorOptions} onEditor={handleEditor} /></div></section>
     <Card className="border-sky-200 bg-sky-50"><CardContent className="flex flex-col gap-3 p-5 text-sm leading-6 text-sky-950 md:flex-row md:items-start"><LockKeyhole className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Sauvegarde privée uniquement</p><p>Le projet est enregistré dans les réglages isolés de la boutique. Cette étape ne publie rien, ne change aucun domaine et n’active aucun paiement.</p></div></CardContent></Card>
   </main></DashboardLayout>;
 }
