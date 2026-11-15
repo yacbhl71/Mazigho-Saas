@@ -51,7 +51,10 @@ async function authenticateForwardedRequest(req: Request) {
   authRequest.headers = { ...req.headers };
   if (forwardedCookie) authRequest.headers.cookie = forwardedCookie;
   if (forwardedAuthorization) authRequest.headers.authorization = forwardedAuthorization;
-  if (forwardedOwnerSession) authRequest.headers["x-mazigho-session"] = forwardedOwnerSession;
+  // The SDK gives x-mazigho-session precedence over cookies. Prefer the
+  // forwarded cookie when present so an obsolete localStorage token cannot
+  // invalidate an otherwise valid owner session.
+  if (forwardedOwnerSession && !forwardedCookie && !forwardedAuthorization) authRequest.headers["x-mazigho-session"] = forwardedOwnerSession;
   return sdk.authenticateRequest(authRequest).catch(() => null);
 }
 
