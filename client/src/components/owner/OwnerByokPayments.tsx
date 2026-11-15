@@ -14,8 +14,11 @@ type PublicConfig = { provider: Provider; isEnabled: boolean; isTestMode: boolea
 const empty = (provider: Provider): PublicConfig => ({ provider, isEnabled: false, isTestMode: true, publicKey: null, hasSecret: false, hasWebhookSecret: false, merchantLabel: null, supportedCurrencies: ["CHF"], instructions: null, enabledMethods: provider === "stripe" ? ["card"] : ["paypal"], lastConnectionTestOk: null, lastConnectionTestError: null });
 
 export default function OwnerByokPayments({ canManage }: { canManage: boolean }) {
-  const configs = trpc.owner.byokPayments.list.useQuery(undefined, { retry: false });
-  const currency = trpc.owner.getStoreCurrency.useQuery(undefined, { retry: false });
+  const configs = trpc.owner.byokPayments.list.useQuery(undefined, {
+    retry: 3,
+    retryDelay: attempt => Math.min(10_000 * (attempt + 1), 20_000),
+  });
+  const currency = trpc.owner.getStoreCurrency.useQuery(undefined, { retry: 2 });
   const save = trpc.owner.byokPayments.save.useMutation({ onSuccess: async () => { await configs.refetch(); toast.success("Configuration de paiement enregistrée dans le service sécurisé."); }, onError: error => toast.error(error.message) });
   const test = trpc.owner.byokPayments.test.useMutation({ onSuccess: async data => { await configs.refetch(); toast.success((data.result as { ok?: boolean })?.ok ? "Connexion réussie." : "Le test a échoué."); }, onError: error => toast.error(error.message) });
   const remove = trpc.owner.byokPayments.remove.useMutation({ onSuccess: async () => { await configs.refetch(); toast.success("Connecteur supprimé."); }, onError: error => toast.error(error.message) });
