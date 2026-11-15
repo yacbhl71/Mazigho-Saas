@@ -55,6 +55,14 @@ export const stripeCheckoutRouter = router({
       provider: z.enum(["stripe", "paypal"]),
       method: z.enum(["card", "paypal"]).optional(),
       countryCode: z.string().length(2).regex(/^[A-Za-z]{2}$/),
+      shippingAddress: z.object({
+        name: z.string().trim().min(2).max(160),
+        phone: z.string().trim().min(5).max(60),
+        line1: z.string().trim().min(3).max(240),
+        line2: z.string().trim().max(240).optional(),
+        city: z.string().trim().min(2).max(120),
+        postalCode: z.string().trim().min(2).max(32),
+      }),
       items: z.array(z.object({
         productId: z.number().int().positive(),
         quantity: z.number().int().min(1).max(20),
@@ -74,6 +82,7 @@ export const stripeCheckoutRouter = router({
           method: input.method,
           currency: currency.code,
           country: input.countryCode.toUpperCase(),
+          shippingAddress: JSON.stringify(input.shippingAddress),
           idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
           items: input.items.map(item => ({ productId: String(item.productId), variantId: String(item.variantId ?? item.productId), quantity: item.quantity })),
         },
