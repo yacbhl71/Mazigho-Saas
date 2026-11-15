@@ -12269,11 +12269,24 @@ export async function attachPaymentIntentOrder(input: {
   if (!intent) throw new Error("PAYMENT_INTENT_NOT_FOUND");
   if (intent.orderId) return { orderId: intent.orderId, alreadyAttached: true };
   if (intent.status !== "created") throw new Error("PAYMENT_INTENT_NOT_ATTACHABLE");
-  const order = await createOrder(input.userId, { shippingAddress: input.shippingAddress, billingAddress: input.billingAddress, paymentMethod: `byok:${intent.currency}` }, input.storeId);
-  const updated = await db.execute(sql`UPDATE paymentIntents SET orderId = ${order.id}
+  const orderResult = await db.insert(orders).values({
+    storeId: input.storeId,
+    userId: input.userId,
+    totalAmount: Number(intent.amountMinor) / 100,
+    shippingAddress: input.shippingAddress,
+    billingAddress: input.billingAddress || input.shippingAddress,
+    paymentMethod: `byok:${intent.currency}`,
+    promotionId: null,
+    discountAmount: 0,
+    status: "pending",
+    paymentStatus: "unpaid",
+  });
+  const orderId = Number((orderResult as any)[0]?.insertId);
+  if (!Number.isInteger(orderId) || orderId <= 0) throw new Error("PAYMENT_INTENT_ORDER_CREATE_FAILED");
+  const updated = await db.execute(sql`UPDATE paymentIntents SET orderId = ${orderId}
     WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND orderId IS NULL AND status = 'created'`);
   if ((updated as any)[0]?.affectedRows !== 1) throw new Error("PAYMENT_INTENT_ORDER_RACE");
-  return { orderId: order.id, alreadyAttached: false };
+  return { orderId, alreadyAttached: false };
 }
 
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
