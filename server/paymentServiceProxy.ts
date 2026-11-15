@@ -15,8 +15,12 @@ function proxyError(status: number, code?: string, message?: string, details?: R
   if (status === 404) return new TRPCError({ code: "NOT_FOUND", message: "Configuration de paiement introuvable." });
   const safeMessage = typeof message === "string" && message.length <= 300 ? message : undefined;
   const field = details && typeof details === "object" && typeof details.provider === "string" ? ` — ${details.provider}` : "";
+  const issuePaths = details && typeof details === "object"
+    ? Object.keys(details).filter(key => key !== "provider").slice(0, 8).join(", ")
+    : "";
   const detail = code ? ` (${code}, HTTP ${status})` : ` (HTTP ${status})`;
-  return new TRPCError({ code: "BAD_GATEWAY", message: `Le service de paiement a refusé la demande${field}${safeMessage ? ` : ${safeMessage}` : detail}. Aucun changement n’a été enregistré.` });
+  const diagnostic = issuePaths ? ` [champs : ${issuePaths}]` : "";
+  return new TRPCError({ code: "BAD_GATEWAY", message: `Le service de paiement a refusé la demande${field}${safeMessage ? ` : ${safeMessage}` : detail}${diagnostic}. Aucun changement n’a été enregistré.` });
 }
 
 export async function callPaymentService<T>(ctx: ProxyContext, path: string, init: { method?: string; storeId: number; body?: unknown }): Promise<T> {
