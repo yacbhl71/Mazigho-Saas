@@ -13,7 +13,8 @@ function proxyError(status: number, code?: string) {
   if (status === 401 || code === "UNAUTHENTICATED") return new TRPCError({ code: "UNAUTHORIZED", message: "Votre session propriétaire n’est plus valide." });
   if (status === 403 || code === "FORBIDDEN") return new TRPCError({ code: "FORBIDDEN", message: "Vous n’avez pas le droit de gérer les paiements de cette boutique." });
   if (status === 404) return new TRPCError({ code: "NOT_FOUND", message: "Configuration de paiement introuvable." });
-  return new TRPCError({ code: "BAD_GATEWAY", message: "Le service de paiement est momentanément indisponible. Aucun changement n’a été enregistré." });
+  const detail = code ? ` (${code}, HTTP ${status})` : ` (HTTP ${status})`;
+  return new TRPCError({ code: "BAD_GATEWAY", message: `Le service de paiement est momentanément indisponible${detail}. Aucun changement n’a été enregistré.` });
 }
 
 export async function callPaymentService<T>(ctx: ProxyContext, path: string, init: { method?: string; storeId: number; body?: unknown }): Promise<T> {
