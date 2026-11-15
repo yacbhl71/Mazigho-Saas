@@ -123,14 +123,16 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     const storeId = storeIdParam(req);
     const body = req.body ?? {};
     const cartId = Number(body.cartId);
+    const validatedCart = body.validatedCart;
     const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
     const provider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "";
     const method = typeof body.method === "string" ? body.method.trim().toLowerCase() : "";
-    if (!storeId || !Number.isInteger(cartId) || cartId <= 0 || !idempotencyKey || !provider || !method) {
+    const validatedCartOk = validatedCart && typeof validatedCart.fingerprint === "string" && /^[a-f0-9]{64}$/.test(validatedCart.fingerprint) && Number.isSafeInteger(validatedCart.totalMinor) && validatedCart.totalMinor > 0 && typeof validatedCart.currency === "string";
+    if (!storeId || (!Number.isInteger(cartId) || cartId <= 0) && !validatedCartOk || !idempotencyKey || !provider || !method) {
       return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     }
     try {
-      const intent = await createPaymentIntent({ storeId, cartId, idempotencyKey, provider, method, currency: "CHF", isTestMode: body.isTestMode !== false });
+      const intent = await createPaymentIntent({ storeId, cartId: Number.isInteger(cartId) && cartId > 0 ? cartId : undefined, validatedCart: validatedCartOk ? { fingerprint: validatedCart.fingerprint, totalMinor: validatedCart.totalMinor, currency: validatedCart.currency } : undefined, idempotencyKey, provider, method, currency: validatedCartOk ? validatedCart.currency : "CHF", isTestMode: body.isTestMode !== false });
       return res.status(201).json({ data: intent });
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_INTENT_CREATE_FAILED";

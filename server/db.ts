@@ -12195,7 +12195,8 @@ export async function getPaymentCartById(cartId: number, storeId: number) {
 
 export async function createPaymentIntent(input: {
   storeId: number;
-  cartId: number;
+  cartId?: number;
+  validatedCart?: { fingerprint: string; totalMinor: number; currency: string };
   idempotencyKey: string;
   provider: string;
   method: string;
@@ -12204,10 +12205,11 @@ export async function createPaymentIntent(input: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const cart = await getPaymentCartById(input.cartId, input.storeId);
-  if (!cart || cart.items.length === 0) throw new Error("CART_EMPTY_OR_NOT_FOUND");
-  const amountMinor = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const cartFingerprint = createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart.items })).digest("hex");
+  const cart = input.cartId ? await getPaymentCartById(input.cartId, input.storeId) : null;
+  if (input.cartId && (!cart || cart.items.length === 0)) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  if (!cart && !input.validatedCart) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  const amountMinor = cart ? cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0) : input.validatedCart!.totalMinor;
+  const cartFingerprint = cart ? createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart.items })).digest("hex") : input.validatedCart!.fingerprint;
   const key = input.idempotencyKey.trim();
   if (!/^[A-Za-z0-9._:-]{16,255}$/.test(key)) throw new Error("IDEMPOTENCY_KEY_INVALID");
   await db.execute(sql`INSERT INTO paymentIntents
