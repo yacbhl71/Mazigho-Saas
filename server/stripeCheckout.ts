@@ -10,6 +10,7 @@ import { getCheckoutPaymentGate } from "./services/checkoutPaymentGate";
 import { calculateMazighoApplicationFee } from "./services/stripeConnectPayment";
 import { getStripeConnectCredentials, type StripeConnectMode } from "./services/stripeConnectMode";
 import { CHECKOUT_LEGAL_VERSION } from "../shared/checkoutLegalAcceptance";
+import { callPaymentService } from "./paymentServiceProxy";
 
 const storefrontProtectedProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   if (!ctx.store) {
@@ -49,6 +50,37 @@ function stripeUnavailable(mode: StripeConnectMode, operation: "create" | "retri
 }
 
 export const stripeCheckoutRouter = router({
+  createByokSession: storefrontProtectedProcedure
+    .input(z.object({
+      provider: z.enum(["stripe", "paypal"]),
+      method: z.enum(["card", "paypal"]).optional(),
+      countryCode: z.string().length(2).regex(/^[A-Za-z]{2}$/),
+      items: z.array(z.object({
+        productId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(20),
+        variantId: z.number().int().positive().optional(),
+      })).min(1).max(30),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { getStoreCurrencyConfig } = await import("./db");
+      const currency = await getStoreCurrencyConfig(ctx.store!.id);
+      const response = await callPaymentService<{ session: { redirectUrl: string | null; orderId: string } }>(ctx, "/api/checkout/create-session", {
+        method: "POST",
+        storeId: ctx.store!.id,
+        body: {
+          storeId: String(ctx.store!.id),
+          userId: String(ctx.user.id),
+          provider: input.provider,
+          method: input.method,
+          currency: currency.code,
+          country: input.countryCode.toUpperCase(),
+          idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
+          items: input.items.map(item => ({ productId: String(item.productId), variantId: String(item.variantId ?? item.productId), quantity: item.quantity })),
+        },
+      });
+      if (!response.session.redirectUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le prestataire de paiement n’a pas fourni de lien de paiement." });
+      return { url: response.session.redirectUrl, orderId: response.session.orderId };
+    }),
   createAlgeriaCashOnDeliveryOrder: storefrontProtectedProcedure
     .input(z.object({
       requestId: z.string().uuid(),

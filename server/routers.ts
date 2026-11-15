@@ -42,6 +42,7 @@ import { shoppableStoriesRouter } from "./shoppableStoriesRouter";
 import { productCompareRouter } from "./productCompareRouter";
 import { DEFAULT_STORE_MAINTENANCE_MODE } from "../shared/storeMaintenanceMode";
 import { orderBundleProducts } from "../shared/storeProductBundles";
+import { callPaymentService } from "./paymentServiceProxy";
 
 type PublicProductLocale = "fr" | "de" | "it" | "en" | "es" | "nl" | "ar";
 const publicProductLocales: PublicProductLocale[] = ["fr", "de", "it", "en", "es", "nl", "ar"];
@@ -180,18 +181,24 @@ export const appRouter = router({
       if (!mayAcceptStorefrontCommerce(ctx.store!.status, Boolean(ctx.store!.isPlatformStore))) {
         return { enabled: false as const, mode: "showcase_only" as const, reason: "showcase_only" as const, cashOnDeliveryAvailable: false };
       }
-      const { getAlgeriaCashOnDeliveryReadiness, getStoreStripeConnectCheckoutContext } = await import("./db");
+      const { getAlgeriaCashOnDeliveryReadiness, getStoreStripeConnectCheckoutContext, getStoreCurrencyConfig } = await import("./db");
       const { getCheckoutPaymentGate } = await import("./services/checkoutPaymentGate");
       const mode = getCheckoutPaymentGate("live").enabled ? "live" as const : "test" as const;
+      const currency = await getStoreCurrencyConfig(ctx.store!.id);
+      const byok = await callPaymentService<{ options?: Array<{ provider: string; method: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${encodeURIComponent(String(ctx.store!.id))}&currency=${encodeURIComponent(currency.code)}`, {
+        storeId: ctx.store!.id,
+      }).catch(() => ({ options: [] }));
+      const byokOptions = (byok.options ?? []).filter(option => option.status !== "unavailable");
       const [payment, cashOnDelivery] = await Promise.all([
         getStoreStripeConnectCheckoutContext(ctx.store!.id, mode),
         getAlgeriaCashOnDeliveryReadiness(ctx.store!.id).catch(() => null),
       ]);
       const readiness = payment.setup.paymentReadiness;
       const cashOnDeliveryAvailable = Boolean(cashOnDelivery?.enabled && cashOnDelivery.eligibility.eligible);
-      return payment.ready
-        ? { enabled: true as const, mode: `stripe_connect_${mode}` as const, cashOnDeliveryAvailable }
-        : { enabled: false as const, mode: `stripe_connect_${mode}` as const, reason: readiness.enabled ? "connect_onboarding_incomplete" : readiness.reason, cashOnDeliveryAvailable };
+      const byokEnabled = byokOptions.length > 0;
+      return payment.ready || byokEnabled
+        ? { enabled: true as const, mode: byokEnabled ? "byok" as const : `stripe_connect_${mode}` as const, cashOnDeliveryAvailable, byokOptions, currency: currency.code }
+        : { enabled: false as const, mode: `stripe_connect_${mode}` as const, reason: readiness.enabled ? "connect_onboarding_incomplete" : readiness.reason, cashOnDeliveryAvailable, byokOptions, currency: currency.code };
     }),
     getMarketSettings: storefrontProcedure.query(async ({ ctx }) => {
       const { getStoreMarketSettings } = await import("./db");
