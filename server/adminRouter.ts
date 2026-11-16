@@ -1257,6 +1257,16 @@ function decodeDesignImage(dataUrl: string) {
   const extension = match[1] === "image/jpeg" ? "jpg" : match[1].split("/")[1];
   return { buffer, contentType: match[1], extension };
 }
+function decodeDesignVideo(dataUrl: string) {
+  const match = /^data:(video\/(?:mp4|webm|ogg));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "Format vidéo non pris en charge. Utilisez MP4, WebM ou Ogg." });
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length === 0 || buffer.length > 25 * 1024 * 1024) {
+    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "La vidéo doit peser au maximum 25 Mo." });
+  }
+  const extension = match[1] === "video/mp4" ? "mp4" : match[1].split("/")[1];
+  return { buffer, contentType: match[1], extension };
+}
 
 const visualUrlSchema = z.string().trim().min(1).max(2000).refine(
   value => value.startsWith("/") || /^https?:\/\//i.test(value),
@@ -2644,6 +2654,19 @@ export const adminRouter = router({
       const { url } = await storagePut(`studio-builder/${input.storeId}/${Date.now()}-${safeName}.${image.extension}`, image.buffer, image.contentType, { storeId: input.storeId, quotaBytes: entitlements.mediaQuotaBytes });
       logAudit(ctx, { action: "studio.visual_builder.image.upload", entityType: "store", entityId: input.storeId, summary: "Image téléversée dans le constructeur visuel", metadata: { publicationExecuted: false, publicStorefront: false } });
       return { url };
+    }),
+    uploadVisualBuilderVideo: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      dataUrl: z.string().max(36_000_000),
+      fileName: z.string().trim().min(1).max(160),
+    })).mutation(async ({ ctx, input }) => {
+      await db.getStudioManagedStore(input.storeId);
+      const video = decodeDesignVideo(input.dataUrl);
+      const safeName = input.fileName.replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-").slice(0, 80) || "video";
+      const entitlements = await db.getStoreSaasEntitlements(input.storeId);
+      const { url } = await storagePut(`studio-builder/${input.storeId}/${Date.now()}-${safeName}.${video.extension}`, video.buffer, video.contentType, { storeId: input.storeId, quotaBytes: entitlements.mediaQuotaBytes });
+      logAudit(ctx, { action: "studio.visual_builder.video.upload", entityType: "store", entityId: input.storeId, summary: "Vidéo téléversée dans le constructeur visuel", metadata: { publicationExecuted: false, publicStorefront: false, contentType: video.contentType } });
+      return { url, contentType: video.contentType };
     }),
     saveOwnerBuilderConfiguration: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
