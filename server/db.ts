@@ -6914,6 +6914,8 @@ export async function createPasswordUser(input: {
   email: string;
   name: string;
   passwordHash: string;
+  /** Only the explicit super-admin bootstrap passes "admin". */
+  role?: "admin";
 }) {
   await ensurePasswordHashColumn();
   await ensureAccountStatusColumn();
@@ -6921,19 +6923,16 @@ export async function createPasswordUser(input: {
   if (!db) return createDemoPasswordUser(input);
 
   const normalizedEmail = input.email.trim().toLowerCase();
-  const isAdminEmail =
-    normalizedEmail === "yacbhl71@gmail.com" ||
-    normalizedEmail === "admin@mazigho.ch" ||
-    normalizedEmail.endsWith("@mazigho.ch");
 
   try {
+    // Roles are granted explicitly by an administrator, never from an e-mail domain.
     await db.insert(users).values({
       openId: input.openId,
       email: normalizedEmail,
       name: input.name.trim(),
       passwordHash: input.passwordHash,
       loginMethod: "password",
-      role: isAdminEmail ? "admin" : "user",
+      role: input.role ?? "user",
       accountStatus: "active",
       lastSignedIn: new Date(),
     });
@@ -12213,6 +12212,7 @@ async function ensureByokCheckoutSchema() {
     )`);
     await run("ALTER TABLE `cartItems` ADD COLUMN IF NOT EXISTS `variantId` int NULL");
     await run("ALTER TABLE `paymentIntents` ADD COLUMN IF NOT EXISTS `cartId` int NULL");
+    await run("ALTER TABLE `carts` ADD COLUMN IF NOT EXISTS `checkoutQuote` text NULL");
   })().catch(error => {
     _byokCheckoutSchemaReady = null;
     throw error;
@@ -12222,11 +12222,32 @@ async function ensureByokCheckoutSchema() {
 
 type ByokCartLine = { productId: number; variantId: number | null; quantity: number };
 
+/** Checkout choices captured when the browser basket is mirrored into the server cart. */
+export type ByokCheckoutQuote = {
+  version: 1;
+  countryCode: string;
+  items: StripeCheckoutCartLine[];
+  promoCode: string | null;
+  promotionId: number | null;
+  discountAmountChf: number;
+  legalAcceptanceVersion: string;
+};
+
+function parseByokCheckoutQuote(value: unknown): ByokCheckoutQuote | null {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const quote = JSON.parse(value) as ByokCheckoutQuote;
+    return quote?.version === 1 && /^[A-Z]{2}$/.test(quote.countryCode) && Array.isArray(quote.items) && quote.items.length > 0 ? quote : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Mirrors the browser basket into the customer's server cart right before a
- * BYOK checkout, so the payment service and the order use the same server cart.
+ * Mirrors the validated browser basket (and its delivery country, promotion and
+ * legal acceptance) into the customer's server cart right before a BYOK checkout.
  */
-export async function replaceByokServerCart(userId: number, storeId: number, items: Array<{ productId: number; quantity: number; variantId?: number }>) {
+export async function replaceByokServerCart(userId: number, storeId: number, items: StripeCheckoutCartLine[], quote: ByokCheckoutQuote) {
   await ensureStoreRelationshipScopeSchema();
   await ensureByokCheckoutSchema();
   const db = await getDb();
@@ -12238,10 +12259,6 @@ export async function replaceByokServerCart(userId: number, storeId: number, ite
     lines.set(key, { productId: item.productId, variantId, quantity: (lines.get(key)?.quantity ?? 0) + item.quantity });
   }
   if (lines.size === 0) throw new Error("CART_EMPTY");
-  const productIds = Array.from(new Set(items.map(item => item.productId)));
-  const available = await db.select({ id: products.id }).from(products)
-    .where(and(eq(products.storeId, storeId), inArray(products.id, productIds), eq(products.status, "active")));
-  if (available.length !== productIds.length) throw new Error("PRODUCT_NOT_AVAILABLE");
 
   return await db.transaction(async tx => {
     const findCart = () => tx.select({ id: carts.id }).from(carts).where(and(eq(carts.storeId, storeId), eq(carts.userId, userId))).limit(1);
@@ -12254,6 +12271,7 @@ export async function replaceByokServerCart(userId: number, storeId: number, ite
     const cartId = cart.id;
     await tx.delete(cartItems).where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cartId)));
     await tx.insert(cartItems).values(Array.from(lines.values()).map(line => ({ storeId, cartId, ...line })));
+    await tx.execute(sql`UPDATE carts SET checkoutQuote = ${JSON.stringify(quote)} WHERE id = ${cartId} AND storeId = ${storeId}`);
     return cartId;
   });
 }
@@ -12264,7 +12282,12 @@ export async function getPaymentCartById(cartId: number, storeId: number) {
   await ensureByokCheckoutSchema();
   const db = await getDb();
   if (!db) return null;
-  const [cart] = await db.select({ id: carts.id, storeId: carts.storeId, userId: carts.userId })
+  const [cart] = await db.select({
+    id: carts.id,
+    storeId: carts.storeId,
+    userId: carts.userId,
+    checkoutQuote: sql<string | null>`\`checkoutQuote\``,
+  })
     .from(carts)
     .where(and(eq(carts.id, cartId), eq(carts.storeId, storeId)))
     .limit(1);
@@ -12275,41 +12298,21 @@ export async function getPaymentCartById(cartId: number, storeId: number) {
     quantity: cartItems.quantity,
   }).from(cartItems)
     .where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cart.id)));
-  return { id: cart.id, storeId: cart.storeId, userId: cart.userId, items };
+  return { id: cart.id, storeId: cart.storeId, userId: cart.userId, items, quote: parseByokCheckoutQuote(cart.checkoutQuote) };
 }
 
-/** Catalogue prices for BYOK cart lines, converted to the store's sale currency. */
-async function priceByokCartLines(storeId: number, lines: ByokCartLine[]) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const productIds = Array.from(new Set(lines.map(line => line.productId)));
-  const [productRows, variantsByProduct, currency] = await Promise.all([
-    db.select({ id: products.id, name: products.name, price: products.price }).from(products)
-      .where(and(eq(products.storeId, storeId), inArray(products.id, productIds))),
-    getPublicOwnerProductVariantsForProducts(productIds, storeId),
-    getStoreCurrencyConfig(storeId),
-  ]);
-  const productById = new Map(productRows.map(product => [product.id, product]));
-  const priced = lines.map(line => {
-    const product = productById.get(line.productId);
-    if (!product) throw new Error("PRODUCT_NOT_AVAILABLE");
-    const variant = line.variantId ? (variantsByProduct.get(product.id) ?? []).find(candidate => candidate.id === line.variantId) : undefined;
-    if (line.variantId && !variant) throw new Error("CHECKOUT_VARIANT_UNAVAILABLE");
-    const unitAmountChf = product.price + (variant?.priceAdjustmentCents ?? 0);
-    return {
-      ...line,
-      name: variant ? `${product.name} — ${variant.label}` : product.name,
-      variantLabel: variant?.label ?? null,
-      unitAmountChf,
-      unitAmount: convertChfCents(unitAmountChf, currency),
-    };
-  });
-  return {
-    currency,
-    lines: priced,
-    totalAmount: priced.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0),
-    totalAmountChf: priced.reduce((sum, line) => sum + line.unitAmountChf * line.quantity, 0),
-  };
+/**
+ * Prices a BYOK server cart with the same engine as Stripe Connect: catalogue,
+ * owner variants, stock, delivery country, shipping policy and store currency.
+ * The promotion discount applies to the product subtotal, never to shipping.
+ */
+export async function getByokCartCheckout(cartId: number, storeId: number) {
+  const cart = await getPaymentCartById(cartId, storeId);
+  if (!cart || cart.items.length === 0 || !cart.quote) return null;
+  const checkout = await getStripeCheckoutCart(cart.userId, cart.quote.countryCode, cart.quote.items, storeId);
+  const discountAmountChf = Math.max(0, Math.min(cart.quote.discountAmountChf, checkout.productSubtotalChf));
+  const discountAmount = Math.min(convertChfCents(discountAmountChf, checkout.currency), checkout.productSubtotal);
+  return { cart, quote: cart.quote, checkout, discountAmount, discountAmountChf, chargeAmount: checkout.totalAmount - discountAmount };
 }
 
 export async function createPaymentIntent(input: {
@@ -12325,12 +12328,12 @@ export async function createPaymentIntent(input: {
   await ensureByokCheckoutSchema();
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const cart = input.cartId ? await getPaymentCartById(input.cartId, input.storeId) : null;
-  if (input.cartId && (!cart || cart.items.length === 0)) throw new Error("CART_EMPTY_OR_NOT_FOUND");
-  if (!cart && !input.validatedCart) throw new Error("CART_EMPTY_OR_NOT_FOUND");
-  // The payment service total is the amount actually charged; the catalogue total is the fallback.
-  const amountMinor = input.validatedCart?.totalMinor ?? (await priceByokCartLines(input.storeId, cart!.items)).totalAmount;
-  const cartFingerprint = input.validatedCart?.fingerprint ?? createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart!.items })).digest("hex");
+  const priced = input.cartId ? await getByokCartCheckout(input.cartId, input.storeId) : null;
+  if (input.cartId && !priced) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  if (!priced && !input.validatedCart) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  // The payment service total is the amount actually charged (checked by the bridge).
+  const amountMinor = input.validatedCart?.totalMinor ?? priced!.chargeAmount;
+  const cartFingerprint = input.validatedCart?.fingerprint ?? createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: priced!.cart.items, quote: priced!.quote })).digest("hex");
   const key = input.idempotencyKey.trim();
   if (!/^[A-Za-z0-9._:-]{16,255}$/.test(key)) throw new Error("IDEMPOTENCY_KEY_INVALID");
   await db.execute(sql`INSERT INTO paymentIntents
@@ -12341,6 +12344,40 @@ export async function createPaymentIntent(input: {
     FROM paymentIntents WHERE storeId = ${input.storeId} AND idempotencyKey = ${key} LIMIT 1`);
   const record = (rows as any)[0]?.[0] ?? (rows as any)[0];
   return record ?? null;
+}
+
+/** Stock and promotion effects of a BYOK order once its payment is confirmed. */
+async function applyByokPaidOrderEffects(tx: any, storeId: number, orderId: number) {
+  const [order] = await tx.select({ promotionId: orders.promotionId }).from(orders).where(and(eq(orders.storeId, storeId), eq(orders.id, orderId))).limit(1);
+  const lines = await tx.select({ productId: orderItems.productId, quantity: orderItems.quantity, supplierSnapshot: orderItems.supplierSnapshot })
+    .from(orderItems).where(and(eq(orderItems.storeId, storeId), eq(orderItems.orderId, orderId)));
+  const reservations = buildCheckoutStockReservations(lines.map((line: { productId: number; quantity: number; supplierSnapshot: string | null }) => {
+    let supplierSnapshot: unknown = null;
+    try {
+      supplierSnapshot = line.supplierSnapshot ? JSON.parse(line.supplierSnapshot) : null;
+    } catch {
+      supplierSnapshot = null;
+    }
+    return { productId: line.productId, quantity: line.quantity, supplierSnapshot };
+  }));
+  // The customer has already paid: stock is reduced, never below zero.
+  for (const reservation of reservations) {
+    if (reservation.variantId) {
+      await tx.update(ownerProductVariants).set({ stock: sql`GREATEST(${ownerProductVariants.stock} - ${reservation.quantity}, 0)` }).where(and(
+        eq(ownerProductVariants.storeId, storeId),
+        eq(ownerProductVariants.productId, reservation.productId),
+        eq(ownerProductVariants.id, reservation.variantId),
+      ));
+    } else {
+      await tx.update(products).set({ stock: sql`GREATEST(${products.stock} - ${reservation.quantity}, 0)` }).where(and(
+        eq(products.storeId, storeId),
+        eq(products.id, reservation.productId),
+      ));
+    }
+  }
+  if (order?.promotionId) {
+    await tx.update(promotions).set({ usedCount: sql`${promotions.usedCount} + 1` }).where(and(eq(promotions.storeId, storeId), eq(promotions.id, order.promotionId)));
+  }
 }
 
 export async function applyPaymentIntentEvent(input: {
@@ -12369,23 +12406,29 @@ export async function applyPaymentIntentEvent(input: {
     expired: ["expired"],
   };
   if (!allowed[current.status]?.includes(input.targetStatus)) throw new Error("PAYMENT_STATUS_TRANSITION_INVALID");
-  await db.execute(sql`UPDATE paymentIntents SET status = ${input.targetStatus}, lastEventId = ${eventId}, providerReference = COALESCE(${input.providerReference ?? null}, providerReference)
-    WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND (lastEventId IS NULL OR lastEventId <> ${eventId})`);
-  if (input.targetStatus === "succeeded" && current.orderId) {
-    await db.execute(sql`UPDATE orders SET paymentStatus = 'paid', status = 'processing'
-      WHERE id = ${current.orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
-  }
-  if ((input.targetStatus === "failed" || input.targetStatus === "expired") && current.orderId) {
-    await db.execute(sql`UPDATE orders SET status = 'cancelled'
-      WHERE id = ${current.orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
-  }
+  const orderId = current.orderId ? Number(current.orderId) : null;
+  await db.transaction(async tx => {
+    await tx.execute(sql`UPDATE paymentIntents SET status = ${input.targetStatus}, lastEventId = ${eventId}, providerReference = COALESCE(${input.providerReference ?? null}, providerReference)
+      WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND (lastEventId IS NULL OR lastEventId <> ${eventId})`);
+    if (!orderId) return;
+    if (input.targetStatus === "succeeded") {
+      const paid = await tx.execute(sql`UPDATE orders SET paymentStatus = 'paid', status = 'processing'
+        WHERE id = ${orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
+      if (affectedRows(paid) === 1) await applyByokPaidOrderEffects(tx, input.storeId, orderId);
+    }
+    if (input.targetStatus === "failed" || input.targetStatus === "expired") {
+      await tx.execute(sql`UPDATE orders SET status = 'cancelled'
+        WHERE id = ${orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
+    }
+  });
   return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false };
 }
 
 /**
  * Creates the pending MAZIGHO order for a payment intent. Intents created from
- * a server cart turn that cart into order lines; legacy intents without a cart
- * are only accepted for active store members.
+ * a server cart become a full order (lines, shipping, promotion, legal snapshot)
+ * through the shared checkout engine; legacy intents without a cart are only
+ * accepted for active store members.
  */
 export async function attachPaymentIntentOrder(input: {
   storeId: number;
@@ -12399,7 +12442,7 @@ export async function attachPaymentIntentOrder(input: {
   await ensureOrderCurrencySchema();
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [rows] = await db.execute(sql`SELECT id, cartId, orderId, status, amountMinor, currency, provider FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
+  const [rows] = await db.execute(sql`SELECT id, cartId, orderId, status, amountMinor, currency, provider, isTestMode FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
   const intent = (rows as unknown as any[])[0];
   if (!intent) throw new Error("PAYMENT_INTENT_NOT_FOUND");
   if (intent.orderId) return { orderId: Number(intent.orderId), alreadyAttached: true };
@@ -12412,60 +12455,48 @@ export async function attachPaymentIntentOrder(input: {
       WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND orderId IS NULL AND status = 'created'`);
     if (affectedRows(updated) !== 1) throw new Error("PAYMENT_INTENT_ORDER_RACE");
   };
-  const insertedOrderId = (result: unknown) => {
-    const orderId = Number((result as any)[0]?.insertId);
-    if (!Number.isInteger(orderId) || orderId <= 0) throw new Error("PAYMENT_INTENT_ORDER_CREATE_FAILED");
-    return orderId;
-  };
 
   if (!intent.cartId) {
     if (!input.allowWithoutCart) throw new Error("PAYMENT_BRIDGE_STORE_ACCESS_DENIED");
     const orderId = await db.transaction(async tx => {
-      const orderId = insertedOrderId(await tx.insert(orders).values({
+      const result = await tx.insert(orders).values({
         storeId: input.storeId, userId: input.userId, totalAmount: amountMinor, currencyCode: String(intent.currency),
         shippingAddress: input.shippingAddress, billingAddress, paymentMethod, promotionId: null, discountAmount: 0, status: "pending", paymentStatus: "unpaid",
-      }));
+      });
+      const orderId = Number((result as any)[0]?.insertId);
+      if (!Number.isInteger(orderId) || orderId <= 0) throw new Error("PAYMENT_INTENT_ORDER_CREATE_FAILED");
       await attachIntent(tx, orderId);
       return orderId;
     });
     return { orderId, alreadyAttached: false };
   }
 
-  const cart = await getPaymentCartById(Number(intent.cartId), input.storeId);
-  if (!cart || cart.userId !== input.userId) throw new Error("PAYMENT_INTENT_CART_MISMATCH");
-  if (cart.items.length === 0) throw new Error("CART_EMPTY_OR_NOT_FOUND");
-  const priced = await priceByokCartLines(input.storeId, cart.items);
-  const orderId = await db.transaction(async tx => {
-    const orderId = insertedOrderId(await tx.insert(orders).values({
-      storeId: input.storeId,
-      userId: input.userId,
-      totalAmount: amountMinor,
-      totalAmountChf: priced.totalAmountChf,
-      currencyCode: priced.currency.code,
-      currencyRateBps: priced.currency.rateBps,
-      shippingAddress: input.shippingAddress,
-      billingAddress,
-      paymentMethod,
-      promotionId: null,
-      discountAmount: 0,
-      status: "pending",
-      paymentStatus: "unpaid",
-    }));
-    await tx.insert(orderItems).values(priced.lines.map(line => ({
-      storeId: input.storeId,
-      orderId,
-      productId: line.productId,
-      quantity: line.quantity,
-      priceAtPurchase: line.unitAmount,
-      priceAtPurchaseChf: line.unitAmountChf,
-      productNameSnapshot: line.name.slice(0, 255),
-      selectedOptions: JSON.stringify(line.variantLabel ? { "Variante choisie": line.variantLabel } : {}),
-    })));
-    await tx.delete(cartItems).where(and(eq(cartItems.storeId, input.storeId), eq(cartItems.cartId, cart.id)));
-    await attachIntent(tx, orderId);
-    return orderId;
+  const priced = await getByokCartCheckout(Number(intent.cartId), input.storeId);
+  if (!priced) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  if (priced.cart.userId !== input.userId) throw new Error("PAYMENT_INTENT_CART_MISMATCH");
+  if (priced.chargeAmount !== amountMinor) throw new Error("PAYMENT_AMOUNT_MISMATCH");
+  const order = await createStripePendingOrder({
+    userId: input.userId,
+    mode: Number(intent.isTestMode) === 1 ? "test" : "live",
+    countryCode: priced.quote.countryCode,
+    totalAmount: priced.checkout.totalAmount,
+    cart: priced.checkout,
+    promotionId: priced.quote.promotionId,
+    discountAmount: priced.discountAmount,
+    discountAmountChf: priced.discountAmountChf,
+    legalAcceptanceVersion: priced.quote.legalAcceptanceVersion,
+    legalAccepted: true,
+    storeId: input.storeId,
+    reserveStock: false,
+    paymentMethod,
+    shippingAddress: input.shippingAddress,
+    billingAddress,
+    onCreated: async (tx, orderId) => {
+      await tx.delete(cartItems).where(and(eq(cartItems.storeId, input.storeId), eq(cartItems.cartId, priced.cart.id)));
+      await attachIntent(tx, orderId);
+    },
   });
-  return { orderId, alreadyAttached: false };
+  return { orderId: order.id, alreadyAttached: false };
 }
 
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
@@ -15150,6 +15181,13 @@ export async function createStripePendingOrder(input: {
   legalAcceptanceVersion: string;
   legalAccepted: boolean;
   storeId?: number;
+  /** BYOK checkouts decrement stock on payment confirmation instead of reserving it. */
+  reserveStock?: boolean;
+  paymentMethod?: string;
+  shippingAddress?: string;
+  billingAddress?: string | null;
+  /** Runs inside the order transaction, after the order lines are written. */
+  onCreated?: (tx: any, orderId: number) => Promise<void>;
 }) {
   await ensureStoreRelationshipScopeSchema();
   await ensureFulfillmentSchema();
@@ -15216,7 +15254,8 @@ export async function createStripePendingOrder(input: {
     // The final stock check and reduction happen in the same transaction as
     // the pending order. A competing checkout can therefore not oversell a
     // product or a selected owner-managed variant.
-    await reserveCheckoutStock(tx, effectiveStoreId, input.cart.items);
+    const reserveStock = input.reserveStock !== false;
+    if (reserveStock) await reserveCheckoutStock(tx, effectiveStoreId, input.cart.items);
     const result = await tx.insert(orders).values({
       storeId: effectiveStoreId,
       userId: input.userId,
@@ -15226,10 +15265,10 @@ export async function createStripePendingOrder(input: {
       currencyRateBps: input.cart.currency.rateBps,
       customerShippingAmount: input.cart.customerShippingAmount,
       customerShippingAmountChf: input.cart.customerShippingAmountChf,
-      shippingAddress: JSON.stringify({ countryCode: input.countryCode.toUpperCase(), source: "stripe_checkout_pending" }),
-      billingAddress: null,
+      shippingAddress: input.shippingAddress ?? JSON.stringify({ countryCode: input.countryCode.toUpperCase(), source: "stripe_checkout_pending" }),
+      billingAddress: input.billingAddress ?? null,
       paymentStatus: "unpaid",
-      paymentMethod: `stripe_connect_${mode}`,
+      paymentMethod: input.paymentMethod ?? `stripe_connect_${mode}`,
       stripeSessionId: input.sessionId ?? null,
       promotionId: input.promotionId ?? null,
       discountAmount,
@@ -15250,8 +15289,9 @@ export async function createStripePendingOrder(input: {
       priceAtPurchaseChf: item.unitAmountChf + item.shippingAmount,
       productNameSnapshot: item.name.slice(0, 255),
       selectedOptions: JSON.stringify(item.selectedOptions),
-      supplierSnapshot: JSON.stringify({ ...item.supplierSnapshot, inventoryReservation: true }),
+      supplierSnapshot: JSON.stringify(reserveStock ? { ...item.supplierSnapshot, inventoryReservation: true } : item.supplierSnapshot),
     })));
+    if (input.onCreated) await input.onCreated(tx, orderId);
     return { id: orderId };
   });
 }

@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import {
   getProductById,
-  getPaymentCartById,
+  getByokCartCheckout,
   createPaymentIntent,
   applyPaymentIntentEvent,
   attachPaymentIntentOrder,
@@ -124,15 +124,20 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     const storeId = storeIdParam(req);
     const cartId = Number(req.params.cartId);
     if (!storeId || !Number.isInteger(cartId) || cartId <= 0) return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
-    const cart = await getPaymentCartById(cartId, storeId);
-    if (!cart) return res.json({ data: null });
-    const currency = await storeCurrency(storeId);
-    return res.json({ data: {
-      id: String(cart.id),
-      storeId: String(cart.storeId),
-      currency: currency.code,
-      items: cart.items.map((item) => ({ productId: String(item.productId), variantId: item.variantId ? String(item.variantId) : BASE_VARIANT_ID, quantity: item.quantity })),
-    } });
+    try {
+      const priced = await getByokCartCheckout(cartId, storeId);
+      if (!priced) return res.json({ data: null });
+      return res.json({ data: {
+        id: String(priced.cart.id),
+        storeId: String(priced.cart.storeId),
+        currency: priced.checkout.currency.code,
+        items: priced.cart.items.map((item) => ({ productId: String(item.productId), variantId: item.variantId ? String(item.variantId) : BASE_VARIANT_ID, quantity: item.quantity })),
+        // Same checkout engine as Stripe Connect: store shipping policy and promotion.
+        adjustments: { shippingMinor: priced.checkout.customerShippingAmount, discountMinor: priced.discountAmount },
+      } });
+    } catch (error) {
+      return fail(res, 409, error instanceof Error ? error.message : "PAYMENT_CART_UNAVAILABLE");
+    }
   });
 
   targetApp.post("/api/internal/payment/stores/:storeId/intents", async (req, res) => {
@@ -149,6 +154,15 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
       return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     }
     try {
+      if (Number.isInteger(cartId) && cartId > 0) {
+        // The amount the provider will charge must equal MAZIGHO's own checkout total.
+        if (!validatedCartOk) return fail(res, 409, "PAYMENT_SERVICE_UPDATE_REQUIRED");
+        const priced = await getByokCartCheckout(cartId, storeId);
+        if (!priced) return fail(res, 404, "CART_EMPTY_OR_NOT_FOUND");
+        if (validatedCart.currency !== priced.checkout.currency.code || validatedCart.totalMinor !== priced.chargeAmount) {
+          return fail(res, 409, "PAYMENT_AMOUNT_MISMATCH");
+        }
+      }
       const currency = validatedCartOk ? validatedCart.currency : (await storeCurrency(storeId)).code;
       const intent = await createPaymentIntent({ storeId, cartId: Number.isInteger(cartId) && cartId > 0 ? cartId : undefined, validatedCart: validatedCartOk ? { fingerprint: validatedCart.fingerprint, totalMinor: validatedCart.totalMinor, currency: validatedCart.currency } : undefined, idempotencyKey, provider, method, currency, isTestMode: body.isTestMode !== false });
       return res.status(201).json({ data: intent });
