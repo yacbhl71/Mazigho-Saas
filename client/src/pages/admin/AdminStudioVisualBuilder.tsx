@@ -181,6 +181,26 @@ export default function AdminStudioVisualBuilder() {
     if (content) editorRef.current?.addComponents(content);
   };
 
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveProject();
+      } else if (modifier && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        editorRef.current?.runCommand(event.shiftKey ? "core:redo" : "core:undo");
+      } else if (modifier && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        editorRef.current?.runCommand("core:redo");
+      } else if (event.key === "Escape") {
+        editorRef.current?.select(undefined);
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [selectedStoreId]);
+
   const uploadImage = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
