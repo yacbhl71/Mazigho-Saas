@@ -94,6 +94,8 @@ export default function AdminStudioVisualBuilder() {
   const [selectedText, setSelectedText] = useState("");
   const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "" });
   const [selectedLocked, setSelectedLocked] = useState(false);
+  const [selectedHref, setSelectedHref] = useState("");
+  const [selectedAlt, setSelectedAlt] = useState("");
   const [layerRevision, setLayerRevision] = useState(0);
   const editorRef = useRef<Editor | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -161,6 +163,8 @@ export default function AdminStudioVisualBuilder() {
       setSelectedTagName("");
       setSelectedText("");
       setSelectedLocked(false);
+      setSelectedHref("");
+      setSelectedAlt("");
     });
     const savedProject = projectQuery.data?.project;
     if (savedProject) editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]);
@@ -218,6 +222,9 @@ export default function AdminStudioVisualBuilder() {
     setSelectedTagName(tagName);
     setSelectedText(readSelectedText(component));
     setSelectedLocked(component?.get?.("removable") === false);
+    const attributes = component?.getAttributes?.() || {};
+    setSelectedHref(String(attributes.href || ""));
+    setSelectedAlt(String(attributes.alt || ""));
     setSelectedStyles({
       color: String(styles.color || ""),
       backgroundColor: String(styles.backgroundColor || ""),
@@ -236,6 +243,19 @@ export default function AdminStudioVisualBuilder() {
   const updateSelectedStyle = (key: keyof typeof selectedStyles, value: string) => {
     setSelectedStyles(previous => ({ ...previous, [key]: value }));
     if (selectedComponent?.addStyle) selectedComponent.addStyle({ [key]: value || undefined });
+  };
+
+  const normalizeHref = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.startsWith("/") || trimmed.startsWith("#") || /^(https?:|mailto:|tel:)/i.test(trimmed)) return trimmed;
+    return "#";
+  };
+
+  const updateSelectedAttribute = (key: "href" | "alt", value: string) => {
+    const safeValue = key === "href" ? normalizeHref(value) : value.replace(/[<>]/g, "").slice(0, 240);
+    if (key === "href") setSelectedHref(safeValue);
+    else setSelectedAlt(safeValue);
+    if (selectedComponent?.addAttributes) selectedComponent.addAttributes({ [key]: safeValue });
   };
 
   const duplicateSelected = () => {
@@ -291,6 +311,8 @@ export default function AdminStudioVisualBuilder() {
             <p className="text-xs text-slate-500">Élément sélectionné : <span className="font-semibold text-slate-800">{selectedTagName}</span></p>
             <div className="flex flex-wrap gap-2"><button type="button" onClick={duplicateSelected} disabled={selectedLocked} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><Copy className="h-3.5 w-3.5" />Dupliquer</button><button type="button" onClick={removeSelected} disabled={selectedLocked} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />Supprimer</button><button type="button" onClick={toggleSelectedLock} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{selectedLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{selectedLocked ? "Déverrouiller" : "Verrouiller"}</button></div>
             <label className="block space-y-1.5"><span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Type className="h-3.5 w-3.5" />Texte</span><textarea value={selectedText} onChange={event => updateSelectedText(event.target.value)} rows={4} className="w-full rounded-lg border border-slate-300 p-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
+            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Lien</span><input type="text" value={selectedHref} onChange={event => updateSelectedAttribute("href", event.target.value)} placeholder="/boutique ou https://…" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /><span className="text-[11px] text-slate-500">Chemins internes, HTTPS, e-mail et téléphone uniquement.</span></label>
+            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Texte alternatif de l’image</span><input type="text" value={selectedAlt} onChange={event => updateSelectedAttribute("alt", event.target.value)} placeholder="Décrivez l’image" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
             <div className="grid grid-cols-2 gap-2">{([['color','Texte'],['backgroundColor','Fond']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder="#172033" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
             <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
