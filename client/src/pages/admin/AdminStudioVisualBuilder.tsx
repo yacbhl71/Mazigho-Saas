@@ -207,6 +207,22 @@ export default function AdminStudioVisualBuilder() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [isPreviewing, selectedStoreId]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!isPreviewing) return;
+    editorRef.current?.stopCommand("core:preview");
+    setIsPreviewing(false);
+  }, [selectedMode, selectedStoreId]);
+
   const togglePreview = () => {
     if (!editorRef.current) return;
     if (isPreviewing) editorRef.current.stopCommand("core:preview");
