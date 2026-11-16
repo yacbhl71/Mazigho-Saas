@@ -48,6 +48,13 @@ function initialComponents(mode: BuilderMode) {
   return `${editorBlocks[0].content}${editorBlocks[3].content}${editorBlocks[2].content}`;
 }
 
+function themedStoreComponents(source: any) {
+  const brand = escapeHtml(source?.store?.displayName || source?.profile?.brandName || "Votre boutique");
+  const title = escapeHtml(source?.profile?.highlightTitle || `Bienvenue chez ${brand}`);
+  const text = escapeHtml(source?.profile?.highlightText || "Présentez votre univers avec une composition MAZIGHO claire et élégante.");
+  return `<section style="padding:72px 32px;background:#172033;color:#fff;text-align:center"><p style="letter-spacing:.18em;text-transform:uppercase;color:#f5b98f">${brand}</p><h1 style="font-size:42px;margin:14px 0">${title}</h1><p style="max-width:560px;margin:0 auto 22px;opacity:.8">${text}</p><a href="/boutique" style="display:inline-block;padding:12px 20px;background:#fff;color:#172033;border-radius:8px;text-decoration:none">Découvrir la boutique</a></section>${editorBlocks[1].content}${editorBlocks[2].content}`;
+}
+
 const responsiveEditorCss = `*{box-sizing:border-box}img{max-width:100%;height:auto}a,button,input,textarea{max-width:100%}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
 
 function flattenLayerRows(models: any[], depth = 0, seen = new Set<any>()): Array<{ component: any; depth: number }> {
@@ -181,12 +188,13 @@ export default function AdminStudioVisualBuilder() {
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || selectedMode === "blank") return;
+    if (cloneSourceQuery.isFetching) return;
     if (selectedMode === "clone") {
       if (cloneSourceQuery.isFetching) return;
       if (cloneSourceQuery.data) editor.setComponents(clonedSourceComponents(cloneSourceQuery.data));
       return;
     }
-    editor.setComponents(initialComponents("theme"));
+    editor.setComponents(cloneSourceQuery.data ? themedStoreComponents(cloneSourceQuery.data) : initialComponents("theme"));
   }, [cloneSourceQuery.data, selectedMode]);
 
   const handleEditor = (editor: Editor) => {
