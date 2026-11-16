@@ -376,10 +376,9 @@ class SDKServer {
       if (demoUser) {
         user = demoUser as any;
       } else if (
+        // Identity comes from the signed session subject only, never from a display name.
         sessionUserId === "operator-yacbhl71" ||
-        sessionUserId === "firebase_operator-yacbhl71" ||
-        session.name?.toLowerCase().includes("yacine") ||
-        session.name?.toLowerCase().includes("opérateur")
+        sessionUserId === "firebase_operator-yacbhl71"
       ) {
         const { upsertDemoFirebaseUser } = await import("../db/demoFallback");
         user = upsertDemoFirebaseUser({

@@ -1133,10 +1133,6 @@ export function createDemoPasswordUser(input: {
   passwordHash: string;
 }): DemoUser {
   const normalizedEmail = input.email.trim().toLowerCase();
-  const isAdminEmail =
-    normalizedEmail === "yacbhl71@gmail.com" ||
-    normalizedEmail === "admin@mazigho.ch" ||
-    normalizedEmail.endsWith("@mazigho.ch");
   const user: DemoUser = {
     id: nextUserId++,
     openId: input.openId,
@@ -1144,7 +1140,7 @@ export function createDemoPasswordUser(input: {
     email: normalizedEmail,
     passwordHash: input.passwordHash,
     loginMethod: "password",
-    role: isAdminEmail ? "admin" : "user",
+    role: "user",
     accountStatus: "active",
     createdAt: new Date(),
     updatedAt: new Date(),

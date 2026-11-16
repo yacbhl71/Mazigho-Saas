@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
+import { ENV } from "./_core/env";
 import {
   activateAccountFromInvitation,
   createPasswordUser,
@@ -55,6 +56,27 @@ function rethrowTokenError(error: unknown): never {
     });
   }
   throw error;
+}
+
+const SUPER_ADMIN_EMAIL = "yacbhl71@gmail.com";
+
+/**
+ * First super-admin enrolment on an empty database. Only possible when the
+ * operator has set SUPER_ADMIN_BOOTSTRAP_PASSWORD on the server and types it.
+ */
+async function bootstrapSuperAdmin(email: string, password: string) {
+  const secret = process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD?.trim();
+  if (!secret || secret.length < 12 || email !== SUPER_ADMIN_EMAIL) return null;
+  const received = Buffer.from(password);
+  const expected = Buffer.from(secret);
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
+  return await createPasswordUser({
+    openId: ENV.ownerOpenId,
+    email,
+    name: "Yacine (Super Admin)",
+    passwordHash: await hashPassword(password),
+    role: "admin",
+  });
 }
 
 function enforceAuthRateLimit(action: AuthRateLimitAction, request: Parameters<typeof checkAuthRateLimit>[1], subject: string) {
@@ -126,26 +148,9 @@ export const authRouter = router({
       consumeAuthRateLimit("register", ctx.req, email);
       const existingUser = await getUserByEmail(email);
 
-      const isAdminEmail =
-        email === "yacbhl71@gmail.com" ||
-        email === "admin@mazigho.ch" ||
-        email.endsWith("@mazigho.ch");
-
+      // Registration never grants a role and never touches an existing account:
+      // an e-mail address alone does not prove ownership.
       if (existingUser) {
-        if (isAdminEmail) {
-          // Permettre à l'administrateur principal de définir son mot de passe et d'accéder directement au Studio
-          const newHash = await hashPassword(input.password);
-          await updatePasswordUser({ openId: existingUser.openId, passwordHash: newHash });
-          existingUser.passwordHash = newHash;
-          if (input.name) existingUser.name = input.name;
-          existingUser.role = "admin";
-          existingUser.accountStatus = "active";
-          await markUserSignedIn(existingUser.openId);
-          const sessionToken = await createSession(ctx, existingUser);
-          const ownerStore = await getCurrentStoreOwnerDestination(ctx, existingUser.id);
-          return { user: safeUser(existingUser), ownerStore, sessionToken };
-        }
-
         throw new TRPCError({
           code: "CONFLICT",
           message: "Un compte existe déjà avec cette adresse e-mail. Cliquez sur 'Se connecter' ci-dessous.",
@@ -153,7 +158,7 @@ export const authRouter = router({
       }
 
       const user = await createPasswordUser({
-        openId: isAdminEmail ? "operator-yacbhl71" : `local_${randomUUID()}`,
+        openId: `local_${randomUUID()}`,
         email,
         name: input.name,
         passwordHash: await hashPassword(input.password),
@@ -164,11 +169,6 @@ export const authRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: "Impossible de créer le compte pour le moment.",
         });
-      }
-
-      if (isAdminEmail) {
-        user.role = "admin";
-        user.accountStatus = "active";
       }
 
       const sessionToken = await createSession(ctx, user);
@@ -272,14 +272,8 @@ export const authRouter = router({
     .input(z.object({ email: emailSchema, password: currentPasswordSchema }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.toLowerCase();
-      const isAdminEmail =
-        email === "yacbhl71@gmail.com" ||
-        email === "admin@mazigho.ch" ||
-        email.endsWith("@mazigho.ch");
-
-      if (!isAdminEmail) {
-        enforceAuthRateLimit("login", ctx.req, email);
-      }
+      // Administrators follow the same rules as everyone: stored password + rate limit.
+      enforceAuthRateLimit("login", ctx.req, email);
 
       let user = await getUserByEmail(email);
 
@@ -291,51 +285,12 @@ export const authRouter = router({
         );
       }
 
-      if (isAdminEmail && input.password.trim().length >= 6) {
-        const newHash = await hashPassword(input.password);
-        const targetOpenId = email === "admin@mazigho.ch" ? "local_demo_admin" : "operator-yacbhl71";
-        const targetName = email === "admin@mazigho.ch" ? "Direction MAZIGHO Studio" : "Yacine (Super Admin)";
-
-        if (!user) {
-          const created = await createPasswordUser({
-            openId: targetOpenId,
-            email,
-            name: targetName,
-            passwordHash: newHash,
-          });
-          if (created) {
-            user = created;
-          } else {
-            const { upsertDemoFirebaseUser } = await import("./db/demoFallback");
-            user = upsertDemoFirebaseUser({
-              uid: targetOpenId,
-              email,
-              name: targetName,
-              emailVerified: true,
-            }) as any;
-          }
-          passwordMatches = true;
-        } else if (!passwordMatches || !user.passwordHash) {
-          const updated = await updatePasswordUser({
-            openId: user.openId,
-            passwordHash: newHash,
-          });
-          if (updated) {
-            user = updated;
-          } else {
-            user.passwordHash = newHash;
-          }
-          passwordMatches = true;
-        }
-
-        if (user) {
-          user.role = "admin";
-          user.accountStatus = "active";
-        }
-      } else if (!user) {
+      if (!user) {
+        user = (await bootstrapSuperAdmin(email, input.password)) ?? undefined;
+        passwordMatches = Boolean(user);
         // Perform equivalent work for an unknown email to limit timing-based
         // account enumeration.
-        await hashPassword(input.password);
+        if (!user) await hashPassword(input.password);
       }
 
       if (!user || !passwordMatches) {

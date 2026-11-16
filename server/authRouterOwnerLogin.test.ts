@@ -122,9 +122,8 @@ describe("connexion propriétaire sur une boutique cliente", () => {
     expect(clearedCookies[1]?.options).not.toHaveProperty("domain");
   });
 
-  it("permet au super-admin principal (yacbhl71@gmail.com) d'enrôler son mot de passe sur une base Cloud SQL nouvellement initialisée", async () => {
-    vi.mocked(db.getUserByEmail).mockResolvedValueOnce(undefined);
-    vi.mocked(db.createPasswordUser).mockResolvedValueOnce({
+  it("n'enrôle le super-admin sur une base vide qu'avec le secret serveur SUPER_ADMIN_BOOTSTRAP_PASSWORD", async () => {
+    const superAdmin = {
       id: 1,
       openId: "operator-yacbhl71",
       name: "Yacine (Super Admin)",
@@ -136,16 +135,52 @@ describe("connexion propriétaire sur une boutique cliente", () => {
       createdAt: new Date("2026-10-28T00:00:00.000Z"),
       updatedAt: new Date("2026-10-28T00:00:00.000Z"),
       lastSignedIn: new Date("2026-10-28T00:00:00.000Z"),
-    } as any);
-
+    } as any;
     const { client } = callerFor({ id: 1, isPlatformStore: 1, status: "active", primaryDomain: "studio.mazigho.com" });
-    await expect(client.login({ email: "yacbhl71@gmail.com", password: "MonMotDePassePersonnel12" })).resolves.toMatchObject({
-      user: { email: "yacbhl71@gmail.com", role: "admin", accountStatus: "active" },
-    });
-    expect(db.createPasswordUser).toHaveBeenCalledWith(expect.objectContaining({
-      openId: "operator-yacbhl71",
-      email: "yacbhl71@gmail.com",
-    }));
+
+    vi.mocked(db.getUserByEmail).mockResolvedValueOnce(undefined);
+    await expect(client.login({ email: "yacbhl71@gmail.com", password: "MonMotDePassePersonnel12" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(db.createPasswordUser).not.toHaveBeenCalled();
+
+    process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD = "MonMotDePassePersonnel12";
+    try {
+      vi.mocked(db.getUserByEmail).mockResolvedValueOnce(undefined);
+      await expect(client.login({ email: "yacbhl71@gmail.com", password: "UnAutreMotDePasse99" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      vi.mocked(db.getUserByEmail).mockResolvedValueOnce(undefined);
+      vi.mocked(db.createPasswordUser).mockResolvedValueOnce(superAdmin);
+      await expect(client.login({ email: "yacbhl71@gmail.com", password: "MonMotDePassePersonnel12" })).resolves.toMatchObject({
+        user: { email: "yacbhl71@gmail.com", role: "admin", accountStatus: "active" },
+      });
+      expect(db.createPasswordUser).toHaveBeenCalledWith(expect.objectContaining({ openId: "operator-yacbhl71", email: "yacbhl71@gmail.com", role: "admin" }));
+    } finally {
+      delete process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD;
+    }
+  });
+
+  it("refuse un mauvais mot de passe pour un compte administrateur existant, sans le modifier", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValueOnce({ ...state.user, email: "yacbhl71@gmail.com", openId: "operator-yacbhl71", role: "admin" } as any);
+    const { verifyPassword } = await import("./localAuth");
+    vi.mocked(verifyPassword).mockResolvedValueOnce(false);
+    const { client } = callerFor({ id: 1, isPlatformStore: 1, status: "active", primaryDomain: "studio.mazigho.ch" });
+    await expect(client.login({ email: "yacbhl71@gmail.com", password: "nimportequoi" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(db.updatePasswordUser).not.toHaveBeenCalled();
+  });
+
+  it("n'accorde jamais de rôle à l'inscription, même avec une adresse @mazigho.ch", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValueOnce(undefined);
+    vi.mocked(db.createPasswordUser).mockResolvedValueOnce({ ...state.user, email: "intrus@mazigho.ch", role: "user" } as any);
+    const { client } = callerFor({ id: 1, isPlatformStore: 1, status: "active", primaryDomain: "studio.mazigho.ch" });
+    await client.register({ name: "Intrus", email: "intrus@mazigho.ch", password: "MotDePasse123" });
+    const created = vi.mocked(db.createPasswordUser).mock.calls.at(-1)?.[0];
+    expect(created?.role).toBeUndefined();
+    expect(created?.openId).toMatch(/^local_/);
+  });
+
+  it("refuse l'inscription sur une adresse existante, y compris celle du super-admin", async () => {
+    vi.mocked(db.getUserByEmail).mockResolvedValueOnce({ ...state.user, email: "yacbhl71@gmail.com", openId: "operator-yacbhl71", role: "admin" } as any);
+    const { client } = callerFor({ id: 1, isPlatformStore: 1, status: "active", primaryDomain: "studio.mazigho.ch" });
+    await expect(client.register({ name: "Intrus", email: "yacbhl71@gmail.com", password: "MotDePasse123" })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(db.updatePasswordUser).not.toHaveBeenCalled();
   });
 });
 
