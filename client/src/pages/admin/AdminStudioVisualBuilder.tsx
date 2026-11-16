@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, CheckCircle2, Copy, CopyPlus, ImagePlus, Layers3, Lock, LockKeyhole, Palette, Plus, Redo2, Save, Sparkles, Trash2, Type, Undo2, Unlock, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Copy, CopyPlus, ImagePlus, Layers3, Lock, LockKeyhole, Palette, Plus, Redo2, Save, Sparkles, Trash2, Type, Undo2, Unlock, Wand2 } from "lucide-react";
 
 type BuilderMode = "blank" | "theme" | "clone";
 type ImageRole = "free" | "logo" | "banner" | "category";
@@ -84,6 +84,7 @@ export default function AdminStudioVisualBuilder() {
   const [selectedText, setSelectedText] = useState("");
   const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "" });
   const [selectedLocked, setSelectedLocked] = useState(false);
+  const [layerRevision, setLayerRevision] = useState(0);
   const editorRef = useRef<Editor | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const selectedImageRef = useRef<any>(null);
@@ -140,7 +141,9 @@ export default function AdminStudioVisualBuilder() {
       setImageZoom(100);
       setImageFocal("center");
       handleSelectedComponent(component);
+      setLayerRevision(previous => previous + 1);
     });
+    editor.on("component:add component:remove component:update", () => setLayerRevision(previous => previous + 1));
     editor.on("component:deselected", () => {
       selectedImageRef.current = null;
       setHasSelectedImage(false);
@@ -246,6 +249,21 @@ export default function AdminStudioVisualBuilder() {
     editorRef.current?.runCommand(command);
   };
 
+  const layerItems = useMemo(() => editorRef.current?.getWrapper?.()?.components?.()?.models ?? [], [layerRevision, selectedComponent]);
+  const selectLayer = (component: any) => editorRef.current?.select(component);
+  const moveLayer = (component: any, direction: -1 | 1) => {
+    const parent = component?.parent?.();
+    const collection = parent?.components?.();
+    const index = collection?.indexOf?.(component);
+    if (!parent || !collection || typeof index !== "number") return;
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= collection.length) return;
+    collection.remove(component);
+    collection.add(component, { at: nextIndex });
+    editorRef.current?.select(component);
+    setLayerRevision(previous => previous + 1);
+  };
+
   return <DashboardLayout><main className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 md:px-8 md:py-8">
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-slate-950 text-white hover:bg-slate-950"><Layers3 className="mr-1.5 h-3.5 w-3.5" /> MAZIGHO Studio</Badge><Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-950">Constructeur open source</Badge></div><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Constructeur visuel</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Un canvas inspiré des meilleurs éditeurs visuels, construit sur GrapesJS open source et spécialisé pour les boutiques MAZIGHO.</p></div><Link href="/admin/studio"><Button type="button" variant="outline" className="min-h-11 w-fit">Retour au Studio</Button></Link></header>
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7"><div className="flex flex-col gap-3 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-fuchsia-700">Point de départ</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Comment voulez-vous commencer ?</h2><p className="mt-2 text-sm leading-6 text-slate-600">Le choix recharge une composition de démonstration dans le canvas privé.</p></div><Badge variant="outline" className="w-fit border-slate-300 bg-slate-50 text-slate-700">Étape 1 · Choisir une base</Badge></div><div className="mt-6 grid gap-4 lg:grid-cols-3">{modes.map(mode => { const ModeIcon = mode.icon; const active = selectedMode === mode.id; const modeTone = toneClasses[mode.tone]; return <button key={mode.id} type="button" onClick={() => setSelectedMode(mode.id)} className={`rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${active ? `${modeTone.card} ring-2 ring-slate-950/10` : "border-slate-200 bg-white hover:border-slate-300"}`}><div className="flex items-start justify-between gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl ${modeTone.icon}`}><ModeIcon className="h-5 w-5" /></span>{active && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}</div><p className="mt-5 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{mode.eyebrow}</p><h3 className="mt-2 text-xl font-bold text-slate-950">{mode.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{mode.description}</p><span className={`mt-5 inline-flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-semibold text-white ${active ? modeTone.button : "bg-slate-700 hover:bg-slate-800"}`}>{active ? "Parcours sélectionné" : "Choisir ce parcours"}<ArrowRight className="ml-2 h-4 w-4" /></span></button>; })}</div></section>
@@ -263,6 +281,7 @@ export default function AdminStudioVisualBuilder() {
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
             <p className="text-[11px] leading-5 text-slate-500">Les changements restent dans le brouillon privé jusqu’à l’enregistrement.</p>
           </div> : <p className="mt-4 text-sm leading-6 text-slate-500">Sélectionnez un titre, un bouton, une image ou une section dans le canvas pour modifier ses propriétés.</p>}
+          <div className="mt-5 border-t border-slate-200 pt-4"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-950">Structure de la page</h4><span className="text-[11px] text-slate-500">{layerItems.length} section{layerItems.length > 1 ? "s" : ""}</span></div><div className="mt-3 space-y-1.5">{layerItems.length > 0 ? layerItems.map((layer: any, index: number) => { const label = String(layer.get?.("tagName") || layer.get?.("type") || "élément").toLowerCase(); const active = layer === selectedComponent; return <div key={layer.cid || index} className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 ${active ? "border-fuchsia-300 bg-fuchsia-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => selectLayer(layer)} className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-slate-700">{index + 1}. {label}</button><button type="button" onClick={() => moveLayer(layer, -1)} disabled={index === 0} className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Monter"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLayer(layer, 1)} disabled={index === layerItems.length - 1} className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Descendre"><ArrowDown className="h-3.5 w-3.5" /></button></div>; }) : <p className="text-xs text-slate-500">Ajoutez une section pour voir sa structure ici.</p>}</div></div>
         </aside>
       </div></section>
     <Card className="border-sky-200 bg-sky-50"><CardContent className="flex flex-col gap-3 p-5 text-sm leading-6 text-sky-950 md:flex-row md:items-start"><LockKeyhole className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Sauvegarde privée uniquement</p><p>Le projet est enregistré dans les réglages isolés de la boutique. Cette étape ne publie rien, ne change aucun domaine et n’active aucun paiement.</p></div></CardContent></Card>
