@@ -44,6 +44,8 @@ function initialComponents(mode: BuilderMode) {
   return `${editorBlocks[0].content}${editorBlocks[3].content}${editorBlocks[2].content}`;
 }
 
+const responsiveEditorCss = `*{box-sizing:border-box}img{max-width:100%;height:auto}a,button,input,textarea{max-width:100%}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
+
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character] ?? character));
 }
@@ -109,7 +111,7 @@ export default function AdminStudioVisualBuilder() {
       setHasSelectedImage(false);
     },
   });
-  const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode), blockManager: { blocks: editorBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode]);
+  const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode), style: responsiveEditorCss, blockManager: { blocks: editorBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode]);
 
   useEffect(() => {
     if (selectedStoreId === null && stores.length > 0) {
