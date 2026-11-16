@@ -15134,7 +15134,21 @@ function resolveSupplierVariantForOptions(selectedOptions: Record<string, string
   throw new Error("CHECKOUT_VARIANT_UNAVAILABLE");
 }
 
-function sanitizeSelectedOptions(value: Record<string, string> | undefined, productOptions: string | null): Record<string, string> {
+function optionsFromVariantLabel(label: string | undefined, groups: Array<{ name: string; values: string[] }>): Record<string, string> {
+  if (!label || groups.length === 0) return {};
+  const segments = label.split(/\s*[·|]\s*/).map(segment => segment.trim()).filter(Boolean);
+  const derived: Record<string, string> = {};
+  for (const group of groups) {
+    const prefix = `${group.name.trim()} :`;
+    const segment = segments.find(candidate => candidate.toLowerCase().startsWith(prefix.toLowerCase()));
+    const value = segment?.slice(prefix.length).trim();
+    if (!value || !group.values.includes(value)) return {};
+    derived[group.name] = value;
+  }
+  return derived;
+}
+
+function sanitizeSelectedOptions(value: Record<string, string> | undefined, productOptions: string | null, variantLabel?: string): Record<string, string> {
   const selected = Object.entries(value ?? {}).reduce<Record<string, string>>((result, [key, option]) => {
     const safeKey = key.trim().slice(0, 80);
     const safeValue = option.trim().slice(0, 120);
@@ -15157,6 +15171,10 @@ function sanitizeSelectedOptions(value: Record<string, string> | undefined, prod
   }
 
   if (groups.length === 0) return selected;
+  if (Object.keys(selected).length === 0 && variantLabel) {
+    const derived = optionsFromVariantLabel(variantLabel, groups);
+    if (Object.keys(derived).length === groups.length) return derived;
+  }
   if (Object.keys(selected).length !== groups.length) throw new Error("CHECKOUT_OPTIONS_REQUIRED");
   for (const group of groups) {
     const choice = selected[group.name];
@@ -15235,7 +15253,7 @@ export async function getStripeCheckoutCart(userId: number, countryCode: string,
     const isManualProduct = !product.supplier;
     const ownerManagedDelivery = isClientStore && isManualProduct;
     if (!profile && !ownerManagedDelivery) throw new Error("DELIVERY_NOT_AVAILABLE");
-    const selectedOptions = sanitizeSelectedOptions(item.selectedOptions, product.options);
+    const selectedOptions = sanitizeSelectedOptions(item.selectedOptions, product.options, selectedVariant?.label);
     const supplierVariantId = ownerManagedDelivery
       ? null
       : resolveSupplierVariantForOptions(selectedOptions, product.supplierVariantMappings, profile!.supplierVariantId);
