@@ -98,7 +98,7 @@ export default function AdminStudioVisualBuilder() {
   const [selectedComponent, setSelectedComponent] = useState<any>(null);
   const [selectedTagName, setSelectedTagName] = useState("");
   const [selectedText, setSelectedText] = useState("");
-  const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "" });
+  const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "" });
   const [selectedLocked, setSelectedLocked] = useState(false);
   const [selectedHref, setSelectedHref] = useState("");
   const [selectedAlt, setSelectedAlt] = useState("");
@@ -297,6 +297,9 @@ export default function AdminStudioVisualBuilder() {
       fontSize: String(styles.fontSize || ""),
       padding: String(styles.padding || ""),
       borderRadius: String(styles.borderRadius || ""),
+      textAlign: String(styles.textAlign || ""),
+      lineHeight: String(styles.lineHeight || ""),
+      letterSpacing: String(styles.letterSpacing || ""),
     });
   };
 
@@ -318,6 +321,12 @@ export default function AdminStudioVisualBuilder() {
     if (selectedComponent?.addAttributes) selectedComponent.addAttributes({ [key]: safeValue });
   };
 
+  const resetSelectedStyles = () => {
+    const defaults = { color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "" };
+    setSelectedStyles(defaults);
+    selectedComponent?.setStyle?.(defaults);
+  };
+
   const duplicateSelected = () => {
     const clone = selectedComponent?.clone?.();
     const parent = selectedComponent?.parent?.();
@@ -329,6 +338,7 @@ export default function AdminStudioVisualBuilder() {
 
   const removeSelected = () => {
     if (!selectedComponent || selectedLocked) return;
+    if (!window.confirm("Supprimer définitivement cet élément du brouillon ?")) return;
     selectedComponent.remove?.();
     setSelectedComponent(null);
   };
@@ -375,8 +385,9 @@ export default function AdminStudioVisualBuilder() {
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Lien</span><input type="text" value={selectedHref} onChange={event => updateSelectedAttribute("href", event.target.value)} placeholder="/boutique ou https://…" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /><span className="text-[11px] text-slate-500">Chemins internes, HTTPS, e-mail et téléphone uniquement.</span></label>
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Texte alternatif de l’image</span><input type="text" value={selectedAlt} onChange={event => updateSelectedAttribute("alt", event.target.value)} placeholder="Décrivez l’image" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
             <div className="grid grid-cols-2 gap-2">{([['color','Texte'],['backgroundColor','Fond']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder="#172033" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
-            <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
-            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
+            <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi'],['lineHeight','Interligne'],['letterSpacing','Lettres']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : key === 'lineHeight' ? '1.5' : key === 'letterSpacing' ? '0.04em' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
+            <div className="grid grid-cols-2 gap-2"><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Alignement</span><select value={selectedStyles.textAlign} onChange={event => updateSelectedStyle('textAlign', event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="">Par défaut</option><option value="left">Gauche</option><option value="center">Centre</option><option value="right">Droite</option><option value="justify">Justifié</option></select></label><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label></div>
+            <button type="button" onClick={resetSelectedStyles} className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Réinitialiser les styles</button>
             <p className="text-[11px] leading-5 text-slate-500">Les changements restent dans le brouillon privé jusqu’à l’enregistrement.</p>
           </div> : <p className="mt-4 text-sm leading-6 text-slate-500">Sélectionnez un titre, un bouton, une image ou une section dans le canvas pour modifier ses propriétés.</p>}
           <div className="mt-5 border-t border-slate-200 pt-4"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-950">Structure de la page</h4><span className="text-[11px] text-slate-500">{layerItems.length} section{layerItems.length > 1 ? "s" : ""}</span></div><div className="mt-3 space-y-1.5">{layerItems.length > 0 ? layerRows.map(({ component: layer, depth }, index) => { const label = String(layer.get?.("tagName") || layer.get?.("type") || "élément").toLowerCase(); const dynamic = isDynamicCatalogueAttributes(layer.getAttributes?.()); const active = layer === selectedComponent; return <div key={layer.cid || index} className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 ${active ? "border-fuchsia-300 bg-fuchsia-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => selectLayer(layer)} style={{ paddingLeft: `${depth * 12}px` }} className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-slate-700">{index + 1}. {label}{dynamic ? <span className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] text-emerald-800">dynamique</span> : null}</button><button type="button" onClick={() => moveLayer(layer, -1)} disabled={index === 0} className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Monter"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLayer(layer, 1)} disabled={index === layerItems.length - 1} className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Descendre"><ArrowDown className="h-3.5 w-3.5" /></button></div>; }) : <p className="text-xs text-slate-500">Ajoutez une section pour voir sa structure ici.</p>}</div></div>
