@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, CheckCircle2, CopyPlus, ImagePlus, Layers3, LockKeyhole, Palette, Plus, Save, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, CopyPlus, ImagePlus, Layers3, LockKeyhole, Palette, Plus, Save, Sparkles, Type, Wand2 } from "lucide-react";
 
 type BuilderMode = "blank" | "theme" | "clone";
 type ImageRole = "free" | "logo" | "banner" | "category";
@@ -77,6 +77,10 @@ export default function AdminStudioVisualBuilder() {
   const [imageRole, setImageRole] = useState<ImageRole>("free");
   const [imageZoom, setImageZoom] = useState(100);
   const [imageFocal, setImageFocal] = useState<"left" | "center" | "right">("center");
+  const [selectedComponent, setSelectedComponent] = useState<any>(null);
+  const [selectedTagName, setSelectedTagName] = useState("");
+  const [selectedText, setSelectedText] = useState("");
+  const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "" });
   const editorRef = useRef<Editor | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const selectedImageRef = useRef<any>(null);
@@ -132,10 +136,14 @@ export default function AdminStudioVisualBuilder() {
       setHasSelectedImage(isImage);
       setImageZoom(100);
       setImageFocal("center");
+      handleSelectedComponent(component);
     });
     editor.on("component:deselected", () => {
       selectedImageRef.current = null;
       setHasSelectedImage(false);
+      setSelectedComponent(null);
+      setSelectedTagName("");
+      setSelectedText("");
     });
     const savedProject = projectQuery.data?.project;
     if (savedProject) editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]);
@@ -176,11 +184,55 @@ export default function AdminStudioVisualBuilder() {
     applyImageCrop(100, "center");
   };
 
+  const readSelectedText = (component: any) => component?.components?.().models
+    ?.filter((child: any) => child.get?.("type") === "textnode")
+    ?.map((child: any) => child.get?.("content") || "")
+    ?.join("") || "";
+
+  const handleSelectedComponent = (component: any) => {
+    const tagName = String(component?.get?.("tagName") || component?.get?.("type") || "element").toLowerCase();
+    const styles = component?.getStyle?.() || {};
+    setSelectedComponent(component);
+    setSelectedTagName(tagName);
+    setSelectedText(readSelectedText(component));
+    setSelectedStyles({
+      color: String(styles.color || ""),
+      backgroundColor: String(styles.backgroundColor || ""),
+      fontSize: String(styles.fontSize || ""),
+      padding: String(styles.padding || ""),
+      borderRadius: String(styles.borderRadius || ""),
+    });
+  };
+
+  const updateSelectedText = (value: string) => {
+    const safeValue = value.replace(/[<>]/g, "");
+    setSelectedText(safeValue);
+    if (selectedComponent?.components) selectedComponent.components(safeValue);
+  };
+
+  const updateSelectedStyle = (key: keyof typeof selectedStyles, value: string) => {
+    setSelectedStyles(previous => ({ ...previous, [key]: value }));
+    if (selectedComponent?.addStyle) selectedComponent.addStyle({ [key]: value || undefined });
+  };
+
   return <DashboardLayout><main className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 md:px-8 md:py-8">
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-slate-950 text-white hover:bg-slate-950"><Layers3 className="mr-1.5 h-3.5 w-3.5" /> MAZIGHO Studio</Badge><Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-950">Constructeur open source</Badge></div><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Constructeur visuel</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Un canvas inspiré des meilleurs éditeurs visuels, construit sur GrapesJS open source et spécialisé pour les boutiques MAZIGHO.</p></div><Link href="/admin/studio"><Button type="button" variant="outline" className="min-h-11 w-fit">Retour au Studio</Button></Link></header>
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-7"><div className="flex flex-col gap-3 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-fuchsia-700">Point de départ</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Comment voulez-vous commencer ?</h2><p className="mt-2 text-sm leading-6 text-slate-600">Le choix recharge une composition de démonstration dans le canvas privé.</p></div><Badge variant="outline" className="w-fit border-slate-300 bg-slate-50 text-slate-700">Étape 1 · Choisir une base</Badge></div><div className="mt-6 grid gap-4 lg:grid-cols-3">{modes.map(mode => { const ModeIcon = mode.icon; const active = selectedMode === mode.id; const modeTone = toneClasses[mode.tone]; return <button key={mode.id} type="button" onClick={() => setSelectedMode(mode.id)} className={`rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${active ? `${modeTone.card} ring-2 ring-slate-950/10` : "border-slate-200 bg-white hover:border-slate-300"}`}><div className="flex items-start justify-between gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl ${modeTone.icon}`}><ModeIcon className="h-5 w-5" /></span>{active && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}</div><p className="mt-5 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">{mode.eyebrow}</p><h3 className="mt-2 text-xl font-bold text-slate-950">{mode.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{mode.description}</p><span className={`mt-5 inline-flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-semibold text-white ${active ? modeTone.button : "bg-slate-700 hover:bg-slate-800"}`}>{active ? "Parcours sélectionné" : "Choisir ce parcours"}<ArrowRight className="ml-2 h-4 w-4" /></span></button>; })}</div></section>
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Étape 2 · Boutique cible</p><h2 className="mt-1 text-xl font-bold text-slate-950">Où enregistrer ce brouillon ?</h2><p className="mt-1 text-sm text-slate-600">Le projet reste isolé dans les réglages privés de la boutique choisie.</p></div><select value={selectedStoreId ?? ""} onChange={event => setSelectedStoreId(Number(event.target.value) || null)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-950/20"><option value="">Sélectionner une boutique</option>{stores.map(store => <option key={store.id} value={store.id}>{store.displayName} · {store.primaryDomain}</option>)}</select></div></section>
-    <section className="rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-3"><div className={`grid h-10 w-10 place-items-center rounded-xl ${tone.icon}`}><Icon className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Canvas privé · {selected.title}</p><h2 className="mt-1 text-xl font-bold text-slate-950">Composition MAZIGHO</h2></div></div><p className="mt-3 text-sm text-slate-600">Choisissez un rôle d’image pour appliquer automatiquement ses proportions et son recadrage.</p></div><div className="flex flex-wrap items-center gap-2"><input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadImage} /><select value={imageRole} onChange={event => setImageRole(event.target.value as ImageRole)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-800"><option value="free">Image libre</option><option value="logo">Logo</option><option value="banner">Bannière</option><option value="category">Catégorie</option></select>{hasSelectedImage && <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1"><span className="text-[11px] font-semibold text-slate-500">Zoom</span><input aria-label="Zoom de l’image" type="range" min="100" max="180" step="5" value={imageZoom} onChange={event => { const value = Number(event.target.value); setImageZoom(value); applyImageCrop(value, imageFocal); }} className="w-20" /><span className="w-8 text-right text-[11px] font-semibold text-slate-600">{imageZoom}%</span><select aria-label="Point focal de l’image" value={imageFocal} onChange={event => { const value = event.target.value as "left" | "center" | "right"; setImageFocal(value); applyImageCrop(imageZoom, value); }} className="rounded border border-slate-300 bg-white px-1 py-1 text-xs"><option value="left">Gauche</option><option value="center">Centre</option><option value="right">Droite</option></select><button type="button" onClick={resetImageCrop} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">Réinitialiser</button></div>}<Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">{projectQuery.data?.updatedAt ? "Brouillon chargé" : "Nouveau brouillon"}</Badge><Button type="button" variant="outline" onClick={() => openImagePicker("add")} disabled={!selectedStoreId || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Ajouter</Button><Button type="button" variant="outline" onClick={() => openImagePicker("replace")} disabled={!hasSelectedImage || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Remplacer</Button><Button type="button" onClick={saveProject} disabled={!selectedStoreId || saveProjectMutation.isPending} className="min-h-10 bg-slate-950 text-white hover:bg-slate-800"><Save className="mr-2 h-4 w-4" />{saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}</Button></div></div><div className="overflow-hidden rounded-b-3xl"><GjsEditor key={`${selectedMode}-${selectedStoreId ?? "none"}`} grapesjs={grapesjs} options={editorOptions} onEditor={handleEditor} /></div></section>
+    <section className="rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-3"><div className={`grid h-10 w-10 place-items-center rounded-xl ${tone.icon}`}><Icon className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Canvas privé · {selected.title}</p><h2 className="mt-1 text-xl font-bold text-slate-950">Composition MAZIGHO</h2></div></div><p className="mt-3 text-sm text-slate-600">Choisissez un rôle d’image pour appliquer automatiquement ses proportions et son recadrage.</p></div><div className="flex flex-wrap items-center gap-2"><input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadImage} /><select value={imageRole} onChange={event => setImageRole(event.target.value as ImageRole)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-800"><option value="free">Image libre</option><option value="logo">Logo</option><option value="banner">Bannière</option><option value="category">Catégorie</option></select>{hasSelectedImage && <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1"><span className="text-[11px] font-semibold text-slate-500">Zoom</span><input aria-label="Zoom de l’image" type="range" min="100" max="180" step="5" value={imageZoom} onChange={event => { const value = Number(event.target.value); setImageZoom(value); applyImageCrop(value, imageFocal); }} className="w-20" /><span className="w-8 text-right text-[11px] font-semibold text-slate-600">{imageZoom}%</span><select aria-label="Point focal de l’image" value={imageFocal} onChange={event => { const value = event.target.value as "left" | "center" | "right"; setImageFocal(value); applyImageCrop(imageZoom, value); }} className="rounded border border-slate-300 bg-white px-1 py-1 text-xs"><option value="left">Gauche</option><option value="center">Centre</option><option value="right">Droite</option></select><button type="button" onClick={resetImageCrop} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">Réinitialiser</button></div>}<Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">{projectQuery.data?.updatedAt ? "Brouillon chargé" : "Nouveau brouillon"}</Badge><Button type="button" variant="outline" onClick={() => openImagePicker("add")} disabled={!selectedStoreId || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Ajouter</Button><Button type="button" variant="outline" onClick={() => openImagePicker("replace")} disabled={!hasSelectedImage || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Remplacer</Button><Button type="button" onClick={saveProject} disabled={!selectedStoreId || saveProjectMutation.isPending} className="min-h-10 bg-slate-950 text-white hover:bg-slate-800"><Save className="mr-2 h-4 w-4" />{saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}</Button></div></div><div className="grid gap-4 border-t border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="overflow-hidden rounded-2xl bg-white"><GjsEditor key={`${selectedMode}-${selectedStoreId ?? "none"}`} grapesjs={grapesjs} options={editorOptions} onEditor={handleEditor} /></div>
+        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Propriétés de l’élément sélectionné">
+          <div className="flex items-center gap-2"><Wand2 className="h-4 w-4 text-fuchsia-700" /><h3 className="font-semibold text-slate-950">Propriétés</h3></div>
+          {selectedComponent ? <div className="mt-4 space-y-4">
+            <p className="text-xs text-slate-500">Élément sélectionné : <span className="font-semibold text-slate-800">{selectedTagName}</span></p>
+            <label className="block space-y-1.5"><span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Type className="h-3.5 w-3.5" />Texte</span><textarea value={selectedText} onChange={event => updateSelectedText(event.target.value)} rows={4} className="w-full rounded-lg border border-slate-300 p-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
+            <div className="grid grid-cols-2 gap-2">{([['color','Texte'],['backgroundColor','Fond']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder="#172033" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
+            <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
+            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
+            <p className="text-[11px] leading-5 text-slate-500">Les changements restent dans le brouillon privé jusqu’à l’enregistrement.</p>
+          </div> : <p className="mt-4 text-sm leading-6 text-slate-500">Sélectionnez un titre, un bouton, une image ou une section dans le canvas pour modifier ses propriétés.</p>}
+        </aside>
+      </div></section>
     <Card className="border-sky-200 bg-sky-50"><CardContent className="flex flex-col gap-3 p-5 text-sm leading-6 text-sky-950 md:flex-row md:items-start"><LockKeyhole className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Sauvegarde privée uniquement</p><p>Le projet est enregistré dans les réglages isolés de la boutique. Cette étape ne publie rien, ne change aucun domaine et n’active aucun paiement.</p></div></CardContent></Card>
   </main></DashboardLayout>;
 }
