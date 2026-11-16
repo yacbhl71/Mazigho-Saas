@@ -12172,25 +12172,144 @@ export async function getCart(userId: number, storeId?: number) {
   };
 }
 
+let _byokCheckoutSchemaReady: Promise<void> | null = null;
+
+/** Runtime safety net mirroring migrations 0054/0055 for the BYOK checkout tables. */
+async function ensureByokCheckoutSchema() {
+  if (_byokCheckoutSchemaReady) return _byokCheckoutSchemaReady;
+  _byokCheckoutSchemaReady = (async () => {
+    const db = await getDb();
+    if (!db) return;
+    const run = async (statement: string) => {
+      try {
+        await db.execute(sql.raw(statement));
+      } catch (error) {
+        const message = String(error).toLowerCase();
+        if (!message.includes("duplicate column") && !message.includes("already exists")) throw error;
+      }
+    };
+    await run(`CREATE TABLE IF NOT EXISTS \`paymentIntents\` (
+      \`id\` bigint NOT NULL AUTO_INCREMENT,
+      \`storeId\` int NOT NULL,
+      \`orderId\` bigint NULL,
+      \`idempotencyKey\` varchar(255) NOT NULL,
+      \`provider\` varchar(32) NOT NULL,
+      \`method\` varchar(32) NOT NULL,
+      \`isTestMode\` tinyint(1) NOT NULL DEFAULT 1,
+      \`amountMinor\` int NOT NULL,
+      \`currency\` varchar(3) NOT NULL,
+      \`status\` varchar(32) NOT NULL,
+      \`providerSessionId\` varchar(255) NULL,
+      \`providerReference\` varchar(255) NULL,
+      \`cartFingerprint\` char(64) NOT NULL,
+      \`lastEventId\` varchar(255) NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`paymentIntents_store_idempotency_unique\` (\`storeId\`, \`idempotencyKey\`),
+      UNIQUE KEY \`paymentIntents_provider_session_unique\` (\`provider\`, \`storeId\`, \`providerSessionId\`),
+      KEY \`paymentIntents_store_status_idx\` (\`storeId\`, \`status\`),
+      KEY \`paymentIntents_order_idx\` (\`storeId\`, \`orderId\`)
+    )`);
+    await run("ALTER TABLE `cartItems` ADD COLUMN IF NOT EXISTS `variantId` int NULL");
+    await run("ALTER TABLE `paymentIntents` ADD COLUMN IF NOT EXISTS `cartId` int NULL");
+  })().catch(error => {
+    _byokCheckoutSchemaReady = null;
+    throw error;
+  });
+  return _byokCheckoutSchemaReady;
+}
+
+type ByokCartLine = { productId: number; variantId: number | null; quantity: number };
+
+/**
+ * Mirrors the browser basket into the customer's server cart right before a
+ * BYOK checkout, so the payment service and the order use the same server cart.
+ */
+export async function replaceByokServerCart(userId: number, storeId: number, items: Array<{ productId: number; quantity: number; variantId?: number }>) {
+  await ensureStoreRelationshipScopeSchema();
+  await ensureByokCheckoutSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const lines = new Map<string, ByokCartLine>();
+  for (const item of items) {
+    const variantId = item.variantId ?? null;
+    const key = `${item.productId}:${variantId ?? "base"}`;
+    lines.set(key, { productId: item.productId, variantId, quantity: (lines.get(key)?.quantity ?? 0) + item.quantity });
+  }
+  if (lines.size === 0) throw new Error("CART_EMPTY");
+  const productIds = Array.from(new Set(items.map(item => item.productId)));
+  const available = await db.select({ id: products.id }).from(products)
+    .where(and(eq(products.storeId, storeId), inArray(products.id, productIds), eq(products.status, "active")));
+  if (available.length !== productIds.length) throw new Error("PRODUCT_NOT_AVAILABLE");
+
+  return await db.transaction(async tx => {
+    const findCart = () => tx.select({ id: carts.id }).from(carts).where(and(eq(carts.storeId, storeId), eq(carts.userId, userId))).limit(1);
+    let [cart] = await findCart();
+    if (!cart) {
+      await tx.insert(carts).values({ storeId, userId });
+      [cart] = await findCart();
+    }
+    if (!cart) throw new Error("CART_CREATE_FAILED");
+    const cartId = cart.id;
+    await tx.delete(cartItems).where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cartId)));
+    await tx.insert(cartItems).values(Array.from(lines.values()).map(line => ({ storeId, cartId, ...line })));
+    return cartId;
+  });
+}
+
 /** Read-only cart projection for the standalone payment service. */
 export async function getPaymentCartById(cartId: number, storeId: number) {
   await ensureStoreRelationshipScopeSchema();
+  await ensureByokCheckoutSchema();
   const db = await getDb();
   if (!db) return null;
-  const [cart] = await db.select({ id: carts.id, storeId: carts.storeId })
+  const [cart] = await db.select({ id: carts.id, storeId: carts.storeId, userId: carts.userId })
     .from(carts)
     .where(and(eq(carts.id, cartId), eq(carts.storeId, storeId)))
     .limit(1);
   if (!cart) return null;
-  const items = await db.select({
+  const items: ByokCartLine[] = await db.select({
     productId: cartItems.productId,
+    variantId: cartItems.variantId,
     quantity: cartItems.quantity,
-    name: products.name,
-    price: products.price,
   }).from(cartItems)
-    .innerJoin(products, and(eq(cartItems.productId, products.id), eq(cartItems.storeId, products.storeId)))
-    .where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cart.id), eq(products.status, "active")));
-  return { id: cart.id, storeId: cart.storeId, items };
+    .where(and(eq(cartItems.storeId, storeId), eq(cartItems.cartId, cart.id)));
+  return { id: cart.id, storeId: cart.storeId, userId: cart.userId, items };
+}
+
+/** Catalogue prices for BYOK cart lines, converted to the store's sale currency. */
+async function priceByokCartLines(storeId: number, lines: ByokCartLine[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const productIds = Array.from(new Set(lines.map(line => line.productId)));
+  const [productRows, variantsByProduct, currency] = await Promise.all([
+    db.select({ id: products.id, name: products.name, price: products.price }).from(products)
+      .where(and(eq(products.storeId, storeId), inArray(products.id, productIds))),
+    getPublicOwnerProductVariantsForProducts(productIds, storeId),
+    getStoreCurrencyConfig(storeId),
+  ]);
+  const productById = new Map(productRows.map(product => [product.id, product]));
+  const priced = lines.map(line => {
+    const product = productById.get(line.productId);
+    if (!product) throw new Error("PRODUCT_NOT_AVAILABLE");
+    const variant = line.variantId ? (variantsByProduct.get(product.id) ?? []).find(candidate => candidate.id === line.variantId) : undefined;
+    if (line.variantId && !variant) throw new Error("CHECKOUT_VARIANT_UNAVAILABLE");
+    const unitAmountChf = product.price + (variant?.priceAdjustmentCents ?? 0);
+    return {
+      ...line,
+      name: variant ? `${product.name} — ${variant.label}` : product.name,
+      variantLabel: variant?.label ?? null,
+      unitAmountChf,
+      unitAmount: convertChfCents(unitAmountChf, currency),
+    };
+  });
+  return {
+    currency,
+    lines: priced,
+    totalAmount: priced.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0),
+    totalAmountChf: priced.reduce((sum, line) => sum + line.unitAmountChf * line.quantity, 0),
+  };
 }
 
 export async function createPaymentIntent(input: {
@@ -12203,20 +12322,22 @@ export async function createPaymentIntent(input: {
   currency: string;
   isTestMode: boolean;
 }) {
+  await ensureByokCheckoutSchema();
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const cart = input.cartId ? await getPaymentCartById(input.cartId, input.storeId) : null;
   if (input.cartId && (!cart || cart.items.length === 0)) throw new Error("CART_EMPTY_OR_NOT_FOUND");
   if (!cart && !input.validatedCart) throw new Error("CART_EMPTY_OR_NOT_FOUND");
-  const amountMinor = cart ? cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0) : input.validatedCart!.totalMinor;
-  const cartFingerprint = cart ? createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart.items })).digest("hex") : input.validatedCart!.fingerprint;
+  // The payment service total is the amount actually charged; the catalogue total is the fallback.
+  const amountMinor = input.validatedCart?.totalMinor ?? (await priceByokCartLines(input.storeId, cart!.items)).totalAmount;
+  const cartFingerprint = input.validatedCart?.fingerprint ?? createHash("sha256").update(JSON.stringify({ storeId: input.storeId, items: cart!.items })).digest("hex");
   const key = input.idempotencyKey.trim();
   if (!/^[A-Za-z0-9._:-]{16,255}$/.test(key)) throw new Error("IDEMPOTENCY_KEY_INVALID");
   await db.execute(sql`INSERT INTO paymentIntents
-    (storeId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, cartFingerprint)
-    VALUES (${input.storeId}, ${key}, ${input.provider}, ${input.method}, ${input.isTestMode ? 1 : 0}, ${amountMinor}, ${input.currency}, 'created', ${cartFingerprint})
+    (storeId, cartId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, cartFingerprint)
+    VALUES (${input.storeId}, ${input.cartId ?? null}, ${key}, ${input.provider}, ${input.method}, ${input.isTestMode ? 1 : 0}, ${amountMinor}, ${input.currency}, 'created', ${cartFingerprint})
     ON DUPLICATE KEY UPDATE id=id`);
-  const rows = await db.execute(sql`SELECT id, storeId, orderId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, providerSessionId, providerReference, cartFingerprint, lastEventId, createdAt, updatedAt
+  const rows = await db.execute(sql`SELECT id, storeId, cartId, orderId, idempotencyKey, provider, method, isTestMode, amountMinor, currency, status, providerSessionId, providerReference, cartFingerprint, lastEventId, createdAt, updatedAt
     FROM paymentIntents WHERE storeId = ${input.storeId} AND idempotencyKey = ${key} LIMIT 1`);
   const record = (rows as any)[0]?.[0] ?? (rows as any)[0];
   return record ?? null;
@@ -12229,6 +12350,7 @@ export async function applyPaymentIntentEvent(input: {
   targetStatus: "processing" | "succeeded" | "failed" | "expired";
   providerReference?: string;
 }) {
+  await ensureByokCheckoutSchema();
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const eventId = input.eventId.trim();
@@ -12238,8 +12360,9 @@ export async function applyPaymentIntentEvent(input: {
   const current = (rows as unknown as any[])[0];
   if (!current) throw new Error("PAYMENT_INTENT_NOT_FOUND");
   if (current.lastEventId === eventId) return { ...current, duplicate: true };
+  // Hosted checkouts (Stripe Checkout, PayPal capture) report success directly from "created".
   const allowed: Record<string, string[]> = {
-    created: ["processing", "failed", "expired"],
+    created: ["processing", "succeeded", "failed", "expired"],
     processing: ["succeeded", "failed", "expired"],
     succeeded: ["succeeded"],
     failed: ["failed"],
@@ -12252,40 +12375,96 @@ export async function applyPaymentIntentEvent(input: {
     await db.execute(sql`UPDATE orders SET paymentStatus = 'paid', status = 'processing'
       WHERE id = ${current.orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
   }
+  if ((input.targetStatus === "failed" || input.targetStatus === "expired") && current.orderId) {
+    await db.execute(sql`UPDATE orders SET status = 'cancelled'
+      WHERE id = ${current.orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
+  }
   return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false };
 }
 
+/**
+ * Creates the pending MAZIGHO order for a payment intent. Intents created from
+ * a server cart turn that cart into order lines; legacy intents without a cart
+ * are only accepted for active store members.
+ */
 export async function attachPaymentIntentOrder(input: {
   storeId: number;
   intentId: number;
   userId: number;
   shippingAddress: string;
   billingAddress?: string;
+  allowWithoutCart: boolean;
 }) {
+  await ensureByokCheckoutSchema();
+  await ensureOrderCurrencySchema();
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [rows] = await db.execute(sql`SELECT id, orderId, status, amountMinor, currency FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
+  const [rows] = await db.execute(sql`SELECT id, cartId, orderId, status, amountMinor, currency, provider FROM paymentIntents WHERE id = ${input.intentId} AND storeId = ${input.storeId} LIMIT 1`);
   const intent = (rows as unknown as any[])[0];
   if (!intent) throw new Error("PAYMENT_INTENT_NOT_FOUND");
-  if (intent.orderId) return { orderId: intent.orderId, alreadyAttached: true };
+  if (intent.orderId) return { orderId: Number(intent.orderId), alreadyAttached: true };
   if (intent.status !== "created") throw new Error("PAYMENT_INTENT_NOT_ATTACHABLE");
-  const orderResult = await db.insert(orders).values({
-    storeId: input.storeId,
-    userId: input.userId,
-    totalAmount: Number(intent.amountMinor) / 100,
-    shippingAddress: input.shippingAddress,
-    billingAddress: input.billingAddress || input.shippingAddress,
-    paymentMethod: `byok:${intent.currency}`,
-    promotionId: null,
-    discountAmount: 0,
-    status: "pending",
-    paymentStatus: "unpaid",
+  const amountMinor = Number(intent.amountMinor);
+  const paymentMethod = `byok_${String(intent.provider)}`.slice(0, 50);
+  const billingAddress = input.billingAddress || input.shippingAddress;
+  const attachIntent = async (tx: any, orderId: number) => {
+    const updated = await tx.execute(sql`UPDATE paymentIntents SET orderId = ${orderId}
+      WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND orderId IS NULL AND status = 'created'`);
+    if (affectedRows(updated) !== 1) throw new Error("PAYMENT_INTENT_ORDER_RACE");
+  };
+  const insertedOrderId = (result: unknown) => {
+    const orderId = Number((result as any)[0]?.insertId);
+    if (!Number.isInteger(orderId) || orderId <= 0) throw new Error("PAYMENT_INTENT_ORDER_CREATE_FAILED");
+    return orderId;
+  };
+
+  if (!intent.cartId) {
+    if (!input.allowWithoutCart) throw new Error("PAYMENT_BRIDGE_STORE_ACCESS_DENIED");
+    const orderId = await db.transaction(async tx => {
+      const orderId = insertedOrderId(await tx.insert(orders).values({
+        storeId: input.storeId, userId: input.userId, totalAmount: amountMinor, currencyCode: String(intent.currency),
+        shippingAddress: input.shippingAddress, billingAddress, paymentMethod, promotionId: null, discountAmount: 0, status: "pending", paymentStatus: "unpaid",
+      }));
+      await attachIntent(tx, orderId);
+      return orderId;
+    });
+    return { orderId, alreadyAttached: false };
+  }
+
+  const cart = await getPaymentCartById(Number(intent.cartId), input.storeId);
+  if (!cart || cart.userId !== input.userId) throw new Error("PAYMENT_INTENT_CART_MISMATCH");
+  if (cart.items.length === 0) throw new Error("CART_EMPTY_OR_NOT_FOUND");
+  const priced = await priceByokCartLines(input.storeId, cart.items);
+  const orderId = await db.transaction(async tx => {
+    const orderId = insertedOrderId(await tx.insert(orders).values({
+      storeId: input.storeId,
+      userId: input.userId,
+      totalAmount: amountMinor,
+      totalAmountChf: priced.totalAmountChf,
+      currencyCode: priced.currency.code,
+      currencyRateBps: priced.currency.rateBps,
+      shippingAddress: input.shippingAddress,
+      billingAddress,
+      paymentMethod,
+      promotionId: null,
+      discountAmount: 0,
+      status: "pending",
+      paymentStatus: "unpaid",
+    }));
+    await tx.insert(orderItems).values(priced.lines.map(line => ({
+      storeId: input.storeId,
+      orderId,
+      productId: line.productId,
+      quantity: line.quantity,
+      priceAtPurchase: line.unitAmount,
+      priceAtPurchaseChf: line.unitAmountChf,
+      productNameSnapshot: line.name.slice(0, 255),
+      selectedOptions: JSON.stringify(line.variantLabel ? { "Variante choisie": line.variantLabel } : {}),
+    })));
+    await tx.delete(cartItems).where(and(eq(cartItems.storeId, input.storeId), eq(cartItems.cartId, cart.id)));
+    await attachIntent(tx, orderId);
+    return orderId;
   });
-  const orderId = Number((orderResult as any)[0]?.insertId);
-  if (!Number.isInteger(orderId) || orderId <= 0) throw new Error("PAYMENT_INTENT_ORDER_CREATE_FAILED");
-  const updated = await db.execute(sql`UPDATE paymentIntents SET orderId = ${orderId}
-    WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND orderId IS NULL AND status = 'created'`);
-  if ((updated as any)[0]?.affectedRows !== 1) throw new Error("PAYMENT_INTENT_ORDER_RACE");
   return { orderId, alreadyAttached: false };
 }
 

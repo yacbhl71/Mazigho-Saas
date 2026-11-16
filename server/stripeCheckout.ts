@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import Stripe from "stripe";
-import { protectedProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { mayAcceptStorefrontCommerce, mayServeStorefront } from "./services/storeScope";
 import { bindStripeConnectSessionToPendingOrder, cancelUnboundStripePendingOrder, createAlgeriaCashOnDeliveryOrder, createStripePendingOrder, getOrderForStripeSessionForStore, getStoreMaintenanceMode, getStoreStripeConnectCheckoutContext, getStoreStripeConnectSetup, getStripeCheckoutCart, markOrderPaidByStripeSession, validatePromotion } from "./db";
 import { completePaidStripeOrder, isVerifiedPaidStripeTestSession } from "./stripeWebhook";
@@ -70,25 +70,50 @@ export const stripeCheckoutRouter = router({
       })).min(1).max(30),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { getStoreCurrencyConfig } = await import("./db");
-      const currency = await getStoreCurrencyConfig(ctx.store!.id);
+      const { getStoreCurrencyConfig, replaceByokServerCart } = await import("./db");
+      const storeId = ctx.store!.id;
+      const countryCode = input.countryCode.toUpperCase();
+      const currency = await getStoreCurrencyConfig(storeId);
+      // The payment service reads a server cart: mirror the validated browser basket first.
+      const cartId = await replaceByokServerCart(ctx.user.id, storeId, input.items).catch(error => {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "PRODUCT_NOT_AVAILABLE") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Un article de votre panier n’est plus disponible. Actualisez votre panier." });
+        console.error("BYOK server cart error", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le panier n’a pas pu être préparé pour le paiement. Aucun paiement n’a été créé." });
+      });
       const response = await callPaymentService<{ session: { redirectUrl: string | null; orderId: string } }>(ctx, "/api/checkout/create-session", {
         method: "POST",
-        storeId: ctx.store!.id,
+        storeId,
         body: {
-          storeId: String(ctx.store!.id),
+          storeId: String(storeId),
           userId: String(ctx.user.id),
           provider: input.provider,
           method: input.method,
           currency: currency.code,
-          country: input.countryCode.toUpperCase(),
-          shippingAddress: JSON.stringify(input.shippingAddress),
+          country: countryCode,
+          shippingAddress: JSON.stringify({ source: "byok_checkout", ...input.shippingAddress, countryCode }),
           idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
-          items: input.items.map(item => ({ productId: String(item.productId), variantId: String(item.variantId ?? item.productId), quantity: item.quantity })),
+          cartId: String(cartId),
         },
       });
       if (!response.session.redirectUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le prestataire de paiement n’a pas fourni de lien de paiement." });
       return { url: response.session.redirectUrl, orderId: response.session.orderId };
+    }),
+  // Return page of a BYOK hosted payment. The random session id is the only
+  // capability; Stripe is reconciled server-side and PayPal is captured here.
+  confirmByokReturn: publicProcedure
+    .input(z.object({
+      storeId: z.number().int().positive(),
+      orderId: z.string().regex(/^ord_[a-f0-9]{32}$/),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      type ByokSession = { provider: string; status: string; amountMinor: number; currency: string; isTestMode: boolean };
+      const query = `storeId=${encodeURIComponent(String(input.storeId))}`;
+      let { session } = await callPaymentService<{ session: ByokSession }>(ctx, `/api/checkout/session/${input.orderId}?${query}`, { storeId: input.storeId });
+      if (session.provider === "paypal" && session.status === "pending_payment") {
+        ({ session } = await callPaymentService<{ session: ByokSession }>(ctx, `/api/checkout/session/${input.orderId}/capture?${query}`, { method: "POST", storeId: input.storeId, body: {} }));
+      }
+      return { status: session.status, provider: session.provider, amountMinor: session.amountMinor, currency: session.currency, isTestMode: session.isTestMode };
     }),
   createAlgeriaCashOnDeliveryOrder: storefrontProtectedProcedure
     .input(z.object({

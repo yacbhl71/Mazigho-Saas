@@ -111,6 +111,7 @@ const StaffCatalog = lazy(() => import("./pages/admin/StaffCatalog"));
 const StaffSupport = lazy(() => import("./pages/admin/StaffSupport"));
 const StaffOrders = lazy(() => import("./pages/admin/StaffOrders"));
 const Checkout = lazy(() => import("./pages/Checkout"));
+const ByokCheckoutReturn = lazy(() => import("./pages/ByokCheckoutReturn"));
 const OrderConfirmation = lazy(() => import("./pages/OrderConfirmation"));
 const Favorites = lazy(() => import("./pages/Favorites"));
 const Orders = lazy(() => import("./pages/Orders"));
@@ -483,6 +484,8 @@ function Router() {
       <Route path={"/contact"} component={isSaasLandingHost ? ProContactPage : Contact} />
       <Route path={"/panier"} component={Cart} />
       <Route path={"/commander"} component={Checkout} />
+      <Route path={"/checkout/success"}>{() => <ByokCheckoutReturn outcome="success" />}</Route>
+      <Route path={"/checkout/cancel"}>{() => <ByokCheckoutReturn outcome="cancel" />}</Route>
       <Route path={"/commande-confirmation/:id"} component={OrderConfirmation} />
       <Route path={"/nouveautes"} component={Nouveautes} />
       <Route path={"/best-sellers"} component={BestSellers} />

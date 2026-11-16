@@ -771,6 +771,8 @@ export const cartItems = mysqlTable("cartItems", {
   storeId: int("storeId").notNull(),
   cartId: int("cartId").notNull(),
   productId: int("productId").notNull(),
+  /** Owner-managed variant chosen on the storefront (BYOK checkout). */
+  variantId: int("variantId"),
   quantity: int("quantity").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

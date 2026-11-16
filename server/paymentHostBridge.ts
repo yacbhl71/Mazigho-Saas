@@ -12,6 +12,10 @@ import {
   getStoreMembershipForUser,
   getStudioManagedStore,
 } from "./db";
+import { convertChfCents, type StoreCurrencyConfig } from "../shared/storeCurrency";
+
+/** Variant id used by the payment service for a product sold without owner variants. */
+const BASE_VARIANT_ID = "default";
 
 function configuredToken() {
   const token = process.env.PAYMENT_SERVICE_TOKEN?.trim();
@@ -63,6 +67,14 @@ function storeIdParam(req: Request) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+function storeCurrency(storeId: number): Promise<StoreCurrencyConfig> {
+  return getStoreCurrencyConfig(storeId).catch(() => ({ code: "CHF" as const, rateBps: 10_000 }));
+}
+
+function unitPrices(unitAmountChf: number, currency: StoreCurrencyConfig) {
+  return { CHF: unitAmountChf, [currency.code]: convertChfCents(unitAmountChf, currency) };
+}
+
 export function registerPaymentHostBridgeRoute(targetApp: Express) {
   targetApp.get("/api/internal/payment/auth", async (req, res) => {
     if (!bridgeGuard(req, res)) return;
@@ -87,8 +99,8 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     if (!storeId) return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     const store = await getStudioManagedStore(storeId);
     if (!store) return res.json({ data: null });
-    const currency = await getStoreCurrencyConfig(storeId).catch(() => ({ code: "CHF" as const, rateBps: 10_000 }));
-    return res.json({ data: { id: String(store.id), country: "CH", defaultCurrency: currency.code, supportedCurrencies: [currency.code], isActive: store.status === "active" || store.status === "limited" } });
+    const currency = await storeCurrency(storeId);
+    return res.json({ data: { id: String(store.id), country: "CH", defaultCurrency: currency.code, supportedCurrencies: [currency.code], isActive: store.status === "active" || store.status === "limited", returnBaseUrl: `https://${store.primaryDomain}` } });
   });
 
   targetApp.get("/api/internal/payment/stores/:storeId/products/:productId", async (req, res) => {
@@ -98,9 +110,13 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     if (!storeId || !Number.isInteger(productId) || productId <= 0) return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     const product = await getProductById(productId, storeId);
     if (!product) return res.json({ data: null });
-    const variantsByProduct = await getPublicOwnerProductVariantsForProducts([productId], storeId);
-    const variants = variantsByProduct.get(productId) ?? [];
-    return res.json({ data: { id: String(product.id), storeId: String(storeId), name: product.name, active: product.status === "active", variants: variants.map((variant) => ({ id: String(variant.id), name: variant.label, active: true, stockAvailable: variant.stock, pricesMinor: { CHF: product.price + variant.priceAdjustmentCents } })) } });
+    const [variantsByProduct, currency] = await Promise.all([getPublicOwnerProductVariantsForProducts([productId], storeId), storeCurrency(storeId)]);
+    const ownerVariants = variantsByProduct.get(productId) ?? [];
+    // A product without owner variants is sold through one base variant.
+    const variants = ownerVariants.length > 0
+      ? ownerVariants.map((variant) => ({ id: String(variant.id), name: variant.label, active: true, stockAvailable: variant.stock, pricesMinor: unitPrices(product.price + variant.priceAdjustmentCents, currency) }))
+      : [{ id: BASE_VARIANT_ID, active: true, stockAvailable: product.stock, pricesMinor: unitPrices(product.price, currency) }];
+    return res.json({ data: { id: String(product.id), storeId: String(storeId), name: product.name, active: product.status === "active", variants } });
   });
 
   targetApp.get("/api/internal/payment/stores/:storeId/carts/:cartId", async (req, res) => {
@@ -110,11 +126,12 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     if (!storeId || !Number.isInteger(cartId) || cartId <= 0) return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     const cart = await getPaymentCartById(cartId, storeId);
     if (!cart) return res.json({ data: null });
+    const currency = await storeCurrency(storeId);
     return res.json({ data: {
       id: String(cart.id),
       storeId: String(cart.storeId),
-      currency: "CHF",
-      items: cart.items.map((item) => ({ productId: String(item.productId), variantId: "default", quantity: item.quantity })),
+      currency: currency.code,
+      items: cart.items.map((item) => ({ productId: String(item.productId), variantId: item.variantId ? String(item.variantId) : BASE_VARIANT_ID, quantity: item.quantity })),
     } });
   });
 
@@ -132,7 +149,8 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
       return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     }
     try {
-      const intent = await createPaymentIntent({ storeId, cartId: Number.isInteger(cartId) && cartId > 0 ? cartId : undefined, validatedCart: validatedCartOk ? { fingerprint: validatedCart.fingerprint, totalMinor: validatedCart.totalMinor, currency: validatedCart.currency } : undefined, idempotencyKey, provider, method, currency: validatedCartOk ? validatedCart.currency : "CHF", isTestMode: body.isTestMode !== false });
+      const currency = validatedCartOk ? validatedCart.currency : (await storeCurrency(storeId)).code;
+      const intent = await createPaymentIntent({ storeId, cartId: Number.isInteger(cartId) && cartId > 0 ? cartId : undefined, validatedCart: validatedCartOk ? { fingerprint: validatedCart.fingerprint, totalMinor: validatedCart.totalMinor, currency: validatedCart.currency } : undefined, idempotencyKey, provider, method, currency, isTestMode: body.isTestMode !== false });
       return res.status(201).json({ data: intent });
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_INTENT_CREATE_FAILED";
@@ -168,14 +186,32 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     if (!storeId || !Number.isInteger(intentId) || intentId <= 0 || !Number.isInteger(userId) || userId <= 0 || !shippingAddress) {
       return fail(res, 400, "PAYMENT_BRIDGE_INPUT_INVALID");
     }
+    // Storefront customers are not store members: intents built from a server
+    // cart are bound to the cart owner instead. Cart-less intents stay member-only.
     const membership = await getStoreMembershipForUser(storeId, userId);
-    if (!membership || membership.status !== "active") return fail(res, 403, "PAYMENT_BRIDGE_STORE_ACCESS_DENIED");
     try {
-      const result = await attachPaymentIntentOrder({ storeId, intentId, userId, shippingAddress, billingAddress: typeof req.body?.billingAddress === "string" ? req.body.billingAddress : undefined });
+      const result = await attachPaymentIntentOrder({ storeId, intentId, userId, shippingAddress, billingAddress: typeof req.body?.billingAddress === "string" ? req.body.billingAddress : undefined, allowWithoutCart: membership?.status === "active" });
       return res.status(result.alreadyAttached ? 200 : 201).json({ data: result });
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_ORDER_ATTACH_FAILED";
-      return fail(res, code === "PAYMENT_INTENT_NOT_FOUND" ? 404 : 409, code);
+      const status = code === "PAYMENT_INTENT_NOT_FOUND" ? 404 : code === "PAYMENT_BRIDGE_STORE_ACCESS_DENIED" || code === "PAYMENT_INTENT_CART_MISMATCH" ? 403 : 409;
+      return fail(res, status, code);
     }
+  });
+
+  // Payment service notifications. They are acknowledged and logged without
+  // payload secrets; a notification never blocks a checkout or a webhook.
+  targetApp.post("/api/internal/payment/events", (req, res) => {
+    if (!bridgeGuard(req, res)) return;
+    const body = req.body ?? {};
+    console.info("[payment-bridge] event", { type: String(body.type ?? ""), storeId: String(body.storeId ?? ""), provider: String(body.provider ?? "") });
+    return res.status(202).json({ data: { received: true } });
+  });
+
+  targetApp.post("/api/internal/payment/audit", (req, res) => {
+    if (!bridgeGuard(req, res)) return;
+    const body = req.body ?? {};
+    console.info("[payment-bridge] audit", { action: String(body.action ?? ""), outcome: String(body.outcome ?? ""), storeId: String(body.storeId ?? ""), provider: String(body.provider ?? "") });
+    return res.status(202).json({ data: { received: true } });
   });
 }

@@ -35,6 +35,7 @@ const migrations = [
   ["0052_default_byok_for_unsubscribed_stores", "drizzle/0052_default_byok_for_unsubscribed_stores.sql"],
   ["0053_backfill_byok_store_settings", "drizzle/0053_backfill_byok_store_settings.sql"],
   ["0054_payment_intents", "drizzle/0054_payment_intents.sql"],
+  ["0055_byok_server_cart", "drizzle/0055_byok_server_cart.sql"],
 ];
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
