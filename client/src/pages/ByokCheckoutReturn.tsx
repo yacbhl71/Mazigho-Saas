@@ -30,6 +30,7 @@ export default function ByokCheckoutReturn({ outcome }: { outcome: "success" | "
   const orderId = params.get("orderId") ?? "";
   const validLink = Number.isInteger(storeId) && storeId > 0 && /^ord_[a-f0-9]{32}$/.test(orderId);
   const { clearCart } = useCart();
+  const me = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const confirm = trpc.checkout.confirmByokReturn.useMutation();
   const started = useRef(false);
   const { mutate } = confirm;
@@ -54,7 +55,7 @@ export default function ByokCheckoutReturn({ outcome }: { outcome: "success" | "
 
   return <div className="flex min-h-screen flex-col bg-[#fbf7f2]"><Header /><main className="container flex-1 px-4 py-14"><div className="mx-auto max-w-xl">
     <Card className={`shadow-none ${toneClass}`} data-testid="byok-checkout-return"><CardContent className="space-y-4 p-6">
-      <div className="flex items-start gap-3"><Icon className={`mt-0.5 h-6 w-6 shrink-0 ${confirm.isPending ? "animate-spin" : ""}`} /><div><h1 className="text-xl font-semibold" data-testid="byok-checkout-return-title">{state.title}</h1><p className="mt-2 text-sm leading-6" data-testid="byok-checkout-return-text">{state.text}</p></div></div>
+      <div className="flex items-start gap-3"><Icon className={`mt-0.5 h-6 w-6 shrink-0 ${confirm.isPending ? "animate-spin" : ""}`} /><div><h1 className="text-xl font-semibold" data-testid="byok-checkout-return-title">{state.title}</h1><p className="mt-2 text-sm leading-6" data-testid="byok-checkout-return-text">{state.text}</p>{paid && me.data?.loginMethod === "guest" && <p className="mt-2 text-sm leading-6" data-testid="byok-checkout-return-guest-tracking">Un lien de suivi de votre commande vous est envoyé par e-mail : il fonctionne sans compte.</p>}</div></div>
       <div className="flex flex-wrap gap-3">
         {state.tone === "wait" && !confirm.isPending && validLink && <Button type="button" variant="outline" className="bg-white/70" onClick={() => mutate({ storeId, orderId })} data-testid="byok-checkout-return-retry">Vérifier à nouveau</Button>}
         {paid ? <Button asChild className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="byok-checkout-return-orders"><Link href="/commandes">Voir mes commandes</Link></Button> : <Button asChild variant="outline" className="bg-white/70" data-testid="byok-checkout-return-cart"><Link href="/panier">Retour au panier</Link></Button>}

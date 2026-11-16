@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCheckoutStockReservations, buildStoredOrderStockReservations } from "./checkoutStockReservation";
+import { buildCheckoutStockReservations, buildPaidOrderStockConsumptions, buildStoredOrderStockReservations } from "./checkoutStockReservation";
 
 describe("checkout stock reservation policy", () => {
   it("groups product and selected-variant quantities independently", () => {
@@ -21,6 +21,18 @@ describe("checkout stock reservation policy", () => {
       { productId: 8, quantity: 2, supplierSnapshot: "{not-json" },
       { productId: 9, quantity: 2, supplierSnapshot: JSON.stringify({ ownerVariant: { id: 3 } }) },
     ])).toEqual([{ productId: 7, variantId: 2, quantity: 1 }]);
+  });
+
+  it("takes paid stock once, skipping lines already reserved at checkout", () => {
+    expect(buildPaidOrderStockConsumptions([
+      { productId: 7, quantity: 1, supplierSnapshot: JSON.stringify({ inventoryReservation: true, ownerVariant: { id: 2 } }) },
+      { productId: 8, quantity: 2, supplierSnapshot: "{not-json" },
+      { productId: 9, quantity: 2, supplierSnapshot: JSON.stringify({ ownerVariant: { id: 3 } }) },
+      { productId: 9, quantity: 1, supplierSnapshot: JSON.stringify({ ownerVariant: { id: 3 } }) },
+    ])).toEqual([
+      { productId: 8, variantId: null, quantity: 2 },
+      { productId: 9, variantId: 3, quantity: 3 },
+    ]);
   });
 
   it("rejects invalid quantities before inventory can be touched", () => {

@@ -753,6 +753,7 @@ export const ownerRouter = router({
     remove: storeOwnerProcedure.input(z.object({ provider: z.enum(["stripe", "paypal"]) })).mutation(async ({ ctx, input }) => {
       return await callPaymentService<{ deleted: boolean }>(ctx, `/api/admin/payments/${input.provider}`, { storeId: ctx.store!.id, method: "DELETE" });
     }),
+    journal: storeOwnerProcedure.query(async ({ ctx }) => db.listPaymentJournal(ctx.store!.id)),
   }),
   getStoreSwitcherOptions: protectedProcedure.query(async ({ ctx }) => {
     return await db.getOwnerStoreSwitcherOptionsForUser(ctx.user.id);

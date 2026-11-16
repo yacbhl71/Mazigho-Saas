@@ -8,6 +8,7 @@ import { sdk } from "./_core/sdk";
 import { ENV } from "./_core/env";
 import {
   activateAccountFromInvitation,
+  createGuestCustomer,
   createPasswordUser,
   getUserByEmail,
   getFirstActiveOwnerStoreForUser,
@@ -89,18 +90,24 @@ function enforceAuthRateLimit(action: AuthRateLimitAction, request: Parameters<t
   }
 }
 
+const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
+/** Guest checkout sessions only need to last for the order and its follow-up. */
+const GUEST_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
+
 async function createSession(
   ctx: { req: Parameters<typeof getSessionCookieOptions>[0]; res: any },
-  user: { openId: string; name: string | null; email: string | null }
+  user: { openId: string; name: string | null; email: string | null },
+  maxAgeMs = SESSION_MAX_AGE_MS
 ) {
   const sessionToken = await sdk.createSessionToken(user.openId, {
     name: user.name || user.email || "Client MAZIGHO",
+    ...(maxAgeMs !== SESSION_MAX_AGE_MS ? { expiresInMs: maxAgeMs } : {}),
   });
   const cookieOptions = getSessionCookieOptions(ctx.req);
 
   ctx.res.cookie(COOKIE_NAME, sessionToken, {
     ...cookieOptions,
-    maxAge: 1000 * 60 * 60 * 24 * 30,
+    maxAge: maxAgeMs,
   });
   return sessionToken;
 }
@@ -153,7 +160,9 @@ export const authRouter = router({
       if (existingUser) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "Un compte existe déjà avec cette adresse e-mail. Cliquez sur 'Se connecter' ci-dessous.",
+          message: existingUser.loginMethod === "guest"
+            ? "Vous avez déjà commandé sans compte avec cette adresse. Utilisez « Mot de passe oublié » pour choisir votre mot de passe."
+            : "Un compte existe déjà avec cette adresse e-mail. Cliquez sur 'Se connecter' ci-dessous.",
         });
       }
 
@@ -172,6 +181,34 @@ export const authRouter = router({
       }
 
       const sessionToken = await createSession(ctx, user);
+      return { user: safeUser(user), sessionToken };
+    }),
+
+  /**
+   * Checkout without an account: creates a passwordless customer for a new
+   * address only. An existing address never receives a session here, so an
+   * e-mail alone can never open someone else's account or orders.
+   */
+  startGuestCheckout: publicProcedure
+    .input(z.object({ name: z.string().trim().min(2, "Indiquez votre nom").max(120), email: emailSchema }))
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email.toLowerCase();
+      enforceAuthRateLimit("guest_checkout", ctx.req, email);
+      consumeAuthRateLimit("guest_checkout", ctx.req, email);
+      const existingUser = await getUserByEmail(email);
+      if (existingUser) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: existingUser.loginMethod === "guest" || !existingUser.passwordHash
+            ? "Vous avez déjà commandé avec cette adresse. Recevez un lien par e-mail pour choisir un mot de passe, puis connectez-vous."
+            : "Un compte existe déjà avec cette adresse e-mail. Connectez-vous pour commander.",
+        });
+      }
+      const user = await createGuestCustomer({ openId: `guest_${randomUUID()}`, email, name: input.name });
+      if (!user) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "La commande sans compte n’est pas disponible pour le moment." });
+      }
+      const sessionToken = await createSession(ctx, user, GUEST_SESSION_MAX_AGE_MS);
       return { user: safeUser(user), sessionToken };
     }),
 

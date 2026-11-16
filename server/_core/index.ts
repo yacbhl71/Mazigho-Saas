@@ -10,6 +10,7 @@ import { serveStatic } from "./static";
 import { stripeLiveWebhookHandler, stripeWebhookHandler } from "../stripeWebhook";
 import { lemonSqueezyWebhookHandler } from "../lemonSqueezyWebhook";
 import { securityHeaders } from "./securityHeaders";
+import { captureServerError, initServerMonitoring } from "./monitoring";
 import path from "path";
 import { JSON_BODY_LIMIT, payloadTooLargeHandler, URL_ENCODED_BODY_LIMIT } from "./requestLimits";
 import { configuredOwnerAccessRepair } from "../ownerAccessRepair";
@@ -39,6 +40,7 @@ const app = express();
 export { app };
 
 export function configureApi(targetApp: Express = app) {
+  initServerMonitoring();
   targetApp.disable("x-powered-by");
   targetApp.use(securityHeaders);
   targetApp.use(configuredOwnerAccessRepair);
@@ -65,8 +67,12 @@ export function configureApi(targetApp: Express = app) {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError: ({ error, path }) => {
+        if (error.code === "INTERNAL_SERVER_ERROR") captureServerError(error.cause ?? error, { trpcPath: path ?? "unknown" });
+      },
     })
   );
+  initServerMonitoring(targetApp);
   targetApp.use(payloadTooLargeHandler);
 }
 

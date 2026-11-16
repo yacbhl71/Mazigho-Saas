@@ -22,10 +22,10 @@ Plateforme SaaS **multi-boutiques** pour créer, gérer et faire tourner des bou
 | Domaine | Contenu |
 | --- | --- |
 | Vitrine | Accueil, catalogue filtrable, fiches produit (variantes, galerie, avis), nouveautés, promotions, pages légales, multilingue (fr, de, it, en, es, nl, ar) |
-| Panier & commande | Panier navigateur, livraison par pays, codes promo, acceptation des CGV versionnée, multi-devises (CHF, EUR, USD, GBP, CAD, MAD, DZD) |
+| Panier & commande | Panier navigateur, **commande sans compte** (nom + e-mail, lien de suivi `/suivi-commande` envoyé par e-mail), livraison par pays, codes promo, acceptation des CGV versionnée, multi-devises (CHF, EUR, USD, GBP, CAD, MAD, DZD) |
 | Paiement | Stripe Connect (Test / Production), **BYOK** (chaque boutique branche son Stripe ou PayPal), paiement à la livraison (Algérie) |
-| Propriétaire | `/gestion-boutique` : produits, variantes, stock, commandes, préparation, retours, paiements de la boutique |
-| Studio | `/admin/studio` : création et préparation de boutiques, import de catalogue, copie de boutique, génération d'images, assistance |
+| Propriétaire | `/gestion-boutique` : produits, variantes, stock, commandes, préparation, retours, paiements de la boutique et **journal des paiements** (ouvertures, paiements confirmés/refusés, tests de connexion, erreurs — 180 jours, sans aucune clé) |
+| Studio | `/admin/studio` : création et préparation de boutiques, import de catalogue, copie de boutique, génération d'images, assistance, **liste de contrôle avant remise** d'une boutique vendue ou offerte |
 | SaaS | Plans et facturation Lemon Squeezy, quotas, domaines personnalisés |
 | Fournisseurs | CJ Dropshipping, BigBuy, AliExpress (snapshots immuables par commande) |
 
@@ -72,6 +72,8 @@ npm run dev            # http://localhost:3000
 | `LEMONSQUEEZY_*` | Facturation SaaS |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | Fonctions d'IA du Studio |
 | `CLONER_ENABLED`, `CLONER_SERVICE_URL`, `CLONER_API_KEY` | Service d'import / clonage |
+| `SENTRY_DSN` | Suivi des erreurs serveur (facultatif : désactivé si absent) |
+| `VITE_SENTRY_DSN` | Suivi des erreurs navigateur (facultatif : désactivé si absent, lu au build) |
 
 Ne jamais committer de fichier `.env`. `npm run security:secrets` vérifie l'absence de secrets dans le dépôt.
 
@@ -94,7 +96,8 @@ Ne jamais committer de fichier `.env`. `npm run security:secrets` vérifie l'abs
 
 ## 7. Paiements
 
-- **Stripe Connect** : sessions Checkout hébergées, réservation de stock 30 min, webhooks signés `/api/stripe/webhook` et `/api/stripe/live-webhook`.
+- **Stock** : pour les paiements en ligne (Stripe Connect et BYOK), le stock est retiré **uniquement quand le paiement est confirmé**, une seule fois, jamais sous zéro. Un paiement abandonné ne bloque aucun article. Le paiement à la livraison (Algérie) réserve le stock à la confirmation de la commande et le libère si elle est annulée.
+- **Stripe Connect** : sessions Checkout hébergées (30 min), webhooks signés `/api/stripe/webhook` et `/api/stripe/live-webhook`.
 - **BYOK** : le service autonome `ecommerce-payment-connectors` gère les clés de chaque boutique. MAZIGHO expose un pont interne protégé par `PAYMENT_SERVICE_TOKEN` (`server/paymentHostBridge.ts`) : boutique, produits, panier serveur, intentions de paiement, commande, notifications.
   - Au paiement, le panier du navigateur est recopié dans le panier serveur du client, puis le service de paiement crée la session chez Stripe ou PayPal.
   - Retour client : `/checkout/success` (vérification du paiement, capture PayPal) et `/checkout/cancel`.
@@ -106,6 +109,8 @@ Ne jamais committer de fichier `.env`. `npm run security:secrets` vérifie l'abs
 - Service de paiement BYOK : **Render** (dépôt séparé), à redéployer après chaque mise à jour du service.
 
 ## 9. Tests & règle de livraison
+
+L'intégration continue GitHub Actions (`.github/workflows/ci.yml`) exécute à chaque envoi sur `main` et à chaque demande de fusion : détection de secrets, vérification TypeScript, tests et build. La branche `main` exige que ce contrôle `verify` réussisse.
 
 Avant de déclarer une modification terminée, exécuter et réussir :
 

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Request } from "express";
 
-export type AuthRateLimitAction = "login" | "register" | "password_reset" | "password_reset_complete" | "invitation_activation";
+export type AuthRateLimitAction = "login" | "register" | "guest_checkout" | "password_reset" | "password_reset_complete" | "invitation_activation";
 
 type AuthRateLimitPolicy = {
   ipLimit: number;
@@ -22,6 +22,7 @@ export type AuthRateLimitResult = {
 const policies: Record<AuthRateLimitAction, AuthRateLimitPolicy> = {
   login: { ipLimit: 12, subjectLimit: 5, windowMs: 15 * 60 * 1000 },
   register: { ipLimit: 8, subjectLimit: 3, windowMs: 15 * 60 * 1000 },
+  guest_checkout: { ipLimit: 8, subjectLimit: 3, windowMs: 15 * 60 * 1000 },
   password_reset: { ipLimit: 6, subjectLimit: 3, windowMs: 15 * 60 * 1000 },
   password_reset_complete: { ipLimit: 10, subjectLimit: 5, windowMs: 15 * 60 * 1000 },
   invitation_activation: { ipLimit: 10, subjectLimit: 5, windowMs: 15 * 60 * 1000 },

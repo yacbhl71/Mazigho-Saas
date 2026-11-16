@@ -41,6 +41,8 @@ import { buildStudioImageGenerationPrompt, studioImageFormats, studioImageStyles
 import { keyInHandLandingContentSchema, proLandingContentSchema } from "../shared/keyInHandLanding";
 import { getClonerStatus, getCloneStatus, startClone } from "./services/clonerProxy";
 import { cloneImportPayloadSchema, ensureImportedStoreStudioProvisioning, importCloneDraft } from "./services/import-router";
+import { callPaymentService } from "./paymentServiceProxy";
+import { buildStoreHandoverChecklist } from "./services/storeHandoverChecklist";
 
 /** Supplier imports are a Pro benefit unless Studio explicitly grants one client store. */
 async function assertDropshippingAccess(storeId: number | undefined) {
@@ -2573,6 +2575,18 @@ export const adminRouter = router({
     getStorePaymentRoute: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       await db.getStudioManagedStore(input.storeId).then(store => { if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." }); });
       return db.getStorePaymentRoute(input.storeId);
+    }),
+    getStoreHandoverChecklist: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      const facts = await db.getStoreHandoverFacts(input.storeId).catch(error => {
+        if (error instanceof Error && error.message === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        throw error;
+      });
+      const currency = await db.getStoreCurrencyConfig(input.storeId);
+      // Public checkout options of the payment service: which connectors really accept payments.
+      const options = await callPaymentService<{ options?: Array<{ provider: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${input.storeId}&currency=${encodeURIComponent(currency.code)}`, { storeId: input.storeId })
+        .then(result => (result.options ?? []).filter(option => option.status !== "unavailable"))
+        .catch(() => null);
+      return buildStoreHandoverChecklist(facts, options);
     }),
     setStorePaymentRoute: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),

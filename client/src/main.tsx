@@ -10,11 +10,14 @@ const Analytics = () => null;
 import { getLoginUrl } from "./const";
 import { getSetupStoreIdFromSearch, setupStoreAccessHeader } from "@shared/setupStoreOwnerAccess";
 import { recoverFromStaleDynamicImport } from "@/lib/dynamicImportRecovery";
+import { initClientMonitoring } from "@/lib/monitoring";
 import "@/lib/firebase";
 import "./index.css";
 
 // Nettoyage de compatibilité : ces clés appartenaient à l’ancien prototype local
 // et ne doivent plus jamais être utilisées pour authentifier ou autoriser un utilisateur.
+initClientMonitoring();
+
 if (typeof window !== "undefined") {
   window.localStorage.removeItem("mazigho_current_user");
   window.localStorage.removeItem("mazigho_users");

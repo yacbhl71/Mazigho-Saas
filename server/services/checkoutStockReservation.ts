@@ -42,19 +42,41 @@ export function buildCheckoutStockReservations(lines: StockReservationSourceLine
  * releases stock. Historical pending orders without this marker were not
  * reserved and must never add inventory back.
  */
-export function buildStoredOrderStockReservations(lines: Array<{ productId: number; quantity: number; supplierSnapshot?: string | null }>): CheckoutStockReservation[] {
+type StoredOrderLine = { productId: number; quantity: number; supplierSnapshot?: string | null };
+
+function parseStoredSnapshot(value: string | null | undefined): unknown {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    // A malformed historical snapshot can only be treated as a product line;
+    // it must never target an arbitrary variant.
+    return null;
+  }
+}
+
+const isReservedLine = (snapshot: unknown) => (snapshot as { inventoryReservation?: unknown } | null)?.inventoryReservation === true;
+
+export function buildStoredOrderStockReservations(lines: StoredOrderLine[]): CheckoutStockReservation[] {
   const markedLines: StockReservationSourceLine[] = [];
   for (const line of lines) {
-    let supplierSnapshot: unknown = null;
-    try {
-      supplierSnapshot = line.supplierSnapshot ? JSON.parse(line.supplierSnapshot) : null;
-    } catch {
-      // A malformed historical snapshot can only be treated as a product line;
-      // it must never target an arbitrary variant.
-      supplierSnapshot = null;
-    }
-    if ((supplierSnapshot as { inventoryReservation?: unknown } | null)?.inventoryReservation !== true) continue;
+    const supplierSnapshot = parseStoredSnapshot(line.supplierSnapshot);
+    if (!isReservedLine(supplierSnapshot)) continue;
     markedLines.push({ productId: line.productId, quantity: line.quantity, supplierSnapshot });
   }
   return buildCheckoutStockReservations(markedLines);
+}
+
+/**
+ * Stock taken when an online payment is confirmed. Lines already reserved when
+ * the checkout opened (orders created before this rule) are skipped, so a
+ * product is never taken twice.
+ */
+export function buildPaidOrderStockConsumptions(lines: StoredOrderLine[]): CheckoutStockReservation[] {
+  const unreservedLines: StockReservationSourceLine[] = [];
+  for (const line of lines) {
+    const supplierSnapshot = parseStoredSnapshot(line.supplierSnapshot);
+    if (isReservedLine(supplierSnapshot)) continue;
+    unreservedLines.push({ productId: line.productId, quantity: line.quantity, supplierSnapshot });
+  }
+  return buildCheckoutStockReservations(unreservedLines);
 }

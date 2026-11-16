@@ -11,8 +11,42 @@ import {
   getStoreCurrencyConfig,
   getStoreMembershipForUser,
   getStudioManagedStore,
+  recordPaymentJournal,
+  type PaymentJournalEntry,
 } from "./db";
 import { convertChfCents, type StoreCurrencyConfig } from "../shared/storeCurrency";
+import { sendGuestOrderTrackingEmail } from "./guestOrderTracking";
+
+const EVENT_JOURNAL: Record<string, Pick<PaymentJournalEntry, "level" | "source" | "message">> = {
+  "checkout.created": { level: "info", source: "checkout", message: "Paiement ouvert par un client" },
+  "payment.succeeded": { level: "info", source: "payment", message: "Paiement confirmé" },
+  "payment.failed": { level: "warning", source: "payment", message: "Paiement refusé ou échoué" },
+  "payment.expired": { level: "warning", source: "payment", message: "Paiement abandonné ou expiré" },
+};
+
+const PROVIDER_LABEL: Record<string, string> = { stripe: "Stripe", paypal: "PayPal" };
+
+const CONNECTOR_ERRORS: Record<string, string> = {
+  INVALID_CREDENTIALS: "clé refusée par le prestataire",
+  MODE_KEY_MISMATCH: "clé de test et de production inversées",
+  PROVIDER_UNAVAILABLE: "prestataire momentanément indisponible",
+  PROVIDER_ERROR: "requête refusée par le prestataire",
+};
+
+function auditJournal(action: string, outcome: string, errorCode: string | null, provider: string | null): Pick<PaymentJournalEntry, "level" | "source" | "message"> | null {
+  const p = provider ? ` ${PROVIDER_LABEL[provider] ?? provider}` : "";
+  if (action === "payment_config.test") {
+    return outcome === "success"
+      ? { level: "info", source: "connector", message: `Test de connexion${p} réussi` }
+      : { level: "error", source: "connector", message: `Test de connexion${p} échoué${errorCode ? ` : ${CONNECTOR_ERRORS[errorCode] ?? errorCode}` : ""}` };
+  }
+  // Key changes carry their author: the store handover checklist relies on it.
+  if (outcome === "success" && action === "payment_config.upsert") return { level: "info", source: "connector", message: `Clés${p} enregistrées` };
+  if (outcome === "success" && action === "payment_config.delete") return { level: "warning", source: "connector", message: `Connecteur${p} supprimé` };
+  if (outcome === "denied") return { level: "warning", source: "connector", message: "Action refusée : accès non autorisé à la configuration" };
+  if (outcome === "error") return { level: "error", source: "connector", message: `Échec de l’action ${action.slice(0, 80)}` };
+  return null;
+}
 
 /** Variant id used by the payment service for a product sold without owner variants. */
 const BASE_VARIANT_ID = "default";
@@ -184,6 +218,7 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
     }
     try {
       const result = await applyPaymentIntentEvent({ storeId, intentId, eventId, targetStatus, providerReference: typeof body.providerReference === "string" ? body.providerReference : undefined });
+      if (result.orderPaid && result.orderId) void sendGuestOrderTrackingEmail(storeId, Number(result.orderId));
       return res.json({ data: result });
     } catch (error) {
       const code = error instanceof Error ? error.message : "PAYMENT_EVENT_REJECTED";
@@ -215,17 +250,38 @@ export function registerPaymentHostBridgeRoute(targetApp: Express) {
 
   // Payment service notifications. They are acknowledged and logged without
   // payload secrets; a notification never blocks a checkout or a webhook.
-  targetApp.post("/api/internal/payment/events", (req, res) => {
+  targetApp.post("/api/internal/payment/events", async (req, res) => {
     if (!bridgeGuard(req, res)) return;
     const body = req.body ?? {};
-    console.info("[payment-bridge] event", { type: String(body.type ?? ""), storeId: String(body.storeId ?? ""), provider: String(body.provider ?? "") });
+    const type = String(body.type ?? "");
+    const storeId = Number(body.storeId);
+    const journal = EVENT_JOURNAL[type];
+    if (journal && Number.isInteger(storeId) && storeId > 0) {
+      await recordPaymentJournal({
+        ...journal,
+        storeId,
+        event: type,
+        provider: typeof body.provider === "string" ? body.provider : null,
+        reference: typeof body.orderId === "string" ? body.orderId : null,
+        amountMinor: Number.isSafeInteger(body.amountMinor) ? body.amountMinor : null,
+        currency: typeof body.currency === "string" ? body.currency : null,
+      });
+    }
     return res.status(202).json({ data: { received: true } });
   });
 
-  targetApp.post("/api/internal/payment/audit", (req, res) => {
+  targetApp.post("/api/internal/payment/audit", async (req, res) => {
     if (!bridgeGuard(req, res)) return;
     const body = req.body ?? {};
-    console.info("[payment-bridge] audit", { action: String(body.action ?? ""), outcome: String(body.outcome ?? ""), storeId: String(body.storeId ?? ""), provider: String(body.provider ?? "") });
+    const storeId = Number(body.storeId);
+    const action = String(body.action ?? "");
+    const provider = typeof body.provider === "string" ? body.provider : null;
+    const errorCode = typeof body.details?.errorCode === "string" ? body.details.errorCode : null;
+    const actorUserId = Number(body.actorId);
+    const journal = auditJournal(action, String(body.outcome ?? ""), errorCode, provider);
+    if (journal && Number.isInteger(storeId) && storeId > 0) {
+      await recordPaymentJournal({ ...journal, storeId, event: action, provider, code: errorCode, actorUserId: Number.isInteger(actorUserId) && actorUserId > 0 ? actorUserId : null });
+    }
     return res.status(202).json({ data: { received: true } });
   });
 }

@@ -284,6 +284,14 @@ export const appRouter = router({
       const { getStoreCurrencyConfig } = await import("./db");
       return await getStoreCurrencyConfig(ctx.store?.id);
     }),
+    // Guest order follow-up: the signed link is the only capability, bound to this store.
+    trackOrder: storefrontProcedure.input(z.object({ token: z.string().trim().min(20).max(200) })).query(async ({ ctx, input }) => {
+      const [{ verifyOrderTrackingToken }, { ENV }, { getOrderTrackingView }] = await Promise.all([import("./services/orderTrackingLink"), import("./_core/env"), import("./db")]);
+      const link = verifyOrderTrackingToken(input.token, ENV.cookieSecret);
+      const order = link && link.storeId === ctx.store!.id ? await getOrderTrackingView(link.storeId, link.orderId) : null;
+      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Ce lien de suivi est invalide ou a expiré." });
+      return order;
+    }),
     getStoreSeo: storefrontProcedure.query(async ({ ctx }) => {
       const { getStoreSeoProfile } = await import("./db");
       return await getStoreSeoProfile(ctx.store?.id);

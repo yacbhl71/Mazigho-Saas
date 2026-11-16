@@ -60,7 +60,7 @@ import { buildTenantResourceSummary } from "./services/tenantResourceSummary";
 import { buildOwnerSalesSettlementOverview } from "./services/ownerSalesSettlement";
 import { buildOwnerDeliveryDetails } from "./services/ownerDeliveryDetails";
 import { buildOwnerDeliveryHandoverDetails } from "./services/ownerDeliveryHandover";
-import { buildCheckoutStockReservations, buildStoredOrderStockReservations } from "./services/checkoutStockReservation";
+import { buildCheckoutStockReservations, buildPaidOrderStockConsumptions, buildStoredOrderStockReservations } from "./services/checkoutStockReservation";
 import { buildCheckoutLegalAcceptanceSnapshot, CHECKOUT_LEGAL_VERSION } from "../shared/checkoutLegalAcceptance";
 import { OWNER_MANUAL_TRACKING_LIMITS } from "../shared/ownerManualTracking";
 import { ALGERIA_CASH_ON_DELIVERY_PAYMENT_METHOD, getAlgeriaCashOnDeliveryEligibility, getAlgeriaOnlinePaymentPreparationStatus, makeAlgeriaCashOnDeliverySettings, makeAlgeriaOnlinePaymentPreparation, parseAlgeriaCashOnDeliverySettings, parseAlgeriaOnlinePaymentPreparation, type AlgeriaOnlinePaymentPreparation } from "../shared/algeriaCashOnDelivery";
@@ -4963,6 +4963,60 @@ export async function getStorePaymentRoute(storeId: number): Promise<StorePaymen
   return storePaymentRoutes.includes(raw as StorePaymentRoute) ? raw as StorePaymentRoute : "byok";
 }
 
+export type HandoverCheckStatus = "ok" | "todo" | "warning" | "info";
+
+/**
+ * Data part of the checklist used before a Studio store is sold or offered:
+ * buyer ownership, remaining team access, who saved the payment keys, buyer
+ * legal identity, delivery terms, catalogue, payment route and a successful
+ * test payment. Read-only; no secret is read.
+ */
+export async function getStoreHandoverFacts(storeId: number) {
+  await ensureMultiStoreSchema();
+  await ensureByokCheckoutSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  if (!store || store.isPlatformStore) throw new Error("STORE_NOT_FOUND");
+  const [memberRows, legal, platformLegal, shipping, paymentRoute, sellableRows, intentRows, connectorChanges] = await Promise.all([
+    db.select({ userId: users.id, email: users.email, name: users.name, platformRole: users.role, membershipRole: storeMemberships.role, hasPassword: sql<number>`(${users.passwordHash} IS NOT NULL)`, lastSignedIn: users.lastSignedIn })
+      .from(storeMemberships).innerJoin(users, eq(users.id, storeMemberships.userId))
+      .where(and(eq(storeMemberships.storeId, store.id), eq(storeMemberships.status, "active"), eq(users.accountStatus, "active"))),
+    getLegalProfile(store.id),
+    getLegalProfile(await getPrimaryStoreId()),
+    getCheckoutShippingPolicy(store.id, "CH"),
+    getStorePaymentRoute(store.id),
+    db.select({ total: count() }).from(products).where(and(eq(products.storeId, store.id), eq(products.status, "active"), gt(products.price, 0))),
+    db.execute(sql`SELECT isTestMode, COUNT(*) AS total FROM paymentIntents WHERE storeId = ${store.id} AND status = 'succeeded' GROUP BY isTestMode`),
+    getLatestPaymentConnectorChanges(store.id),
+  ]);
+  const buyer = memberRows.find(member => member.membershipRole === "owner" && member.platformRole !== "admin") ?? null;
+  const succeeded = ((intentRows as unknown as any[])[0] ?? []) as Array<{ isTestMode: number; total: number }>;
+  return {
+    store: { id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain, status: store.status },
+    buyer: buyer ? { email: buyer.email, name: buyer.name, activated: Boolean(Number(buyer.hasPassword)) && Boolean(buyer.lastSignedIn) } : null,
+    otherAccess: memberRows.filter(member => member.userId !== buyer?.userId).map(member => ({ email: member.email, role: member.membershipRole, platformStaff: member.platformRole === "admin" })),
+    connectorKeys: connectorChanges.filter(change => !change.removed).map(change => ({
+      provider: change.provider,
+      savedByBuyer: change.actorUserId === null ? null : change.actorUserId === buyer?.userId,
+    })),
+    legal: {
+      operatorName: legal.operatorName,
+      complete: legal.operatorName !== defaultLegalProfile.operatorName
+        && legal.contactEmail !== defaultLegalProfile.contactEmail
+        && legal.country !== defaultLegalProfile.country
+        && legal.businessStatus !== defaultLegalProfile.businessStatus
+        && legal.returnsPolicy !== defaultLegalProfile.returnsPolicy,
+      sameAsPlatform: legal.operatorName.trim().toLowerCase() === platformLegal.operatorName.trim().toLowerCase(),
+    },
+    delivery: { ready: shipping.servedCountries.length > 0 && Boolean(shipping.deliveryLeadTime.trim()) && Boolean(shipping.returnsSummary.trim()) },
+    paymentRoute,
+    sellableProducts: Number(sellableRows[0]?.total ?? 0),
+    succeededTestPayments: succeeded.filter(row => Number(row.isTestMode) === 1).reduce((sum, row) => sum + Number(row.total), 0),
+    succeededLivePayments: succeeded.filter(row => Number(row.isTestMode) !== 1).reduce((sum, row) => sum + Number(row.total), 0),
+  };
+}
+
 export async function setStorePaymentRoute(storeId: number, route: StorePaymentRoute) {
   await getStudioManagedStore(storeId).then(store => { if (!store) throw new Error("STORE_NOT_FOUND"); });
   await setStoreSettingValue(storeId, "payment_route", route, "Route de paiement choisie par MAZIGHO Studio. Aucun secret ni paiement réel n'est activé par ce réglage.");
@@ -6857,7 +6911,8 @@ export async function reissuePendingInvitation(userId: number) {
 export async function requestPasswordResetToken(emailInput: string) {
   await ensureInvitationSchema();
   const user = await getUserByEmail(normaliseEmail(emailInput));
-  if (!user || !user.email || user.accountStatus !== "active" || !user.passwordHash) return null;
+  // Guest checkout accounts have no password yet: the reset link is how their owner claims them.
+  if (!user || !user.email || user.accountStatus !== "active" || (!user.passwordHash && user.loginMethod !== "guest")) return null;
 
   const reset = await issueAccountToken(user.id, "password_reset");
   return { userId: user.id, name: user.name, email: user.email, reset };
@@ -6942,6 +6997,25 @@ export async function createPasswordUser(input: {
     console.warn("[Database] createPasswordUser fallback notice:", String(error));
     return createDemoPasswordUser(input);
   }
+}
+
+/** Passwordless customer created at checkout; the owner of the address claims it later through a password reset. */
+export async function createGuestCustomer(input: { openId: string; email: string; name: string }) {
+  await ensurePasswordHashColumn();
+  await ensureAccountStatusColumn();
+  const db = await getDb();
+  if (!db) return undefined;
+  await db.insert(users).values({
+    openId: input.openId,
+    email: input.email.trim().toLowerCase(),
+    name: input.name.trim(),
+    passwordHash: null,
+    loginMethod: "guest",
+    role: "user",
+    accountStatus: "active",
+    lastSignedIn: new Date(),
+  });
+  return await getUserByOpenId(input.openId);
 }
 
 export async function issueStudioGiftStoreOwnerTemporaryPassword(input: { storeId: number; confirmationEmail: string }) {
@@ -12346,35 +12420,33 @@ export async function createPaymentIntent(input: {
   return record ?? null;
 }
 
-/** Stock and promotion effects of a BYOK order once its payment is confirmed. */
-async function applyByokPaidOrderEffects(tx: any, storeId: number, orderId: number) {
-  const [order] = await tx.select({ promotionId: orders.promotionId }).from(orders).where(and(eq(orders.storeId, storeId), eq(orders.id, orderId))).limit(1);
+/**
+ * Online payments take stock only once confirmed, so an abandoned checkout
+ * never removes stock. The customer has already paid: never below zero.
+ */
+async function consumePaidOrderStock(tx: any, storeId: number, orderId: number) {
   const lines = await tx.select({ productId: orderItems.productId, quantity: orderItems.quantity, supplierSnapshot: orderItems.supplierSnapshot })
     .from(orderItems).where(and(eq(orderItems.storeId, storeId), eq(orderItems.orderId, orderId)));
-  const reservations = buildCheckoutStockReservations(lines.map((line: { productId: number; quantity: number; supplierSnapshot: string | null }) => {
-    let supplierSnapshot: unknown = null;
-    try {
-      supplierSnapshot = line.supplierSnapshot ? JSON.parse(line.supplierSnapshot) : null;
-    } catch {
-      supplierSnapshot = null;
-    }
-    return { productId: line.productId, quantity: line.quantity, supplierSnapshot };
-  }));
-  // The customer has already paid: stock is reduced, never below zero.
-  for (const reservation of reservations) {
-    if (reservation.variantId) {
-      await tx.update(ownerProductVariants).set({ stock: sql`GREATEST(${ownerProductVariants.stock} - ${reservation.quantity}, 0)` }).where(and(
+  for (const consumption of buildPaidOrderStockConsumptions(lines)) {
+    if (consumption.variantId) {
+      await tx.update(ownerProductVariants).set({ stock: sql`GREATEST(${ownerProductVariants.stock} - ${consumption.quantity}, 0)` }).where(and(
         eq(ownerProductVariants.storeId, storeId),
-        eq(ownerProductVariants.productId, reservation.productId),
-        eq(ownerProductVariants.id, reservation.variantId),
+        eq(ownerProductVariants.productId, consumption.productId),
+        eq(ownerProductVariants.id, consumption.variantId),
       ));
     } else {
-      await tx.update(products).set({ stock: sql`GREATEST(${products.stock} - ${reservation.quantity}, 0)` }).where(and(
+      await tx.update(products).set({ stock: sql`GREATEST(${products.stock} - ${consumption.quantity}, 0)` }).where(and(
         eq(products.storeId, storeId),
-        eq(products.id, reservation.productId),
+        eq(products.id, consumption.productId),
       ));
     }
   }
+}
+
+/** Stock and promotion effects of a BYOK order once its payment is confirmed. */
+async function applyByokPaidOrderEffects(tx: any, storeId: number, orderId: number) {
+  const [order] = await tx.select({ promotionId: orders.promotionId }).from(orders).where(and(eq(orders.storeId, storeId), eq(orders.id, orderId))).limit(1);
+  await consumePaidOrderStock(tx, storeId, orderId);
   if (order?.promotionId) {
     await tx.update(promotions).set({ usedCount: sql`${promotions.usedCount} + 1` }).where(and(eq(promotions.storeId, storeId), eq(promotions.id, order.promotionId)));
   }
@@ -12407,21 +12479,24 @@ export async function applyPaymentIntentEvent(input: {
   };
   if (!allowed[current.status]?.includes(input.targetStatus)) throw new Error("PAYMENT_STATUS_TRANSITION_INVALID");
   const orderId = current.orderId ? Number(current.orderId) : null;
-  await db.transaction(async tx => {
+  const orderPaid = await db.transaction(async tx => {
     await tx.execute(sql`UPDATE paymentIntents SET status = ${input.targetStatus}, lastEventId = ${eventId}, providerReference = COALESCE(${input.providerReference ?? null}, providerReference)
       WHERE id = ${input.intentId} AND storeId = ${input.storeId} AND (lastEventId IS NULL OR lastEventId <> ${eventId})`);
-    if (!orderId) return;
+    if (!orderId) return false;
     if (input.targetStatus === "succeeded") {
       const paid = await tx.execute(sql`UPDATE orders SET paymentStatus = 'paid', status = 'processing'
         WHERE id = ${orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
-      if (affectedRows(paid) === 1) await applyByokPaidOrderEffects(tx, input.storeId, orderId);
+      if (affectedRows(paid) !== 1) return false;
+      await applyByokPaidOrderEffects(tx, input.storeId, orderId);
+      return true;
     }
     if (input.targetStatus === "failed" || input.targetStatus === "expired") {
       await tx.execute(sql`UPDATE orders SET status = 'cancelled'
         WHERE id = ${orderId} AND storeId = ${input.storeId} AND paymentStatus = 'unpaid' AND status = 'pending'`);
     }
+    return false;
   });
-  return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false };
+  return { ...current, status: input.targetStatus, lastEventId: eventId, providerReference: input.providerReference ?? current.providerReference, duplicate: false, orderPaid };
 }
 
 /**
@@ -12487,7 +12562,6 @@ export async function attachPaymentIntentOrder(input: {
     legalAcceptanceVersion: priced.quote.legalAcceptanceVersion,
     legalAccepted: true,
     storeId: input.storeId,
-    reserveStock: false,
     paymentMethod,
     shippingAddress: input.shippingAddress,
     billingAddress,
@@ -12497,6 +12571,107 @@ export async function attachPaymentIntentOrder(input: {
     },
   });
   return { orderId: order.id, alreadyAttached: false };
+}
+
+export type PaymentJournalEntry = {
+  storeId: number;
+  level: "info" | "warning" | "error";
+  source: "checkout" | "payment" | "connector";
+  event: string;
+  message: string;
+  provider?: string | null;
+  reference?: string | null;
+  amountMinor?: number | null;
+  currency?: string | null;
+  code?: string | null;
+  /** MAZIGHO user who changed a connector, when the payment service reports it. */
+  actorUserId?: number | null;
+};
+
+let _paymentJournalSchemaReady: Promise<void> | null = null;
+
+async function ensurePaymentJournalSchema() {
+  if (_paymentJournalSchemaReady) return _paymentJournalSchemaReady;
+  _paymentJournalSchemaReady = (async () => {
+    const db = await getDb();
+    if (!db) return;
+    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS \`paymentJournal\` (
+      \`id\` bigint NOT NULL AUTO_INCREMENT,
+      \`storeId\` int NOT NULL,
+      \`level\` varchar(16) NOT NULL,
+      \`source\` varchar(32) NOT NULL,
+      \`event\` varchar(64) NOT NULL,
+      \`provider\` varchar(32) NULL,
+      \`reference\` varchar(64) NULL,
+      \`amountMinor\` int NULL,
+      \`currency\` varchar(3) NULL,
+      \`code\` varchar(64) NULL,
+      \`message\` varchar(255) NOT NULL,
+      \`actorUserId\` int NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      KEY \`paymentJournal_store_created_idx\` (\`storeId\`, \`createdAt\`)
+    )`));
+  })().catch(error => {
+    _paymentJournalSchemaReady = null;
+    throw error;
+  });
+  return _paymentJournalSchemaReady;
+}
+
+/** Appends one line to the owner payment journal. A journal failure never breaks a payment. */
+export async function recordPaymentJournal(entry: PaymentJournalEntry) {
+  try {
+    await ensurePaymentJournalSchema();
+    const db = await getDb();
+    if (!db) return;
+    const text = (value: string | null | undefined, max: number) => value ? value.replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, max) || null : null;
+    const amount = Number.isSafeInteger(entry.amountMinor) ? entry.amountMinor : null;
+    const actor = Number.isInteger(entry.actorUserId) && Number(entry.actorUserId) > 0 ? entry.actorUserId : null;
+    await db.execute(sql`INSERT INTO paymentJournal (storeId, level, source, event, provider, reference, amountMinor, currency, code, message, actorUserId)
+      VALUES (${entry.storeId}, ${entry.level}, ${entry.source}, ${text(entry.event, 64)}, ${text(entry.provider, 32)}, ${text(entry.reference, 64)}, ${amount}, ${text(entry.currency, 3)}, ${text(entry.code, 64)}, ${text(entry.message, 255) ?? "—"}, ${actor})`);
+  } catch (error) {
+    console.error("[payment-journal] entry not recorded", String(error));
+  }
+}
+
+/** Latest key change of each payment connector, with its author, for the store handover checklist. */
+export async function getLatestPaymentConnectorChanges(storeId: number) {
+  await ensurePaymentJournalSchema();
+  const db = await getDb();
+  if (!db) return [];
+  const [rows] = await db.execute(sql`SELECT provider, event, actorUserId FROM paymentJournal
+    WHERE storeId = ${storeId} AND provider IS NOT NULL AND event IN ('payment_config.upsert', 'payment_config.delete')
+    ORDER BY id DESC LIMIT 50`);
+  const latest = new Map<string, { provider: string; removed: boolean; actorUserId: number | null }>();
+  for (const row of rows as unknown as any[]) {
+    const provider = String(row.provider);
+    if (!latest.has(provider)) latest.set(provider, { provider, removed: row.event === "payment_config.delete", actorUserId: row.actorUserId === null || row.actorUserId === undefined ? null : Number(row.actorUserId) });
+  }
+  return Array.from(latest.values());
+}
+
+/** Latest journal lines of one store; lines older than 180 days are purged. */
+export async function listPaymentJournal(storeId: number, limit = 100) {
+  await ensurePaymentJournalSchema();
+  const db = await getDb();
+  if (!db) return [];
+  await db.execute(sql`DELETE FROM paymentJournal WHERE storeId = ${storeId} AND createdAt < (CURRENT_TIMESTAMP - INTERVAL 180 DAY)`);
+  const [rows] = await db.execute(sql`SELECT id, level, source, event, provider, reference, amountMinor, currency, code, message, createdAt
+    FROM paymentJournal WHERE storeId = ${storeId} ORDER BY id DESC LIMIT ${Math.max(1, Math.min(limit, 200))}`);
+  return (rows as unknown as any[]).map(row => ({
+    id: Number(row.id),
+    level: String(row.level) as PaymentJournalEntry["level"],
+    source: String(row.source) as PaymentJournalEntry["source"],
+    event: String(row.event),
+    provider: row.provider ? String(row.provider) : null,
+    reference: row.reference ? String(row.reference) : null,
+    amountMinor: row.amountMinor === null || row.amountMinor === undefined ? null : Number(row.amountMinor),
+    currency: row.currency ? String(row.currency) : null,
+    code: row.code ? String(row.code) : null,
+    message: String(row.message),
+    createdAt: new Date(row.createdAt).toISOString(),
+  }));
 }
 
 export async function addToCart(userId: number, productId: number, quantity: number, storeId?: number) {
@@ -15181,8 +15356,6 @@ export async function createStripePendingOrder(input: {
   legalAcceptanceVersion: string;
   legalAccepted: boolean;
   storeId?: number;
-  /** BYOK checkouts decrement stock on payment confirmation instead of reserving it. */
-  reserveStock?: boolean;
   paymentMethod?: string;
   shippingAddress?: string;
   billingAddress?: string | null;
@@ -15251,11 +15424,8 @@ export async function createStripePendingOrder(input: {
   if (input.cart.totalAmount !== input.totalAmount) throw new Error("CHECKOUT_TOTAL_MISMATCH");
   const discountAmount = Math.max(0, Math.min(input.cart.totalAmount, input.discountAmount ?? 0));
   return await db.transaction(async tx => {
-    // The final stock check and reduction happen in the same transaction as
-    // the pending order. A competing checkout can therefore not oversell a
-    // product or a selected owner-managed variant.
-    const reserveStock = input.reserveStock !== false;
-    if (reserveStock) await reserveCheckoutStock(tx, effectiveStoreId, input.cart.items);
+    // No stock is reserved here: it is taken once the payment is confirmed
+    // (consumePaidOrderStock), so an abandoned online checkout keeps it intact.
     const result = await tx.insert(orders).values({
       storeId: effectiveStoreId,
       userId: input.userId,
@@ -15289,7 +15459,7 @@ export async function createStripePendingOrder(input: {
       priceAtPurchaseChf: item.unitAmountChf + item.shippingAmount,
       productNameSnapshot: item.name.slice(0, 255),
       selectedOptions: JSON.stringify(item.selectedOptions),
-      supplierSnapshot: JSON.stringify(reserveStock ? { ...item.supplierSnapshot, inventoryReservation: true } : item.supplierSnapshot),
+      supplierSnapshot: JSON.stringify(item.supplierSnapshot),
     })));
     if (input.onCreated) await input.onCreated(tx, orderId);
     return { id: orderId };
@@ -15637,19 +15807,31 @@ export async function markOrderPaidByStripeSession(sessionId: string) {
   if (!db) throw new Error("Database not available");
   // A verified Stripe Test checkout may advance only a locally pending order.
   // This prevents a late webhook from resurrecting a rejected or cancelled one.
-  const result = await db.update(orders)
-    .set({ paymentStatus: "paid", status: "processing" })
-    .where(and(
+  // The paid transition and the stock it takes are one transaction.
+  const justPaid = await db.transaction(async tx => {
+    const [order] = await tx.select({ id: orders.id, storeId: orders.storeId }).from(orders).where(and(
       eq(orders.stripeSessionId, sessionId),
       eq(orders.paymentStatus, "unpaid"),
       eq(orders.status, "pending"),
-    ));
-  const affectedRows = Number((result as any)?.[0]?.affectedRows ?? (result as any)?.affectedRows ?? 0);
+    )).limit(1);
+    if (!order) return false;
+    const result = await tx.update(orders)
+      .set({ paymentStatus: "paid", status: "processing" })
+      .where(and(
+        eq(orders.id, order.id),
+        eq(orders.storeId, order.storeId),
+        eq(orders.paymentStatus, "unpaid"),
+        eq(orders.status, "pending"),
+      ));
+    if (affectedRows(result) !== 1) return false;
+    await consumePaidOrderStock(tx, order.storeId, order.id);
+    return true;
+  });
 
   // A previous webhook may already have persisted the payment but stopped
   // before the operational transition. Repair only this safe pending state.
   let processingUpdated = false;
-  if (affectedRows === 0) {
+  if (!justPaid) {
     const recovery = await db.update(orders)
       .set({ status: "processing" })
       .where(and(
@@ -15659,7 +15841,7 @@ export async function markOrderPaidByStripeSession(sessionId: string) {
       ));
     processingUpdated = Number((recovery as any)?.[0]?.affectedRows ?? (recovery as any)?.affectedRows ?? 0) > 0;
   }
-  return { success: true, justPaid: affectedRows > 0, processingUpdated };
+  return { success: true, justPaid, processingUpdated };
 }
 
 // Records the promotion redemption for a freshly paid Stripe order (idempotent).
@@ -15671,6 +15853,53 @@ export async function finalizePaidOrderRedemption(sessionId: string) {
   const order = rows[0];
   if (!order || !order.promotionId) return;
   await recordPromotionRedemption({ promotionId: order.promotionId, userId: order.userId, orderId: order.id, discountAmount: order.discountAmount ?? 0, storeId: order.storeId });
+}
+
+/** Read-only view behind a signed tracking link: no address, e-mail nor payment reference. */
+export async function getOrderTrackingView(storeId: number, orderId: number) {
+  await ensureStoreRelationshipScopeSchema();
+  await ensureFulfillmentSchema();
+  await ensureOrderManualTrackingSchema();
+  await ensureOrderCurrencySchema();
+  const db = await getDb();
+  if (!db) return null;
+  const [order] = await db.select({
+    id: orders.id,
+    status: orders.status,
+    paymentStatus: orders.paymentStatus,
+    totalAmount: orders.totalAmount,
+    currencyCode: orders.currencyCode,
+    customerShippingAmount: orders.customerShippingAmount,
+    discountAmount: orders.discountAmount,
+    trackingNumber: orders.trackingNumber,
+    trackingCarrier: orders.trackingCarrier,
+    trackingUrl: orders.trackingUrl,
+    createdAt: orders.createdAt,
+    updatedAt: orders.updatedAt,
+    storeName: stores.displayName,
+  }).from(orders).innerJoin(stores, eq(stores.id, orders.storeId))
+    .where(and(eq(orders.storeId, storeId), eq(orders.id, orderId))).limit(1);
+  if (!order) return null;
+  const items = await db.select({ name: orderItems.productNameSnapshot, quantity: orderItems.quantity, unitAmount: orderItems.priceAtPurchase })
+    .from(orderItems).where(and(eq(orderItems.storeId, storeId), eq(orderItems.orderId, orderId)));
+  return {
+    ...order,
+    trackingUrl: order.trackingUrl && /^https:\/\//i.test(order.trackingUrl) ? order.trackingUrl : null,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+    items: items.map(item => ({ name: item.name || "Article", quantity: item.quantity, unitAmount: item.unitAmount })),
+  };
+}
+
+/** Recipient of the guest tracking e-mail; null when the order belongs to an account holder. */
+export async function getGuestOrderTrackingRecipient(storeId: number, orderId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select({ email: users.email, name: users.name, loginMethod: users.loginMethod, storeName: stores.displayName, primaryDomain: stores.primaryDomain })
+    .from(orders).innerJoin(users, eq(users.id, orders.userId)).innerJoin(stores, eq(stores.id, orders.storeId))
+    .where(and(eq(orders.storeId, storeId), eq(orders.id, orderId))).limit(1);
+  if (!row || row.loginMethod !== "guest" || !row.email) return null;
+  return { email: row.email, name: row.name, storeName: row.storeName, primaryDomain: row.primaryDomain };
 }
 
 export async function getOrderForStripeSessionForStore(sessionId: string, userId: number, storeId?: number) {

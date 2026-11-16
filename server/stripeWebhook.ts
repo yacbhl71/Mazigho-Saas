@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { confirmStripeConnectSessionOwner, finalizePaidOrderRedemption, getOrderForStripeSession, markOrderPaidByStripeSession, queueCjSandboxPreparationForPaidOrder, releaseExpiredStripePendingOrder, setSettingValue, storeOdooSaleOrderId, storeStripeShippingAddress } from "./db";
 import { syncOrderToOdoo } from "./services/odoo";
 import { sendOrderConfirmationForStripeSession } from "./emails";
+import { sendGuestOrderTrackingEmail } from "./guestOrderTracking";
 import { getStripeConnectCredentials, type StripeConnectMode } from "./services/stripeConnectMode";
 
 // Best-effort synchronisation of a paid order to Odoo. Never throws so the
@@ -114,6 +115,8 @@ export async function completePaidStripeOrder(
   results.forEach((result, index) => {
     if (result.status === "rejected") console.error(`[Stripe] downstream task ${index + 1} failed`, result.reason);
   });
+  // Guest customers receive their tracking link once, on the first paid transition.
+  if (options.sendCustomerEmail) void sendGuestOrderTrackingEmail(snapshot.order.storeId, snapshot.order.id);
   // Reconciliation may be retried by the webhook or the checkout return path.
   // The customer confirmation is only sent on the first durable transition.
   const emailFlag = mode === "live" ? "MAZIGHO_ENABLE_STRIPE_LIVE_ORDER_EMAILS" : "MAZIGHO_ENABLE_STRIPE_TEST_ORDER_EMAILS";

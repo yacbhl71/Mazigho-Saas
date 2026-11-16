@@ -92,68 +92,92 @@ function checkoutCartError(error: unknown, context: string) {
   return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le panier n’a pas pu être préparé pour le paiement. Aucun paiement n’a été créé." });
 }
 
+const byokSessionInput = z.object({
+  provider: z.enum(["stripe", "paypal"]),
+  method: z.enum(["card", "paypal"]).optional(),
+  countryCode: z.string().length(2).regex(/^[A-Za-z]{2}$/),
+  shippingAddress: z.object({
+    name: z.string().trim().min(2).max(160),
+    phone: z.string().trim().min(5).max(60).optional(),
+    line1: z.string().trim().min(3).max(240),
+    line2: z.string().trim().max(240).optional(),
+    city: z.string().trim().min(2).max(120),
+    postalCode: z.string().trim().min(2).max(32),
+  }),
+  promoCode: z.string().trim().min(2).max(64).optional(),
+  legalAcceptanceVersion: z.literal(CHECKOUT_LEGAL_VERSION),
+  legalAccepted: z.literal(true),
+  items: z.array(z.object({
+    productId: z.number().int().positive(),
+    quantity: z.number().int().min(1).max(20),
+    selectedOptions: z.record(z.string().max(80), z.string().max(120)).optional(),
+    variantId: z.number().int().positive().optional(),
+  })).min(1).max(30),
+});
+
+type ByokSessionContext = Parameters<typeof callPaymentService>[0] & { user: { id: number }; store?: { id: number } | null };
+
+async function createByokCheckoutSession(input: z.infer<typeof byokSessionInput>, ctx: ByokSessionContext) {
+  const { replaceByokServerCart } = await import("./db");
+  const storeId = ctx.store!.id;
+  const countryCode = input.countryCode.toUpperCase();
+  // Same checkout engine as Stripe Connect: catalogue, variants, stock, delivery, shipping, currency and promotion.
+  const cart = await getStripeCheckoutCart(ctx.user.id, countryCode, input.items, storeId).catch(error => { throw checkoutCartError(error, "BYOK checkout cart error"); });
+  const promotion = await resolveCheckoutPromotion(input.promoCode, cart, ctx.user.id, storeId);
+  if (cart.totalAmount - promotion.discountAmount <= 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Cette promotion réduit le total à zéro et ne peut pas être encaissée en ligne." });
+  }
+  const quote: ByokCheckoutQuote = {
+    version: 1,
+    countryCode,
+    items: input.items,
+    promoCode: promotion.promoCodeLabel || null,
+    promotionId: promotion.promotionId,
+    discountAmountChf: promotion.discountAmountChf,
+    legalAcceptanceVersion: input.legalAcceptanceVersion,
+  };
+  // The payment service reads a server cart: mirror the validated browser basket first.
+  const cartId = await replaceByokServerCart(ctx.user.id, storeId, input.items, quote).catch(error => { throw checkoutCartError(error, "BYOK server cart error"); });
+  const response = await callPaymentService<{ session: { redirectUrl: string | null; orderId: string } }>(ctx, "/api/checkout/create-session", {
+    method: "POST",
+    storeId,
+    body: {
+      storeId: String(storeId),
+      userId: String(ctx.user.id),
+      provider: input.provider,
+      method: input.method,
+      currency: cart.currency.code,
+      country: countryCode,
+      shippingAddress: JSON.stringify({ source: "byok_checkout", ...input.shippingAddress, countryCode }),
+      idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
+      cartId: String(cartId),
+    },
+  });
+  if (!response.session.redirectUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le prestataire de paiement n’a pas fourni de lien de paiement." });
+  return { url: response.session.redirectUrl, orderId: response.session.orderId };
+}
+
 export const stripeCheckoutRouter = router({
   createByokSession: storefrontProtectedProcedure
-    .input(z.object({
-      provider: z.enum(["stripe", "paypal"]),
-      method: z.enum(["card", "paypal"]).optional(),
-      countryCode: z.string().length(2).regex(/^[A-Za-z]{2}$/),
-      shippingAddress: z.object({
-        name: z.string().trim().min(2).max(160),
-        phone: z.string().trim().min(5).max(60),
-        line1: z.string().trim().min(3).max(240),
-        line2: z.string().trim().max(240).optional(),
-        city: z.string().trim().min(2).max(120),
-        postalCode: z.string().trim().min(2).max(32),
-      }),
-      promoCode: z.string().trim().min(2).max(64).optional(),
-      legalAcceptanceVersion: z.literal(CHECKOUT_LEGAL_VERSION),
-      legalAccepted: z.literal(true),
-      items: z.array(z.object({
-        productId: z.number().int().positive(),
-        quantity: z.number().int().min(1).max(20),
-        selectedOptions: z.record(z.string().max(80), z.string().max(120)).optional(),
-        variantId: z.number().int().positive().optional(),
-      })).min(1).max(30),
-    }))
+    .input(byokSessionInput)
     .mutation(async ({ input, ctx }) => {
-      const { replaceByokServerCart } = await import("./db");
+      const { recordPaymentJournal } = await import("./db");
       const storeId = ctx.store!.id;
-      const countryCode = input.countryCode.toUpperCase();
-      // Same checkout engine as Stripe Connect: catalogue, variants, stock, delivery, shipping, currency and promotion.
-      const cart = await getStripeCheckoutCart(ctx.user.id, countryCode, input.items, storeId).catch(error => { throw checkoutCartError(error, "BYOK checkout cart error"); });
-      const promotion = await resolveCheckoutPromotion(input.promoCode, cart, ctx.user.id, storeId);
-      if (cart.totalAmount - promotion.discountAmount <= 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cette promotion réduit le total à zéro et ne peut pas être encaissée en ligne." });
-      }
-      const quote: ByokCheckoutQuote = {
-        version: 1,
-        countryCode,
-        items: input.items,
-        promoCode: promotion.promoCodeLabel || null,
-        promotionId: promotion.promotionId,
-        discountAmountChf: promotion.discountAmountChf,
-        legalAcceptanceVersion: input.legalAcceptanceVersion,
-      };
-      // The payment service reads a server cart: mirror the validated browser basket first.
-      const cartId = await replaceByokServerCart(ctx.user.id, storeId, input.items, quote).catch(error => { throw checkoutCartError(error, "BYOK server cart error"); });
-      const response = await callPaymentService<{ session: { redirectUrl: string | null; orderId: string } }>(ctx, "/api/checkout/create-session", {
-        method: "POST",
-        storeId,
-        body: {
-          storeId: String(storeId),
-          userId: String(ctx.user.id),
+      try {
+        return await createByokCheckoutSession(input, ctx);
+      } catch (error) {
+        const known = error instanceof TRPCError && (error.code === "PRECONDITION_FAILED" || error.code === "BAD_REQUEST");
+        await recordPaymentJournal({
+          storeId,
+          level: known ? "warning" : "error",
+          source: "checkout",
+          event: "checkout.failed",
           provider: input.provider,
-          method: input.method,
-          currency: cart.currency.code,
-          country: countryCode,
-          shippingAddress: JSON.stringify({ source: "byok_checkout", ...input.shippingAddress, countryCode }),
-          idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
-          cartId: String(cartId),
-        },
-      });
-      if (!response.session.redirectUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le prestataire de paiement n’a pas fourni de lien de paiement." });
-      return { url: response.session.redirectUrl, orderId: response.session.orderId };
+          code: error instanceof TRPCError ? error.code : null,
+          message: `Paiement non ouvert : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+        });
+        throw error;
+      }
     }),
   // Return page of a BYOK hosted payment. The random session id is the only
   // capability; Stripe is reconciled server-side and PayPal is captured here.
@@ -305,9 +329,8 @@ export const stripeCheckoutRouter = router({
           });
         }
         const origin = `https://${ctx.store!.primaryDomain}`;
-        // Inventory is reserved atomically with the pending order. Keep the
-        // hosted session short-lived so an abandoned checkout releases it via
-        // Stripe's signed checkout.session.expired event.
+        // No stock is reserved when the session opens: it is taken only once
+        // Stripe confirms the payment. The hosted session stays short-lived.
         // Stripe requires at least 30 minutes; one minute avoids a boundary
         // rejection between request construction and API receipt.
         const checkoutExpiresAt = Math.floor(Date.now() / 1000) + 31 * 60;
