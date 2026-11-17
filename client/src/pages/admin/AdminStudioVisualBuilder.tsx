@@ -462,7 +462,7 @@ export default function AdminStudioVisualBuilder() {
   };
 
   const publishProject = () => {
-    if (!selectedStoreId || !editorRef.current || !preflightChecked || preflightIssues.length > 0 || !window.confirm("Publier cette composition sur la vitrine publique ?")) return;
+    if (!selectedStoreId || !editorRef.current || !preflightChecked || preflightIssues.length > 0) return;
     const editor = editorRef.current;
     const currentPages = capturePages();
     const currentPage = currentPages.find(page => page.id === activePageId) ?? currentPages[0];
