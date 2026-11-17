@@ -534,7 +534,7 @@ export default function AdminStudioVisualBuilder() {
     // Les SVG/data images peuvent contenir un texte décoratif (par exemple
     // « Votre image ») sans que ce texte fasse partie du contenu éditorial.
     // On retire donc les payloads data avant l’audit des placeholders visibles.
-    const editorialHtml = html.replace(/data:image\/[a-z0-9.+-]+;base64,[^"']+/gi, "").replace(/data:image\/svg\+xml,[^"']+/gi, "");
+    const editorialHtml = html.replace(/data:image\/[a-z0-9.+-]+(?:;base64)?,[^"']+/gi, "");
     if (/Votre image|Produit exemple|Votre marque|Prénom du client|à remplacer|texte de démonstration/i.test(editorialHtml)) issues.push("Des contenus de démonstration doivent être remplacés avant publication.");
     const imageUrls = Array.from(html.matchAll(/<(?:img[^>]*\bsrc|[^>]*style=["'][^"']*background(?:-image)?\s*:\s*url\(['"]?)(https?:\/\/[^'"\s)]+)/gi), match => match[1]).filter(Boolean);
     const uniqueImageUrls = Array.from(new Set(imageUrls));
