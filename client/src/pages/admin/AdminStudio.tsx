@@ -344,6 +344,7 @@ export default function AdminStudio() {
   const [commercialOfferMode, setCommercialOfferMode] = useState<StoreCommercialOfferMode>("undecided");
   const [commercialOfferConfirmationName, setCommercialOfferConfirmationName] = useState("");
   const [commercialOfferAcknowledged, setCommercialOfferAcknowledged] = useState(false);
+  const [finalOwnershipAcknowledged, setFinalOwnershipAcknowledged] = useState(false);
   const [mediaUsageTarget, setMediaUsageTarget] = useState<MediaUsageTarget | null>(null);
   const [ownerTransferTarget, setOwnerTransferTarget] = useState<OwnerTransferTarget | null>(null);
   const [ownerTransferName, setOwnerTransferName] = useState("");
@@ -440,6 +441,15 @@ export default function AdminStudio() {
       await utils.admin.studio.getInventory.invalidate();
     },
     onError: error => toast.error(error.message || "Le mode commercial n’a pas pu être enregistré."),
+  });
+  const finalizeStoreOwnershipMutation = trpc.admin.studio.finalizeStoreOwnership.useMutation({
+    onSuccess: async result => {
+      toast.success(result.disposition === "sold_final" ? "Vente définitive enregistrée." : "Offre définitive enregistrée.");
+      setCommercialOfferTarget(null);
+      setFinalOwnershipAcknowledged(false);
+      await utils.admin.studio.getInventory.invalidate();
+    },
+    onError: error => toast.error(error.message || "La décision définitive n’a pas pu être enregistrée."),
   });
   const transferStoreOwnershipMutation = trpc.admin.studio.transferStoreOwnership.useMutation({
     onSuccess: async result => {
@@ -1203,7 +1213,7 @@ export default function AdminStudio() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={Boolean(commercialOfferTarget)} onOpenChange={open => { if (!open && !updateStoreCommercialOfferModeMutation.isPending) { setCommercialOfferTarget(null); setCommercialOfferConfirmationName(""); setCommercialOfferAcknowledged(false); } }}>
+        <Dialog open={Boolean(commercialOfferTarget)} onOpenChange={open => { if (!open && !updateStoreCommercialOfferModeMutation.isPending && !finalizeStoreOwnershipMutation.isPending) { setCommercialOfferTarget(null); setCommercialOfferConfirmationName(""); setCommercialOfferAcknowledged(false); setFinalOwnershipAcknowledged(false); } }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><Layers3 className="h-5 w-5 text-sky-700" /> Préparer le modèle commercial</DialogTitle>
@@ -1215,8 +1225,10 @@ export default function AdminStudio() {
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><p className="font-semibold">Frontière explicite</p><p className="mt-1">Cette sélection ne modifie pas l’état de la boutique, sa visibilité, ses médias, son quota Blob, ses propriétaires, son domaine ou ses paiements. Les futures options de stockage client feront l’objet d’une conception séparée et sécurisée.</p></div>
               <div className="space-y-2"><Label htmlFor="studio-commercial-offer-confirmation">Recopiez le nom de la boutique</Label><Input id="studio-commercial-offer-confirmation" value={commercialOfferConfirmationName} onChange={event => setCommercialOfferConfirmationName(event.target.value)} placeholder={commercialOfferTarget.displayName} autoComplete="off" /></div>
               <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"><input type="checkbox" checked={commercialOfferAcknowledged} onChange={event => setCommercialOfferAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600" /><span>Je confirme enregistrer ce repère commercial pour <strong>{commercialOfferTarget.displayName}</strong>. Je comprends qu’il ne déclenche aucune facturation, licence, abonnement, transfert ou communication externe.</span></label>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-5 text-rose-950"><p className="font-semibold">Décision définitive séparée</p><p className="mt-1">Les boutons ci-dessous sont les seuls à retirer la boutique du contrôle libre de MAZIGHO Studio. Ils exigent le nom recopié et une confirmation distincte.</p></div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-rose-200 bg-white p-3 text-sm leading-5 text-rose-950"><input type="checkbox" checked={finalOwnershipAcknowledged} onChange={event => setFinalOwnershipAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-rose-300 text-rose-700 focus:ring-rose-600" /><span>Je comprends qu’après cette décision, la boutique ne sera plus considérée comme exclusivement sous contrôle MAZIGHO Studio.</span></label>
             </div>}
-            <DialogFooter><Button type="button" variant="outline" disabled={updateStoreCommercialOfferModeMutation.isPending} onClick={() => setCommercialOfferTarget(null)}>Annuler</Button><Button type="button" className="bg-sky-700 hover:bg-sky-800" disabled={!commercialOfferTarget || commercialOfferConfirmationName.trim() !== commercialOfferTarget.displayName.trim() || !commercialOfferAcknowledged || updateStoreCommercialOfferModeMutation.isPending} onClick={() => commercialOfferTarget && updateStoreCommercialOfferModeMutation.mutate({ storeId: commercialOfferTarget.id, confirmationName: commercialOfferConfirmationName, mode: commercialOfferMode, acknowledged: true })}>{updateStoreCommercialOfferModeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Layers3 className="mr-2 h-4 w-4" />}Enregistrer le repère</Button></DialogFooter>
+            <DialogFooter className="flex-wrap"><Button type="button" variant="outline" disabled={updateStoreCommercialOfferModeMutation.isPending || finalizeStoreOwnershipMutation.isPending} onClick={() => setCommercialOfferTarget(null)}>Annuler</Button><Button type="button" className="bg-sky-700 hover:bg-sky-800" disabled={!commercialOfferTarget || commercialOfferConfirmationName.trim() !== commercialOfferTarget.displayName.trim() || !commercialOfferAcknowledged || updateStoreCommercialOfferModeMutation.isPending} onClick={() => commercialOfferTarget && updateStoreCommercialOfferModeMutation.mutate({ storeId: commercialOfferTarget.id, confirmationName: commercialOfferConfirmationName, mode: commercialOfferMode, acknowledged: true })}>{updateStoreCommercialOfferModeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Layers3 className="mr-2 h-4 w-4" />}Enregistrer le repère</Button><Button type="button" variant="outline" className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100" disabled={!commercialOfferTarget || commercialOfferConfirmationName.trim() !== commercialOfferTarget.displayName.trim() || !finalOwnershipAcknowledged || finalizeStoreOwnershipMutation.isPending} onClick={() => commercialOfferTarget && finalizeStoreOwnershipMutation.mutate({ storeId: commercialOfferTarget.id, confirmationName: commercialOfferConfirmationName, disposition: "gifted_final", acknowledged: true })}>Offrir définitivement</Button><Button type="button" className="bg-rose-700 hover:bg-rose-800" disabled={!commercialOfferTarget || commercialOfferConfirmationName.trim() !== commercialOfferTarget.displayName.trim() || !finalOwnershipAcknowledged || finalizeStoreOwnershipMutation.isPending} onClick={() => commercialOfferTarget && finalizeStoreOwnershipMutation.mutate({ storeId: commercialOfferTarget.id, confirmationName: commercialOfferConfirmationName, disposition: "sold_final", acknowledged: true })}>Vendre définitivement</Button></DialogFooter>
           </DialogContent>
         </Dialog>
 

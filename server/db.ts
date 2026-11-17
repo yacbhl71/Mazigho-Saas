@@ -4213,6 +4213,23 @@ export async function updateStudioStoreCommercialOfferMode(input: {
   };
 }
 
+export type StudioOwnershipDisposition = "studio_controlled" | "sold_final" | "gifted_final";
+
+export async function finalizeStudioStoreOwnership(input: {
+  storeId: number;
+  confirmationName: string;
+  disposition: Exclude<StudioOwnershipDisposition, "studio_controlled">;
+}) {
+  const store = await getStudioManagedStore(input.storeId);
+  if (!store) throw new Error("STORE_NOT_FOUND");
+  if (store.isPlatformStore) throw new Error("PLATFORM_STORE_PROTECTED");
+  if (store.displayName.trim() !== input.confirmationName.trim()) throw new Error("OWNERSHIP_FINALIZATION_CONFIRMATION_MISMATCH");
+  const current = await getStoreSettingValue(store.id, "studio_ownership_disposition");
+  if (current === "sold_final" || current === "gifted_final") throw new Error("OWNERSHIP_ALREADY_FINAL");
+  await setStoreSettingValue(store.id, "studio_ownership_disposition", input.disposition, "Décision définitive de vente ou d’offre enregistrée explicitement dans MAZIGHO Studio.");
+  return { store: { id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain }, disposition: input.disposition } as const;
+}
+
 /**
  * Operator-only planning dashboard for future SaaS subscriptions and invoices.
  * Everything returned here is an internal draft: no tax document, recipient,

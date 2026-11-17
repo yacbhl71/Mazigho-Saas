@@ -1834,6 +1834,31 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    finalizeStoreOwnership: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      confirmationName: z.string().trim().min(2).max(160),
+      disposition: z.enum(["sold_final", "gifted_final"]),
+      acknowledged: z.literal(true),
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        const finalized = await db.finalizeStudioStoreOwnership(input);
+        logAudit(ctx, {
+          action: `studio.store.ownership.${input.disposition}`,
+          entityType: "store",
+          entityId: finalized.store.id,
+          summary: `${input.disposition === "sold_final" ? "Vente" : "Offre"} définitive confirmée : ${finalized.store.displayName}`,
+          metadata: { disposition: input.disposition, explicitConfirmation: true },
+        });
+        return finalized;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        if (code === "PLATFORM_STORE_PROTECTED") throw new TRPCError({ code: "FORBIDDEN", message: "La boutique principale MAZIGHO ne peut pas être transférée définitivement." });
+        if (code === "OWNERSHIP_FINALIZATION_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Recopiez exactement le nom de la boutique avant cette décision définitive." });
+        if (code === "OWNERSHIP_ALREADY_FINAL") throw new TRPCError({ code: "CONFLICT", message: "Cette boutique a déjà été vendue ou offerte définitivement." });
+        throw error;
+      }
+    }),
     getSaasBillingDashboard: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       status: z.enum(["setup", "active", "limited", "suspended", "closed"]).optional(),
