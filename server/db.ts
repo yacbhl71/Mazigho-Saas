@@ -133,7 +133,7 @@ import {
   getDemoAdminStats,
 } from "./db/demoFallback";
 
-const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents } = schema;
+const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, storeCmsPages, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents } = schema;
 type StorefrontBannerRow = typeof banners.$inferSelect;
 type ProductImageRow = typeof productImages.$inferSelect;
 
@@ -4230,6 +4230,30 @@ export async function finalizeStudioStoreOwnership(input: {
   if (current === "sold_final" || current === "gifted_final") throw new Error("OWNERSHIP_ALREADY_FINAL");
   await setStoreSettingValue(store.id, "studio_ownership_disposition", input.disposition, "Décision définitive de vente ou d’offre enregistrée explicitement dans MAZIGHO Studio.");
   return { store: { id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain }, disposition: input.disposition } as const;
+}
+
+export async function deleteEmptyStudioStore(input: { storeId: number; confirmation: string }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database unavailable");
+  return database.transaction(async tx => {
+    const [store] = await tx.select({ id: stores.id, displayName: stores.displayName, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.id, input.storeId)).limit(1);
+    if (!store) throw new Error("STORE_NOT_FOUND");
+    if (store.isPlatformStore) throw new Error("PLATFORM_STORE_PROTECTED");
+    if (input.confirmation !== `SUPPRIMER ${store.displayName}`) throw new Error("STORE_DELETE_CONFIRMATION_MISMATCH");
+    const [members, settings, categoriesCount, productsCount, ordersCount, cartsCount, cmsCount] = await Promise.all([
+      tx.select({ value: count() }).from(storeMemberships).where(eq(storeMemberships.storeId, input.storeId)),
+      tx.select({ value: count() }).from(storeSettings).where(eq(storeSettings.storeId, input.storeId)),
+      tx.select({ value: count() }).from(categories).where(eq(categories.storeId, input.storeId)),
+      tx.select({ value: count() }).from(products).where(eq(products.storeId, input.storeId)),
+      tx.select({ value: count() }).from(orders).where(eq(orders.storeId, input.storeId)),
+      tx.select({ value: count() }).from(carts).where(eq(carts.storeId, input.storeId)),
+      tx.select({ value: count() }).from(storeCmsPages).where(eq(storeCmsPages.storeId, input.storeId)),
+    ]);
+    const dependencies = { memberships: Number(members[0]?.value ?? 0), settings: Number(settings[0]?.value ?? 0), categories: Number(categoriesCount[0]?.value ?? 0), products: Number(productsCount[0]?.value ?? 0), orders: Number(ordersCount[0]?.value ?? 0), carts: Number(cartsCount[0]?.value ?? 0), cmsPages: Number(cmsCount[0]?.value ?? 0) };
+    if (Object.values(dependencies).some(value => value > 0)) throw Object.assign(new Error("STORE_NOT_EMPTY"), { dependencies });
+    await tx.delete(stores).where(eq(stores.id, input.storeId));
+    return { deleted: true as const, store, dependencies };
+  });
 }
 
 /**

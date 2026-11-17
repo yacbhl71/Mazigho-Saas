@@ -340,6 +340,8 @@ export default function AdminStudio() {
   const [lifecycleNextStatus, setLifecycleNextStatus] = useState<Exclude<ManagedStoreStatus, "setup">>("limited");
   const [lifecycleConfirmationName, setLifecycleConfirmationName] = useState("");
   const [lifecycleAcknowledged, setLifecycleAcknowledged] = useState(false);
+  const [storeDeleteConfirmation, setStoreDeleteConfirmation] = useState("");
+  const [storeDeleteAcknowledged, setStoreDeleteAcknowledged] = useState(false);
   const [commercialOfferTarget, setCommercialOfferTarget] = useState<CommercialOfferTarget | null>(null);
   const [commercialOfferMode, setCommercialOfferMode] = useState<StoreCommercialOfferMode>("undecided");
   const [commercialOfferConfirmationName, setCommercialOfferConfirmationName] = useState("");
@@ -450,6 +452,16 @@ export default function AdminStudio() {
       await utils.admin.studio.getInventory.invalidate();
     },
     onError: error => toast.error(error.message || "La décision définitive n’a pas pu être enregistrée."),
+  });
+  const deleteEmptyStoreMutation = trpc.admin.studio.deleteEmptyStore.useMutation({
+    onSuccess: async result => {
+      toast.success(`Boutique « ${result.store.displayName} » supprimée définitivement.`);
+      setLifecycleTarget(null);
+      setStoreDeleteConfirmation("");
+      setStoreDeleteAcknowledged(false);
+      await utils.admin.studio.getInventory.invalidate();
+    },
+    onError: error => toast.error(error.message || "La suppression a été refusée."),
   });
   const transferStoreOwnershipMutation = trpc.admin.studio.transferStoreOwnership.useMutation({
     onSuccess: async result => {
@@ -1162,7 +1174,7 @@ export default function AdminStudio() {
           </div>
         )}
 
-        <Dialog open={Boolean(lifecycleTarget)} onOpenChange={open => { if (!open && !updateStoreOperationalStatusMutation.isPending) { setLifecycleTarget(null); setLifecycleConfirmationName(""); setLifecycleAcknowledged(false); } }}>
+        <Dialog open={Boolean(lifecycleTarget)} onOpenChange={open => { if (!open && !updateStoreOperationalStatusMutation.isPending && !deleteEmptyStoreMutation.isPending) { setLifecycleTarget(null); setLifecycleConfirmationName(""); setLifecycleAcknowledged(false); setStoreDeleteConfirmation(""); setStoreDeleteAcknowledged(false); } }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-violet-700" /> Modifier l’état opérationnel</DialogTitle>
@@ -1174,8 +1186,9 @@ export default function AdminStudio() {
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><p className="font-semibold">Garde-fous conservés</p><p className="mt-1">Une boutique en préparation ne peut pas être activée ici : le prévol d’ouverture séparé reste obligatoire. MAZIGHO principal est absent de ce contrôle et ne peut pas être modifié.</p></div>
               <div className="space-y-2"><Label htmlFor="studio-lifecycle-confirmation">Recopiez le nom de la boutique</Label><Input id="studio-lifecycle-confirmation" value={lifecycleConfirmationName} onChange={event => setLifecycleConfirmationName(event.target.value)} placeholder={lifecycleTarget.displayName} autoComplete="off" /></div>
               <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"><input type="checkbox" checked={lifecycleAcknowledged} onChange={event => setLifecycleAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 text-violet-700 focus:ring-violet-600" /><span>Je confirme modifier l’état de <strong>{lifecycleTarget.displayName}</strong>. Je comprends que cette action est journalisée, qu’elle n’affecte ni la facturation ni les données de la boutique, et qu’elle est réversible depuis Studio.</span></label>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-950"><p className="font-semibold">Suppression définitive d’une boutique vide</p><p className="mt-1">Cette option ne fonctionne que si la boutique ne contient aucun membre, réglage, catalogue, panier, page CMS ou commande. Si des données existent, la suppression est refusée : utilisez « Clôturée », qui conserve les données.</p><div className="mt-3 space-y-2"><Label htmlFor="studio-store-delete-confirmation">Saisissez SUPPRIMER {lifecycleTarget.displayName}</Label><Input id="studio-store-delete-confirmation" value={storeDeleteConfirmation} onChange={event => setStoreDeleteConfirmation(event.target.value)} placeholder={`SUPPRIMER ${lifecycleTarget.displayName}`} autoComplete="off" /></div><label className="mt-3 flex cursor-pointer items-start gap-3"><input type="checkbox" checked={storeDeleteAcknowledged} onChange={event => setStoreDeleteAcknowledged(event.target.checked)} className="mt-1 h-4 w-4 rounded border-rose-300 text-rose-700 focus:ring-rose-600" /><span>Je comprends que cette suppression est irréversible et je confirme qu’il s’agit bien d’une boutique vide.</span></label></div>
             </div>}
-            <DialogFooter><Button type="button" variant="outline" disabled={updateStoreOperationalStatusMutation.isPending} onClick={() => setLifecycleTarget(null)}>Annuler</Button><Button type="button" className="bg-violet-700 hover:bg-violet-800" disabled={!lifecycleTarget || lifecycleTarget.status === lifecycleNextStatus || lifecycleConfirmationName.trim() !== lifecycleTarget.displayName.trim() || !lifecycleAcknowledged || updateStoreOperationalStatusMutation.isPending} onClick={() => lifecycleTarget && updateStoreOperationalStatusMutation.mutate({ storeId: lifecycleTarget.id, confirmationName: lifecycleConfirmationName, nextStatus: lifecycleNextStatus, acknowledged: true })}>{updateStoreOperationalStatusMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}{lifecycleNextStatus === "active" ? "Réactiver la boutique" : "Confirmer le nouvel état"}</Button></DialogFooter>
+            <DialogFooter className="flex-wrap"><Button type="button" variant="outline" disabled={updateStoreOperationalStatusMutation.isPending || deleteEmptyStoreMutation.isPending} onClick={() => setLifecycleTarget(null)}>Annuler</Button><Button type="button" className="bg-violet-700 hover:bg-violet-800" disabled={!lifecycleTarget || lifecycleTarget.status === lifecycleNextStatus || lifecycleConfirmationName.trim() !== lifecycleTarget.displayName.trim() || !lifecycleAcknowledged || updateStoreOperationalStatusMutation.isPending} onClick={() => lifecycleTarget && updateStoreOperationalStatusMutation.mutate({ storeId: lifecycleTarget.id, confirmationName: lifecycleConfirmationName, nextStatus: lifecycleNextStatus, acknowledged: true })}>{updateStoreOperationalStatusMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}{lifecycleNextStatus === "active" ? "Réactiver la boutique" : "Confirmer le nouvel état"}</Button><Button type="button" variant="outline" className="border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100" disabled={!lifecycleTarget || !storeDeleteAcknowledged || storeDeleteConfirmation !== `SUPPRIMER ${lifecycleTarget.displayName}` || deleteEmptyStoreMutation.isPending} onClick={() => lifecycleTarget && deleteEmptyStoreMutation.mutate({ storeId: lifecycleTarget.id, confirmation: storeDeleteConfirmation, acknowledged: true })}>{deleteEmptyStoreMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Supprimer si vide</Button></DialogFooter>
           </DialogContent>
         </Dialog>
 
