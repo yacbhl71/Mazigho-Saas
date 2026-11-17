@@ -1,6 +1,6 @@
 export function normalizeBuilderHref(value: string) {
   const trimmed = value.trim();
-  if (!trimmed || trimmed.startsWith("/") || trimmed.startsWith("#") || /^(https?:|mailto:|tel:)/i.test(trimmed)) return trimmed;
+  if (!trimmed || (trimmed.startsWith("/") && !trimmed.startsWith("//")) || trimmed.startsWith("#") || /^(https?:|mailto:|tel:)/i.test(trimmed)) return trimmed;
   return "#";
 }
 

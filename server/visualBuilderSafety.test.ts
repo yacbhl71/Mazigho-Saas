@@ -12,6 +12,7 @@ describe("visualBuilderSafety", () => {
   it("neutralise les protocoles inconnus", () => {
     expect(normalizeBuilderHref("javascript:alert(1)")).toBe("#");
     expect(normalizeBuilderHref("data:text/html,test")).toBe("#");
+    expect(normalizeBuilderHref("//evil.example/path")).toBe("#");
   });
 
   it("nettoie et limite le texte alternatif", () => {
