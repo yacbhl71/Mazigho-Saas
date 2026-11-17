@@ -346,7 +346,7 @@ export default function AdminStudioVisualBuilder() {
 
   const getRenderableEditorHtml = (editor: Editor) => {
     const html = editor.getHtml();
-    if (html.trim()) return html;
+    if (html.trim() && !/^<body>\s*<\/body>$/i.test(html.trim())) return html;
     const frame = (editor as Editor & { Canvas?: { getFrameEl?: () => HTMLIFrameElement | undefined } }).Canvas?.getFrameEl?.();
     const wrapper = frame?.contentDocument?.body?.querySelector('[data-gjs-type="wrapper"]');
     return wrapper?.innerHTML?.trim() || html;
