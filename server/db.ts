@@ -3759,7 +3759,7 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
         lowStockThreshold: 5,
       });
       const setupCompleted = store.status === "active" || Boolean(getDemoStoreSettingValue(store.id, "setup_wizard_status"));
-      const giftProvisioned = !store.isPlatformStore && (getDemoStoreSettingValue(store.id, "provisioning_mode") === "gift" || true);
+      const giftProvisioned = !store.isPlatformStore && getDemoStoreSettingValue(store.id, "provisioning_mode") === "gift";
       const commercialOfferMode = normalizeStoreCommercialOfferMode(getDemoStoreSettingValue(store.id, "commercial_offer_mode") ?? (store.isPlatformStore ? "perpetual_sale" : store.id % 2 === 0 ? "perpetual_sale" : "rental"));
       const activeOwners = 1;
       const activeProductCount = storeProducts.length > 0 ? storeProducts.length : 8;
