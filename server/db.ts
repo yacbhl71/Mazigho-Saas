@@ -5272,6 +5272,7 @@ export async function getPublishedStudioVisualBuilderProject(storeId: number, re
     if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
     const normalizedPath = requestedPath.split("?")[0].split("#")[0] || "/";
     const pages = Array.isArray(parsed.publishedPages) ? parsed.publishedPages.filter((page): page is PublishedBuilderPage => Boolean(page && typeof page === "object" && typeof (page as Record<string, unknown>).slug === "string" && typeof (page as Record<string, unknown>).html === "string" && typeof (page as Record<string, unknown>).css === "string")) : [];
+    if (normalizedPath !== "/" && pages.length === 0) return null;
     const selectedPage = pages.find(page => page.slug === normalizedPath);
     if (pages.length > 0 && !selectedPage) return null;
     const page = selectedPage ?? { title: "", html: parsed.html, css: parsed.css, settings: undefined };
