@@ -116,6 +116,13 @@ describe("MAZIGHO Studio platform guard", () => {
     await expect(caller.admin.studio.getPrivateStorefrontPreview({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.getOwnerBuilderConfiguration({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.saveOwnerBuilderConfiguration({ storeId: 1, brandName: "Boutique cliente", brandMessage: "Une boutique de démonstration.", niche: "Décoration artisanale", model: "commerce", pages: ["about", "faq"], paletteId: "terracotta", typographyId: "editorial" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.getVisualBuilderProject({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.saveVisualBuilderProject({ storeId: 1, mode: "blank", project: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.createVisualBuilderVersion({ storeId: 1, mode: "blank", project: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.restoreVisualBuilderVersion({ storeId: 1, versionId: "00000000-0000-0000-0000-000000000000" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.getVisualBuilderCloneSource({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.uploadVisualBuilderImage({ storeId: 1, fileName: "visuel.png", dataUrl: "data:image/png;base64,aGVsbG8=" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.uploadVisualBuilderVideo({ storeId: 1, fileName: "visuel.mp4", dataUrl: "data:video/mp4;base64,aGVsbG8=" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.getOwnerCollectionDrafts({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.saveOwnerCollectionDrafts({ storeId: 1, collections: [{ id: "collection-1", title: "Collection privée", description: "Une collection préparée sans produit ni prix.", featured: true }] })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.getOwnerProductDrafts({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
