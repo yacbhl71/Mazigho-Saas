@@ -13,6 +13,9 @@ import { ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Copy, CopyPlus, Eye, EyeO
 
 type BuilderMode = "blank" | "theme" | "clone";
 type ImageRole = "free" | "logo" | "banner" | "category";
+type BuilderPage = { id: string; title: string; slug: string; project: { components?: unknown; styles?: unknown } };
+
+const defaultBuilderPage: BuilderPage = { id: "home", title: "Accueil", slug: "/", project: {} };
 
 const modes: Array<{ id: BuilderMode; title: string; eyebrow: string; description: string; icon: typeof Plus; tone: string; steps: string[] }> = [
   { id: "blank", title: "Créer de zéro", eyebrow: "Page vierge", description: "Construisez une boutique à partir d’une structure propre, puis ajoutez progressivement vos sections, images, produits et boutons.", icon: Plus, tone: "violet", steps: ["Choisir une structure de départ", "Ajouter des sections et des blocs", "Personnaliser l’identité visuelle", "Prévisualiser avant publication"] },
@@ -63,6 +66,16 @@ function themedStoreComponents(source: any) {
 }
 
 const responsiveEditorCss = `*{box-sizing:border-box}img{max-width:100%;height:auto}a,button,input,textarea{max-width:100%}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section[style*="grid-template-columns"],section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
+
+function normalizeBuilderPages(value: unknown): BuilderPage[] {
+  if (!Array.isArray(value) || value.length === 0) return [{ ...defaultBuilderPage, project: {} }];
+  return value.flatMap(item => {
+    if (!item || typeof item !== "object") return [];
+    const page = item as Partial<BuilderPage>;
+    if (typeof page.id !== "string" || typeof page.title !== "string" || typeof page.slug !== "string") return [];
+    return [{ id: page.id, title: page.title, slug: page.slug, project: page.project && typeof page.project === "object" ? page.project : {} }];
+  });
+}
 
 function flattenLayerRows(models: any[], depth = 0, seen = new Set<any>()): Array<{ component: any; depth: number }> {
   if (depth > 12) return [];
@@ -134,7 +147,12 @@ export default function AdminStudioVisualBuilder() {
   const [preflightChecked, setPreflightChecked] = useState(false);
   const [activeDevice, setActiveDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [activePanel, setActivePanel] = useState<"properties" | "blocks" | "media" | "layers" | "styles">("properties");
+  const [activePanel, setActivePanel] = useState<"properties" | "blocks" | "media" | "layers" | "styles" | "pages">("properties");
+  const [pages, setPages] = useState<BuilderPage[]>([defaultBuilderPage]);
+  const [activePageId, setActivePageId] = useState("home");
+  const [pageTitle, setPageTitle] = useState("Accueil");
+  const [pageSlug, setPageSlug] = useState("/");
+  const [pageDescription, setPageDescription] = useState("");
   const editorRef = useRef<Editor | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
@@ -234,20 +252,64 @@ export default function AdminStudioVisualBuilder() {
       setSelectedHref("");
       setSelectedAlt("");
     });
-    const savedProject = projectQuery.data?.project;
-    if (savedProject) { editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]); setHasUnsavedChanges(false); setLastSavedAt(projectQuery.data?.updatedAt ? new Date(projectQuery.data.updatedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : null); }
+    const savedProject = projectQuery.data?.project as Record<string, unknown> | undefined;
+    if (savedProject) {
+      const loadedPages = normalizeBuilderPages(savedProject.pages);
+      const loadedPageId = typeof savedProject.activePageId === "string" && loadedPages.some(page => page.id === savedProject.activePageId) ? savedProject.activePageId : loadedPages[0].id;
+      const loadedPage = loadedPages.find(page => page.id === loadedPageId) ?? loadedPages[0];
+      setPages(loadedPages);
+      setActivePageId(loadedPage.id);
+      setPageTitle(loadedPage.title);
+      setPageSlug(loadedPage.slug);
+      setPageDescription(typeof savedProject.pageDescription === "string" ? savedProject.pageDescription : "");
+      editor.loadProjectData(Object.keys(loadedPage.project).length > 0 ? loadedPage.project as Parameters<Editor["loadProjectData"]>[0] : savedProject as Parameters<Editor["loadProjectData"]>[0]); setHasUnsavedChanges(false); setLastSavedAt(projectQuery.data?.updatedAt ? new Date(projectQuery.data.updatedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : null);
+    }
     else if (selectedMode === "clone" && cloneSourceQuery.data) editor.setComponents(clonedSourceComponents(cloneSourceQuery.data));
+  };
+
+  const capturePages = () => {
+    const currentProject = editorRef.current?.getProjectData() as BuilderPage["project"] | undefined;
+    return pages.map(page => page.id === activePageId ? { ...page, title: pageTitle, slug: pageSlug, project: currentProject ?? page.project } : page);
+  };
+
+  const getProjectPayload = () => ({ ...(editorRef.current?.getProjectData() as Record<string, unknown>), pages: capturePages(), activePageId, pageDescription });
+
+  const switchPage = (pageId: string) => {
+    const target = pages.find(page => page.id === pageId);
+    if (!target || !editorRef.current || pageId === activePageId) return;
+    const nextPages = capturePages();
+    setPages(nextPages);
+    setActivePageId(pageId);
+    setPageTitle(target.title);
+    setPageSlug(target.slug);
+    const project = target.project && Object.keys(target.project).length > 0 ? target.project : { components: initialComponents("blank"), styles: responsiveEditorCss };
+    editorRef.current.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
+    setSelectedComponent(null);
+    setHasUnsavedChanges(true);
+  };
+
+  const createPage = () => {
+    if (!editorRef.current) return;
+    const id = `page-${Date.now()}`;
+    const nextPage: BuilderPage = { id, title: `Page ${pages.length + 1}`, slug: `/page-${pages.length + 1}`, project: { components: initialComponents("blank"), styles: responsiveEditorCss } };
+    setPages(previous => [...capturePages(), nextPage]);
+    setActivePageId(id);
+    setPageTitle(nextPage.title);
+    setPageSlug(nextPage.slug);
+    editorRef.current.loadProjectData(nextPage.project as Parameters<Editor["loadProjectData"]>[0]);
+    setSelectedComponent(null);
+    setHasUnsavedChanges(true);
   };
 
   const saveProject = () => {
     if (!selectedStoreId || !editorRef.current) return;
     setSaveError("");
-    saveProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: editorRef.current.getProjectData() as Record<string, unknown> });
+    saveProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload() });
   };
 
   const createVersion = () => {
     if (!selectedStoreId || !editorRef.current) return;
-    createVersionMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: editorRef.current.getProjectData() as Record<string, unknown> });
+    createVersionMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload() });
   };
 
   const restoreVersion = (versionId: string) => {
@@ -257,7 +319,7 @@ export default function AdminStudioVisualBuilder() {
 
   const publishProject = () => {
     if (!selectedStoreId || !editorRef.current || !preflightChecked || preflightIssues.length > 0 || !window.confirm("Publier cette composition sur la vitrine publique ?")) return;
-    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: editorRef.current.getProjectData() as Record<string, unknown>, html: editorRef.current.getHtml(), css: editorRef.current.getCss() || "" });
+    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload(), html: editorRef.current.getHtml(), css: editorRef.current.getCss() || "" });
   };
 
   const resetDraft = () => {
@@ -522,7 +584,8 @@ export default function AdminStudioVisualBuilder() {
         <div className="overflow-hidden rounded-2xl bg-white"><GjsEditor grapesjs={grapesjs} options={editorOptions} onEditor={handleEditor} /></div>
         <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Panneaux du constructeur visuel">
           <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Wand2 className="h-4 w-4 text-fuchsia-700" /><h3 className="font-semibold text-slate-950">Panneau de travail</h3></div><div className="flex items-center gap-1"><button type="button" onClick={() => runEditorCommand("core:undo")} className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100" title="Annuler"><Undo2 className="h-4 w-4" /></button><button type="button" onClick={() => runEditorCommand("core:redo")} className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100" title="Rétablir"><Redo2 className="h-4 w-4" /></button></div></div>
-          <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Outils du constructeur">{([{ id: "properties", label: "Propriétés" }, { id: "blocks", label: "Blocs" }, { id: "media", label: "Média" }, { id: "layers", label: "Calques" }, { id: "styles", label: "Styles" }] as const).map(panel => <button key={panel.id} type="button" role="tab" aria-selected={activePanel === panel.id} onClick={() => setActivePanel(panel.id)} className={`rounded-lg px-2 py-2 text-xs font-semibold ${activePanel === panel.id ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{panel.label}</button>)}</div>
+          <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Outils du constructeur">{([{ id: "pages", label: "Pages" }, { id: "blocks", label: "Blocs" }, { id: "media", label: "Média" }, { id: "layers", label: "Calques" }, { id: "styles", label: "Styles" }, { id: "properties", label: "Propriétés" }] as const).map(panel => <button key={panel.id} type="button" role="tab" aria-selected={activePanel === panel.id} onClick={() => setActivePanel(panel.id)} className={`rounded-lg px-2 py-2 text-xs font-semibold ${activePanel === panel.id ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{panel.label}</button>)}</div>
+          {activePanel === "pages" && <div className="mt-4 space-y-3"><div className="flex items-center justify-between"><p className="text-xs leading-5 text-slate-500">Pages privées de cette boutique</p><button type="button" onClick={createPage} className="rounded-lg bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">+ Nouvelle page</button></div><div className="space-y-2">{pages.map(page => <button key={page.id} type="button" onClick={() => switchPage(page.id)} className={`w-full rounded-lg border px-3 py-2 text-left ${page.id === activePageId ? "border-fuchsia-300 bg-fuchsia-50" : "border-slate-200 bg-white hover:border-slate-300"}`}><span className="block text-xs font-semibold text-slate-800">{page.title}</span><span className="block text-[11px] text-slate-500">{page.slug}</span></button>)}</div><label className="block space-y-1"><span className="text-xs font-semibold text-slate-700">Titre de page</span><input value={pageTitle} onChange={event => { setPageTitle(event.target.value); setHasUnsavedChanges(true); }} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs" /></label><label className="block space-y-1"><span className="text-xs font-semibold text-slate-700">Chemin</span><input value={pageSlug} onChange={event => { setPageSlug(event.target.value.startsWith("/") ? event.target.value : `/${event.target.value}`); setHasUnsavedChanges(true); }} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs" /></label><label className="block space-y-1"><span className="text-xs font-semibold text-slate-700">Description SEO</span><textarea value={pageDescription} onChange={event => { setPageDescription(event.target.value); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs" /></label></div>}
           {activePanel === "blocks" && <div className="mt-4 max-h-[520px] overflow-y-auto"><p className="text-xs leading-5 text-slate-500">Glissez un bloc depuis la bibliothèque GrapesJS à gauche du canvas. Les blocs MAZIGHO restent responsive et peuvent être combinés avec le catalogue réel.</p><div className="mt-3 space-y-2">{editorBlocks.map(block => <button key={block.id} type="button" onClick={() => editorRef.current?.addComponents(block.content)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:border-fuchsia-300 hover:bg-fuchsia-50">{block.label}<span className="mt-0.5 block text-[10px] font-normal text-slate-500">{block.category}</span></button>)}</div></div>}
           {activePanel === "media" && <div className="mt-4 space-y-3"><p className="text-xs leading-5 text-slate-500">Ajoutez une image ou une vidéo à la boutique sélectionnée. Les fichiers restent isolés par boutique.</p><div className="grid grid-cols-2 gap-2"><Button type="button" variant="outline" onClick={() => openImagePicker("add")} disabled={!selectedStoreId || uploadImageMutation.isPending} className="min-h-10"><ImagePlus className="mr-2 h-4 w-4" />Image</Button><Button type="button" variant="outline" onClick={() => videoInputRef.current?.click()} disabled={!selectedStoreId || uploadVideoMutation.isPending} className="min-h-10"><Video className="mr-2 h-4 w-4" />Vidéo</Button></div>{imageUploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{imageUploadError}</p>}{videoUploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{videoUploadError}</p>}<select value={imageRole} onChange={event => setImageRole(event.target.value as ImageRole)} className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-800"><option value="free">Image libre</option><option value="logo">Logo</option><option value="banner">Bannière</option><option value="category">Catégorie</option></select></div>}
           {activePanel === "styles" && <p className="mt-4 text-sm leading-6 text-slate-500">Sélectionnez un élément dans le canvas ou les calques pour modifier sa couleur, son fond, sa typographie et ses espacements.</p>}
