@@ -151,7 +151,7 @@ describe("connexion propriétaire sur une boutique cliente", () => {
       await expect(client.login({ email: "yacbhl71@gmail.com", password: "MonMotDePassePersonnel12" })).resolves.toMatchObject({
         user: { email: "yacbhl71@gmail.com", role: "admin", accountStatus: "active" },
       });
-      expect(db.createPasswordUser).toHaveBeenCalledWith(expect.objectContaining({ openId: "operator-yacbhl71", email: "yacbhl71@gmail.com", role: "admin" }));
+      expect(db.createPasswordUser).toHaveBeenCalledWith(expect.objectContaining({ openId: process.env.OWNER_OPEN_ID ?? "operator-yacbhl71", email: "yacbhl71@gmail.com", role: "admin" }));
     } finally {
       delete process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD;
     }
@@ -183,4 +183,3 @@ describe("connexion propriétaire sur une boutique cliente", () => {
     expect(db.updatePasswordUser).not.toHaveBeenCalled();
   });
 });
-
