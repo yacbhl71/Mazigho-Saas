@@ -69,6 +69,8 @@ function themedStoreComponents(source: any) {
 }
 
 const responsiveEditorCss = `*{box-sizing:border-box}img,video{max-width:100%;height:auto}a,button,input,textarea,select{max-width:100%;overflow-wrap:anywhere}table{display:block;max-width:100%;overflow-x:auto}pre{max-width:100%;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section[style*="grid-template-columns"],section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
+const responsiveEditorCssWithAnimations = `${responsiveEditorCss}@keyframes mazighoFadeIn{from{opacity:0}to{opacity:1}}@keyframes mazighoRiseIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes mazighoZoomIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}@media(prefers-reduced-motion:reduce){[style*="animation"],[class*="mazigho-animate"]{animation:none !important;transition:none !important}}`;
+const animationPresets = [{ id: "none", label: "Aucune" }, { id: "mazighoFadeIn", label: "Fondu" }, { id: "mazighoRiseIn", label: "Apparition vers le haut" }, { id: "mazighoZoomIn", label: "Zoom léger" }] as const;
 
 function normalizeBuilderPages(value: unknown): BuilderPage[] {
   if (!Array.isArray(value) || value.length === 0) return [{ ...defaultBuilderPage, project: {} }];
@@ -153,6 +155,7 @@ export default function AdminStudioVisualBuilder() {
   const [activeDevice, setActiveDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [contentEditMode, setContentEditMode] = useState(false);
+  const [selectedAnimation, setSelectedAnimation] = useState("none");
   const [activePanel, setActivePanel] = useState<"properties" | "blocks" | "media" | "layers" | "styles" | "pages" | "review">("properties");
   const [pages, setPages] = useState<BuilderPage[]>([defaultBuilderPage]);
   const [activePageId, setActivePageId] = useState("home");
@@ -328,7 +331,7 @@ export default function AdminStudioVisualBuilder() {
     setPageDescription(target.settings?.description ?? "");
     setSocialCoverUrl(target.settings?.socialCoverUrl ?? "");
     setFaviconUrl(target.settings?.faviconUrl ?? "");
-    const project = target.project && Object.keys(target.project).length > 0 ? target.project : { components: initialComponents("blank"), styles: responsiveEditorCss };
+    const project = target.project && Object.keys(target.project).length > 0 ? target.project : { components: initialComponents("blank"), styles: responsiveEditorCssWithAnimations };
     editorRef.current.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
     setSelectedComponent(null);
     setHasUnsavedChanges(true);
@@ -365,7 +368,7 @@ export default function AdminStudioVisualBuilder() {
 
   const publishProject = () => {
     if (!selectedStoreId || !editorRef.current || !preflightChecked || preflightIssues.length > 0 || !window.confirm("Publier cette composition sur la vitrine publique ?")) return;
-    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload(), html: editorRef.current.getHtml(), css: editorRef.current.getCss() || "" });
+    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload(), html: editorRef.current.getHtml(), css: `${editorRef.current.getCss() || ""}\n${responsiveEditorCssWithAnimations}` });
   };
 
   const resetDraft = () => {
@@ -569,6 +572,7 @@ export default function AdminStudioVisualBuilder() {
     setSelectedTagName(tagName);
     setSelectedText(readSelectedText(component));
     setSelectedLocked(component?.get?.("removable") === false);
+    setSelectedAnimation(String(styles.animationName || "none"));
     const attributes = component?.getAttributes?.() || {};
     setSelectedHref(String(attributes.href || ""));
     setSelectedAlt(String(attributes.alt || ""));
@@ -588,6 +592,13 @@ export default function AdminStudioVisualBuilder() {
     const safeValue = value.replace(/[<>]/g, "");
     setSelectedText(safeValue);
     if (selectedComponent?.components) selectedComponent.components(safeValue);
+  };
+
+  const updateSelectedAnimation = (value: string) => {
+    if (contentEditMode || !animationPresets.some(preset => preset.id === value)) return;
+    setSelectedAnimation(value);
+    selectedComponent?.addStyle?.({ animationName: value === "none" ? undefined : value, animationDuration: value === "none" ? undefined : "650ms", animationTimingFunction: value === "none" ? undefined : "cubic-bezier(.23,1,.32,1)", animationFillMode: value === "none" ? undefined : "both" });
+    setHasUnsavedChanges(true);
   };
 
   const updateSelectedStyle = (key: keyof typeof selectedStyles, value: string) => {
@@ -699,7 +710,7 @@ export default function AdminStudioVisualBuilder() {
             <div className="flex flex-wrap gap-2"><button type="button" onClick={duplicateSelected} disabled={selectedLocked || contentEditMode} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><Copy className="h-3.5 w-3.5" />Dupliquer</button><button type="button" onClick={removeSelected} disabled={selectedLocked || contentEditMode} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />Supprimer</button><button type="button" onClick={toggleSelectedLock} disabled={contentEditMode} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{selectedLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{selectedLocked ? "Déverrouiller" : "Verrouiller"}</button></div>
             <label className="block space-y-1.5"><span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Type className="h-3.5 w-3.5" />Texte</span><textarea value={selectedText} onChange={event => updateSelectedText(event.target.value)} rows={4} className="w-full rounded-lg border border-slate-300 p-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Lien</span><input type="text" value={selectedHref} onChange={event => updateSelectedAttribute("href", event.target.value)} placeholder="/boutique ou https://…" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /><span className="text-[11px] text-slate-500">Chemins internes, HTTPS, e-mail et téléphone uniquement.</span></label>
-            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Texte alternatif de l’image</span><input type="text" value={selectedAlt} onChange={event => updateSelectedAttribute("alt", event.target.value)} placeholder="Décrivez l’image" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>
+            <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Texte alternatif de l’image</span><input type="text" value={selectedAlt} onChange={event => updateSelectedAttribute("alt", event.target.value)} placeholder="Décrivez l’image" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label><label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Animation sûre</span><select value={selectedAnimation} onChange={event => updateSelectedAnimation(event.target.value)} disabled={contentEditMode} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs disabled:opacity-50">{animationPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select><span className="text-[11px] text-slate-500">CSS uniquement, désactivée automatiquement si le visiteur préfère réduire les mouvements.</span></label>
             <div className="grid grid-cols-2 gap-2">{([['color','Texte'],['backgroundColor','Fond']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder="#172033" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
             <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi'],['lineHeight','Interligne'],['letterSpacing','Lettres']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : key === 'lineHeight' ? '1.5' : key === 'letterSpacing' ? '0.04em' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
             <div className="grid grid-cols-2 gap-2"><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Alignement</span><select value={selectedStyles.textAlign} onChange={event => updateSelectedStyle('textAlign', event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="">Par défaut</option><option value="left">Gauche</option><option value="center">Centre</option><option value="right">Droite</option><option value="justify">Justifié</option></select></label><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label></div>
