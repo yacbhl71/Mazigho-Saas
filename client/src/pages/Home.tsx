@@ -39,6 +39,15 @@ const responsiveHomeImageSources: Record<string, string> = {
   "/assets/category-auto.webp": "/assets/category-auto-sm.webp 480w, /assets/category-auto.webp 960w",
 };
 
+function escapePublishedMeta(value: unknown) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] || character));
+}
+
+function safePublishedMetaUrl(value: unknown) {
+  const url = String(value ?? "").trim();
+  return /^https:\/\//i.test(url) || /^\/(?!\/)/.test(url) ? url : "";
+}
+
 const categoryAccents = [
   "from-orange-100 via-amber-50 to-white",
   "from-sky-100 via-blue-50 to-white",
@@ -161,7 +170,11 @@ export default function Home() {
   }
 
   if (publishedBuilderQuery.data) {
-    const publishedDocument = `<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}img,video{max-width:100%;height:auto}a{color:inherit}</style><style>${publishedBuilderQuery.data.css}</style></head><body>${publishedBuilderQuery.data.html}</body></html>`;
+    const metadata = publishedBuilderQuery.data.metadata || { title: "Votre boutique", description: "", language: "fr", socialCoverUrl: "", faviconUrl: "" };
+    const socialCoverUrl = safePublishedMetaUrl(metadata.socialCoverUrl);
+    const faviconUrl = safePublishedMetaUrl(metadata.faviconUrl);
+    const metaTags = `${metadata.description ? `<meta name="description" content="${escapePublishedMeta(metadata.description)}">` : ""}${socialCoverUrl ? `<meta property="og:image" content="${escapePublishedMeta(socialCoverUrl)}"><meta name="twitter:card" content="summary_large_image">` : ""}${faviconUrl ? `<link rel="icon" href="${escapePublishedMeta(faviconUrl)}">` : ""}`;
+    const publishedDocument = `<!doctype html><html lang="${escapePublishedMeta(metadata.language)}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapePublishedMeta(metadata.title)}</title>${metaTags}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}img,video{max-width:100%;height:auto}a{color:inherit}</style><style>${publishedBuilderQuery.data.css}</style></head><body>${publishedBuilderQuery.data.html}</body></html>`;
     return <iframe title="Vitrine publiée" srcDoc={publishedDocument} sandbox="allow-same-origin" className="min-h-screen w-full border-0" />;
   }
 

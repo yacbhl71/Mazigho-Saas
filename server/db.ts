@@ -5158,6 +5158,26 @@ function sanitizePublishedBuilderCss(value: string) {
   return value.replace(/@import[^;]+;?/gi, "").replace(/expression\s*\([^)]*\)/gi, "").replace(/url\s*\(\s*["']?javascript:[^)]*\)/gi, "");
 }
 
+function publishedBuilderUrl(value: unknown) {
+  const url = String(value ?? "").trim();
+  return /^https:\/\//i.test(url) || /^\/(?!\/)/.test(url) ? url.slice(0, 2_000) : "";
+}
+
+function getPublishedBuilderMetadata(project: Record<string, unknown>) {
+  const pages = Array.isArray(project.pages) ? project.pages : [];
+  const activePageId = typeof project.activePageId === "string" ? project.activePageId : "home";
+  const page = pages.find(item => Boolean(item && typeof item === "object" && (item as Record<string, unknown>).id === activePageId)) || pages[0];
+  const pageRecord = page && typeof page === "object" ? page as Record<string, unknown> : {};
+  const settings = pageRecord.settings && typeof pageRecord.settings === "object" ? pageRecord.settings as Record<string, unknown> : {};
+  return {
+    title: String(pageRecord.title || "Votre boutique").trim().slice(0, 120),
+    description: String(settings.description || project.pageDescription || "").trim().slice(0, 320),
+    language: /^[a-z]{2}(?:-[A-Z]{2})?$/.test(String(settings.language || "fr")) ? String(settings.language) : "fr",
+    socialCoverUrl: publishedBuilderUrl(settings.socialCoverUrl),
+    faviconUrl: publishedBuilderUrl(settings.faviconUrl),
+  };
+}
+
 function escapePublishedCatalogueHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] || character));
 }
@@ -5242,7 +5262,7 @@ export async function getPublishedStudioVisualBuilderProject(storeId: number) {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
-    return { storeId, html: await resolvePublishedCatalogueMarkers(parsed.html, storeId), css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null };
+    return { storeId, html: await resolvePublishedCatalogueMarkers(parsed.html, storeId), css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null, metadata: getPublishedBuilderMetadata(parsed.project && typeof parsed.project === "object" ? parsed.project as Record<string, unknown> : {}) };
   } catch {
     return null;
   }
