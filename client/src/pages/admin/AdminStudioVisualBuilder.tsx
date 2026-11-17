@@ -467,9 +467,14 @@ export default function AdminStudioVisualBuilder() {
     const currentPages = capturePages();
     const currentPage = currentPages.find(page => page.id === activePageId) ?? currentPages[0];
     if (!currentPage) return;
+    const activeHtml = editor.getHtml();
+    const activeCss = `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`;
     renderingPagesRef.current = true;
     const publishedPages = currentPages.map(page => {
       const project = page.id === currentPage.id ? currentPage.project : page.project;
+      if (page.id === currentPage.id) {
+        return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: activeHtml, css: activeCss, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
+      }
       editor.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
       return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: editor.getHtml(), css: `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
     });
