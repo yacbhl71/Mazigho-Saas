@@ -344,6 +344,13 @@ export default function AdminStudioVisualBuilder() {
 
   const getProjectPayload = () => ({ ...(editorRef.current?.getProjectData() as Record<string, unknown>), pages: capturePages(), activePageId, pageDescription, reusableComponents, reviewComments });
 
+  const getRenderableEditorHtml = (editor: Editor) => {
+    const html = editor.getHtml();
+    if (html.trim()) return html;
+    const frame = (editor as Editor & { Canvas?: { getFrameEl?: () => HTMLIFrameElement | undefined } }).Canvas?.getFrameEl?.();
+    const wrapper = frame?.contentDocument?.body?.querySelector('[data-gjs-type="wrapper"]');
+    return wrapper?.innerHTML?.trim() || html;
+  };
   const addReviewComment = () => {
     const text = newReviewComment.trim();
     if (!text) return;
@@ -467,7 +474,7 @@ export default function AdminStudioVisualBuilder() {
     const currentPages = capturePages();
     const currentPage = currentPages.find(page => page.id === activePageId) ?? currentPages[0];
     if (!currentPage) return;
-    const activeHtml = editor.getHtml();
+    const activeHtml = getRenderableEditorHtml(editor);
     const activeCss = `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`;
     renderingPagesRef.current = true;
     const publishedPages = currentPages.map(page => {
@@ -476,7 +483,7 @@ export default function AdminStudioVisualBuilder() {
         return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: activeHtml, css: activeCss, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
       }
       editor.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
-      return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: editor.getHtml(), css: `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
+      return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: getRenderableEditorHtml(editor), css: `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
     });
     editor.loadProjectData(currentPage.project as Parameters<Editor["loadProjectData"]>[0]);
     renderingPagesRef.current = false;
