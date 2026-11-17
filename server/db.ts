@@ -5149,7 +5149,7 @@ async function resolvePublishedCatalogueMarkers(html: string, storeId: number) {
     return `<a href="/produit/${escapePublishedCatalogueHtml(product.slug)}" style="display:block;color:inherit;text-decoration:none"><div style="height:190px;background:${image ? `url('${escapePublishedCatalogueHtml(image)}') center/cover` : "#e5e1dc"};border-radius:10px"></div><h3 style="margin:12px 0 4px">${escapePublishedCatalogueHtml(product.name)}</h3><p style="margin:0;color:#6b6259">${escapePublishedCatalogueHtml(formatPrice(product.price))}</p><p style="margin:6px 0 0;color:#6b6259">${escapePublishedCatalogueHtml(product.description || "")}</p></a>`;
   }).join("");
   const replaceMarker = (source: string, kind: "categories" | "products", cards: string) => {
-    const pattern = new RegExp(`<section\\b[^>]*data-mazigho-dynamic=["']catalogue["'][^>]*data-mazigho-catalogue-kind=["']${kind}["'][^>]*>[\\s\\S]*?<\\/section>`, "gi");
+    const pattern = new RegExp(`<section\\b(?=[^>]*data-mazigho-dynamic=["']catalogue["'])(?=[^>]*data-mazigho-catalogue-kind=["']${kind}["'])[^>]*>[\\s\\S]*?<\\/section>`, "gi");
     if (!cards) return source.replace(pattern, "");
     const heading = kind === "categories" ? "Nos catégories" : "Nos produits";
     const background = kind === "categories" ? "" : "background:#faf8f5;";
