@@ -2902,6 +2902,8 @@ export async function transferStudioStoreOwnership(input: {
     if (!store) throw new Error("STORE_NOT_FOUND");
     if (store.isPlatformStore) throw new Error("PLATFORM_STORE_PROTECTED");
     if (store.displayName.trim() !== input.confirmationName.trim()) throw new Error("OWNER_TRANSFER_NAME_CONFIRMATION_MISMATCH");
+    const ownershipDisposition = await getStoreSettingValue(store.id, "studio_ownership_disposition");
+    if (ownershipDisposition === "sold_final" || ownershipDisposition === "gifted_final") throw new Error("OWNERSHIP_ALREADY_FINAL");
 
     const [existingUser] = await tx.select().from(users).where(sql`LOWER(${users.email}) = ${email}`).limit(1);
     if (existingUser?.accountStatus === "blocked") throw new Error("OWNER_TRANSFER_TARGET_ACCOUNT_BLOCKED");

@@ -3677,6 +3677,7 @@ export const adminRouter = router({
         if (code === "OWNER_TRANSFER_TARGET_ACCOUNT_BLOCKED") throw new TRPCError({ code: "CONFLICT", message: "Ce compte est bloqué et ne peut pas devenir propriétaire." });
         if (code === "OWNER_TRANSFER_TARGET_ALREADY_OWNER") throw new TRPCError({ code: "CONFLICT", message: "Ce compte est déjà propriétaire actif de cette boutique." });
         if (code === "OWNER_TRANSFER_CONFIRMATION_INCOMPLETE") throw new TRPCError({ code: "BAD_REQUEST", message: "La confirmation explicite du transfert est obligatoire." });
+        if (code === "OWNERSHIP_ALREADY_FINAL") throw new TRPCError({ code: "FORBIDDEN", message: "Cette boutique a été vendue ou offerte définitivement : son propriétaire ne peut plus être modifié depuis Studio." });
         throw error;
       }
     }),
