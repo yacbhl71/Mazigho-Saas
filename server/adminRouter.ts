@@ -1859,13 +1859,13 @@ export const adminRouter = router({
         throw error;
       }
     }),
-    deleteEmptyStore: platformProcedure.input(z.object({
+    deleteStore: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       confirmation: z.string().trim().min(12).max(200),
       acknowledged: z.literal(true),
     })).mutation(async ({ ctx, input }) => {
       try {
-        const result = await db.deleteEmptyStudioStore(input);
+        const result = await db.deleteStudioStore(input);
         logAudit(ctx, { action: "studio.store.delete_empty", entityType: "store", entityId: result.store.id, summary: `Boutique vide supprimée : ${result.store.displayName}`, metadata: { explicitConfirmation: true } });
         return result;
       } catch (error) {
@@ -1873,7 +1873,7 @@ export const adminRouter = router({
         if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
         if (code === "PLATFORM_STORE_PROTECTED") throw new TRPCError({ code: "FORBIDDEN", message: "La boutique principale MAZIGHO ne peut pas être supprimée." });
         if (code === "STORE_DELETE_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Saisissez exactement SUPPRIMER suivi du nom de la boutique." });
-        if (code === "STORE_NOT_EMPTY") throw new TRPCError({ code: "CONFLICT", message: "Suppression refusée : cette boutique contient encore des données. Utilisez la clôture/archivage réversible." });
+        if (code === "OWNERSHIP_ALREADY_FINAL") throw new TRPCError({ code: "FORBIDDEN", message: "Cette boutique est déjà marquée vendue ou offerte définitivement ; le contrôle Studio est verrouillé." });
         throw error;
       }
     }),

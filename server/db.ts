@@ -4232,36 +4232,27 @@ export async function finalizeStudioStoreOwnership(input: {
   return { store: { id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain }, disposition: input.disposition } as const;
 }
 
-export async function deleteEmptyStudioStore(input: { storeId: number; confirmation: string }) {
+export async function deleteStudioStore(input: { storeId: number; confirmation: string }) {
   const database = await getDb();
   if (!database) throw new Error("Database unavailable");
+  const ownershipDisposition = await getStoreSettingValue(input.storeId, "studio_ownership_disposition");
+  if (ownershipDisposition === "sold_final" || ownershipDisposition === "gifted_final") throw new Error("OWNERSHIP_ALREADY_FINAL");
   return database.transaction(async tx => {
     const [store] = await tx.select({ id: stores.id, displayName: stores.displayName, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.id, input.storeId)).limit(1);
     if (!store) throw new Error("STORE_NOT_FOUND");
     if (store.isPlatformStore) throw new Error("PLATFORM_STORE_PROTECTED");
     if (input.confirmation !== `SUPPRIMER ${store.displayName}`) throw new Error("STORE_DELETE_CONFIRMATION_MISMATCH");
-    const [members, settings, categoriesCount, productsCount, ordersCount, cartsCount, cmsCount, bannersCount, promotionsCount, reviewsCount, messagesCount, requestsCount, campaignsCount, stripeTestCount, stripeLiveCount, draftsCount] = await Promise.all([
-      tx.select({ value: count() }).from(storeMemberships).where(eq(storeMemberships.storeId, input.storeId)),
-      tx.select({ value: count() }).from(storeSettings).where(eq(storeSettings.storeId, input.storeId)),
-      tx.select({ value: count() }).from(categories).where(eq(categories.storeId, input.storeId)),
-      tx.select({ value: count() }).from(products).where(eq(products.storeId, input.storeId)),
-      tx.select({ value: count() }).from(orders).where(eq(orders.storeId, input.storeId)),
-      tx.select({ value: count() }).from(carts).where(eq(carts.storeId, input.storeId)),
-      tx.select({ value: count() }).from(storeCmsPages).where(eq(storeCmsPages.storeId, input.storeId)),
-      tx.select({ value: count() }).from(banners).where(eq(banners.storeId, input.storeId)),
-      tx.select({ value: count() }).from(promotions).where(eq(promotions.storeId, input.storeId)),
-      tx.select({ value: count() }).from(reviews).where(eq(reviews.storeId, input.storeId)),
-      tx.select({ value: count() }).from(contactMessages).where(eq(contactMessages.storeId, input.storeId)),
-      tx.select({ value: count() }).from(customCreationRequests).where(eq(customCreationRequests.storeId, input.storeId)),
-      tx.select({ value: count() }).from(campaigns).where(eq(campaigns.storeId, input.storeId)),
-      tx.select({ value: count() }).from(stripeConnectedAccounts).where(eq(stripeConnectedAccounts.storeId, input.storeId)),
-      tx.select({ value: count() }).from(stripeLiveConnectedAccounts).where(eq(stripeLiveConnectedAccounts.storeId, input.storeId)),
-      tx.select({ value: count() }).from(storeProvisioningDrafts).where(eq(storeProvisioningDrafts.provisionedStoreId, input.storeId)),
-    ]);
-    const dependencies = { memberships: Number(members[0]?.value ?? 0), settings: Number(settings[0]?.value ?? 0), categories: Number(categoriesCount[0]?.value ?? 0), products: Number(productsCount[0]?.value ?? 0), orders: Number(ordersCount[0]?.value ?? 0), carts: Number(cartsCount[0]?.value ?? 0), cmsPages: Number(cmsCount[0]?.value ?? 0), banners: Number(bannersCount[0]?.value ?? 0), promotions: Number(promotionsCount[0]?.value ?? 0), reviews: Number(reviewsCount[0]?.value ?? 0), contactMessages: Number(messagesCount[0]?.value ?? 0), customRequests: Number(requestsCount[0]?.value ?? 0), campaigns: Number(campaignsCount[0]?.value ?? 0), stripeTestAccounts: Number(stripeTestCount[0]?.value ?? 0), stripeLiveAccounts: Number(stripeLiveCount[0]?.value ?? 0), provisioningDrafts: Number(draftsCount[0]?.value ?? 0) };
-    if (Object.values(dependencies).some(value => value > 0)) throw Object.assign(new Error("STORE_NOT_EMPTY"), { dependencies });
-    await tx.delete(stores).where(eq(stores.id, input.storeId));
-    return { deleted: true as const, store, dependencies };
+    const [tableRows] = await tx.execute(sql`SELECT TABLE_NAME AS tableName FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'storeId' AND TABLE_NAME <> 'stores'`);
+    const rows = tableRows as unknown as Array<{ tableName?: string }>;
+    const tables = rows.map(row => row.tableName).filter(name => typeof name === "string" && /^[A-Za-z0-9_]+$/.test(name)) as string[];
+    await tx.execute(sql.raw("SET FOREIGN_KEY_CHECKS=0"));
+    try {
+      for (const table of tables) await tx.execute(sql.raw(`DELETE FROM \`${table}\` WHERE \`storeId\` = ${input.storeId}`));
+      await tx.delete(stores).where(eq(stores.id, input.storeId));
+    } finally {
+      await tx.execute(sql.raw("SET FOREIGN_KEY_CHECKS=1"));
+    }
+    return { deleted: true as const, store, deletedTables: tables };
   });
 }
 
