@@ -2696,6 +2696,25 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    publishVisualBuilderProject: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      mode: z.enum(["blank", "theme", "clone"]),
+      project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
+      html: z.string().max(3_000_000),
+      css: z.string().max(1_000_000),
+      versionId: z.string().uuid().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      try {
+        const published = await db.publishStudioVisualBuilderProject(input);
+        logAudit(ctx, { action: "studio.visual_builder.project.publish", entityType: "store", entityId: store.id, summary: `Version visuelle publiée : ${store.displayName}`, metadata: { publicationExecuted: true, versionId: input.versionId ?? null } });
+        return published;
+      } catch (error) {
+        if (error instanceof Error && error.message === "VISUAL_BUILDER_PUBLICATION_INVALID") throw new TRPCError({ code: "BAD_REQUEST", message: "Le contenu visuel ne peut pas être publié dans cet état." });
+        throw error;
+      }
+    }),
     getVisualBuilderCloneSource: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       const [content, catalogue] = await Promise.all([
         db.getStudioOwnerPublicStorefrontContent(input.storeId),

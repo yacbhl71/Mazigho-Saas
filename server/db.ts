@@ -5124,7 +5124,16 @@ export async function setStoreSettingValue(storeId: number | undefined, key: str
 }
 
 const STUDIO_VISUAL_BUILDER_PROJECT_KEY = "studio_visual_builder_project_v1";
+const STUDIO_VISUAL_BUILDER_PUBLISHED_KEY = "studio_visual_builder_published_v1";
 type StudioVisualBuilderVersion = { id: string; mode: string; project: Record<string, unknown>; createdAt: string };
+
+function sanitizePublishedBuilderHtml(value: string) {
+  return value.replace(/<\/?(script|iframe|object|embed|form)(?:\s[^>]*)?>/gi, "").replace(/\s+on[a-z-]+\s*=\s*(["']).*?\1/gi, "").replace(/javascript\s*:/gi, "");
+}
+
+function sanitizePublishedBuilderCss(value: string) {
+  return value.replace(/@import[^;]+;?/gi, "").replace(/expression\s*\([^)]*\)/gi, "").replace(/url\s*\(\s*["']?javascript:[^)]*\)/gi, "");
+}
 
 export async function getStudioVisualBuilderProject(storeId: number) {
   const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY);
@@ -5168,6 +5177,27 @@ export async function restoreStudioVisualBuilderVersion(storeId: number, version
   if (!version) throw new Error("VISUAL_BUILDER_VERSION_NOT_FOUND");
   await setStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY, JSON.stringify({ mode: version.mode, project: version.project, updatedAt: new Date().toISOString(), versions: current?.versions ?? [] }), "Projet GrapesJS restauré depuis une version privée ; aucune publication automatique.");
   return { success: true, storeId, mode: version.mode, project: version.project, versionId } as const;
+}
+
+export async function publishStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown>; html: string; css: string; versionId?: string }) {
+  const html = sanitizePublishedBuilderHtml(input.html).trim();
+  const css = sanitizePublishedBuilderCss(input.css).trim();
+  if (!html || html.length > 3_000_000 || css.length > 1_000_000) throw new Error("VISUAL_BUILDER_PUBLICATION_INVALID");
+  const publishedAt = new Date().toISOString();
+  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY, JSON.stringify({ mode: input.mode, project: input.project, html, css, versionId: input.versionId ?? null, publishedAt }), "Version du constructeur visuel explicitement publiée après validation Studio.");
+  return { success: true, storeId: input.storeId, publishedAt } as const;
+}
+
+export async function getPublishedStudioVisualBuilderProject(storeId: number) {
+  const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
+    return { storeId, html: parsed.html, css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null };
+  } catch {
+    return null;
+  }
 }
 
 const STUDIO_CLIENT_VALIDATION_KEY = "studio_client_validation";

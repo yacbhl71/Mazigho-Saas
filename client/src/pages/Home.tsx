@@ -91,6 +91,7 @@ export default function Home() {
   const storeAvailability = trpc.storefront.getAvailability.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const marketSettings = trpc.storefront.getMarketSettings.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const activeBannersQuery = trpc.content.getActiveBanners.useQuery(locale, { retry: false, refetchOnWindowFocus: false });
+  const publishedBuilderQuery = trpc.design.getPublishedBuilder.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const { countryCode } = useDeliveryCountry();
   const countryLabel = getLocalizedCountryName(countryCode, locale);
   const highlightImageUrl = getOptimizedHomeImageUrl(profile.highlightImageUrl);
@@ -150,13 +151,18 @@ export default function Home() {
   // Never reveal the platform template while a client storefront is still
   // resolving its own identity and carousel. A neutral, size-stable shell is
   // preferable to showing MAZIGHO content for a fraction of a second.
-  const initialStorefrontLoading = designProfileLoading || storeAvailability.isLoading || activeBannersQuery.isLoading;
+  const initialStorefrontLoading = designProfileLoading || storeAvailability.isLoading || activeBannersQuery.isLoading || publishedBuilderQuery.isLoading;
   if (initialStorefrontLoading) {
     return <div className="min-h-screen bg-slate-50" aria-busy="true" aria-label="Chargement de la boutique">
       <div className="h-[104px] border-b border-slate-100 bg-white" />
       <div className="h-[520px] animate-pulse bg-slate-200/80 md:h-[560px] lg:h-[640px]" />
       <div className="container grid gap-5 py-8 md:grid-cols-3 md:py-12"><div className="h-36 rounded-3xl bg-slate-100" /><div className="h-36 rounded-3xl bg-slate-100" /><div className="h-36 rounded-3xl bg-slate-100" /></div>
     </div>;
+  }
+
+  if (publishedBuilderQuery.data) {
+    const publishedDocument = `<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}img,video{max-width:100%;height:auto}a{color:inherit}</style><style>${publishedBuilderQuery.data.css}</style></head><body>${publishedBuilderQuery.data.html}</body></html>`;
+    return <iframe title="Vitrine publiée" srcDoc={publishedDocument} sandbox="allow-same-origin" className="min-h-screen w-full border-0" />;
   }
 
   // Le statut « limited » bloque le commerce, pas le design. Une boutique

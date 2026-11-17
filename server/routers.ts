@@ -308,6 +308,10 @@ export const appRouter = router({
       const { getLocalizedDesignProfile } = await import("./db");
       return await getLocalizedDesignProfile(locale, ctx.store?.id);
     }),
+    getPublishedBuilder: storefrontProcedure.query(async ({ ctx }) => {
+      const { getPublishedStudioVisualBuilderProject } = await import("./db");
+      return await getPublishedStudioVisualBuilderProject(ctx.store?.id ?? 0);
+    }),
   }),
 
   // Public legal information shown on the storefront
