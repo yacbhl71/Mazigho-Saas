@@ -67,7 +67,7 @@ function themedStoreComponents(source: any) {
   return `<section style="padding:72px 32px;background:#172033;color:#fff;text-align:center"><p style="letter-spacing:.18em;text-transform:uppercase;color:#f5b98f">${brand}</p><h1 style="font-size:42px;margin:14px 0">${title}</h1><p style="max-width:560px;margin:0 auto 22px;opacity:.8">${text}</p><a href="/boutique" style="display:inline-block;padding:12px 20px;background:#fff;color:#172033;border-radius:8px;text-decoration:none">Découvrir la boutique</a></section>${editorBlocks[1].content}${editorBlocks[2].content}`;
 }
 
-const responsiveEditorCss = `*{box-sizing:border-box}img{max-width:100%;height:auto}a,button,input,textarea{max-width:100%}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section[style*="grid-template-columns"],section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
+const responsiveEditorCss = `*{box-sizing:border-box}img,video{max-width:100%;height:auto}a,button,input,textarea,select{max-width:100%;overflow-wrap:anywhere}table{display:block;max-width:100%;overflow-x:auto}pre{max-width:100%;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:767px){section{padding-left:18px !important;padding-right:18px !important}section[style*="grid-template-columns"],section > div[style*="grid-template-columns"]{grid-template-columns:1fr !important}section > div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}section input,section button,section a{width:100% !important;margin-left:0 !important;margin-right:0 !important}}`;
 
 function normalizeBuilderPages(value: unknown): BuilderPage[] {
   if (!Array.isArray(value) || value.length === 0) return [{ ...defaultBuilderPage, project: {} }];
@@ -386,6 +386,19 @@ export default function AdminStudioVisualBuilder() {
     image.src = url;
   });
 
+  const auditResponsiveLayout = () => {
+    const editor = editorRef.current as any;
+    const frame = editor?.Canvas?.getFrameEl?.() as HTMLIFrameElement | undefined;
+    const documentBody = frame?.contentDocument?.body;
+    const issues: string[] = [];
+    if (documentBody && documentBody.scrollWidth > Math.max(documentBody.clientWidth, 320) + 8) issues.push("La composition déborde horizontalement dans le canvas.");
+    const html = editor?.getHtml?.() || "";
+    if (/<(?:section|div|table|img|video)\b[^>]*style=["'][^"']*(?:min-width\s*:\s*\d{3,}px|width\s*:\s*\d{4,}px)/i.test(html)) issues.push("Un élément possède une largeur fixe susceptible de dépasser l’écran mobile.");
+    if (/<table\b(?![^>]*style=["'][^"']*max-width)/i.test(html)) issues.push("Un tableau sans conteneur responsive peut provoquer un défilement horizontal sur mobile.");
+    if (/white-space\s*:\s*nowrap/i.test(html)) issues.push("Un texte en nowrap peut dépasser la largeur d’un écran mobile.");
+    return issues;
+  };
+
   const runPreflight = async () => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -401,6 +414,7 @@ export default function AdminStudioVisualBuilder() {
     const imageResults = await Promise.all(uniqueImageUrls.map(async url => ({ url, valid: await checkImageUrl(url) })));
     const brokenImages = imageResults.filter(result => !result.valid);
     if (brokenImages.length > 0) issues.push(`${brokenImages.length} image(s) ne se chargent pas. Remplacez-les avant publication.`);
+    issues.push(...auditResponsiveLayout());
     setPreflightIssues(issues);
     setPreflightChecked(true);
     setPreflightRunning(false);
