@@ -5135,6 +5135,31 @@ function sanitizePublishedBuilderCss(value: string) {
   return value.replace(/@import[^;]+;?/gi, "").replace(/expression\s*\([^)]*\)/gi, "").replace(/url\s*\(\s*["']?javascript:[^)]*\)/gi, "");
 }
 
+function escapePublishedCatalogueHtml(value: unknown) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] || character));
+}
+
+async function resolvePublishedCatalogueMarkers(html: string, storeId: number) {
+  const catalogue = await getStudioOwnerExistingCatalogue(storeId);
+  const currency = await getStoreCurrencyConfig(storeId);
+  const formatPrice = (value: unknown) => new Intl.NumberFormat("fr-CH", { style: "currency", currency: currency.code }).format(Number(value || 0) / 100);
+  const categoryMarkup = catalogue.categories.slice(0, 12).map(category => `<a href="/categorie/${escapePublishedCatalogueHtml(category.slug)}" style="display:block;padding:18px;background:#f3eee8;border-radius:14px;color:inherit;text-decoration:none"><div style="height:120px;background:${category.imageUrl ? `url('${escapePublishedCatalogueHtml(category.imageUrl)}') center/cover` : "#ddd4cb"};border-radius:10px"></div><h3 style="margin:12px 0 0">${escapePublishedCatalogueHtml(category.name)}</h3><p style="margin:6px 0 0;color:#6b6259">${escapePublishedCatalogueHtml(category.description || "Découvrir cette collection")}</p></a>`).join("");
+  const productMarkup = catalogue.products.filter(product => product.status === "active").slice(0, 12).map(product => {
+    const image = product.images[0];
+    return `<a href="/produit/${escapePublishedCatalogueHtml(product.slug)}" style="display:block;color:inherit;text-decoration:none"><div style="height:190px;background:${image ? `url('${escapePublishedCatalogueHtml(image)}') center/cover` : "#e5e1dc"};border-radius:10px"></div><h3 style="margin:12px 0 4px">${escapePublishedCatalogueHtml(product.name)}</h3><p style="margin:0;color:#6b6259">${escapePublishedCatalogueHtml(formatPrice(product.price))}</p><p style="margin:6px 0 0;color:#6b6259">${escapePublishedCatalogueHtml(product.description || "")}</p></a>`;
+  }).join("");
+  const replaceMarker = (source: string, kind: "categories" | "products", cards: string) => {
+    const pattern = new RegExp(`<section\\b[^>]*data-mazigho-dynamic=["']catalogue["'][^>]*data-mazigho-catalogue-kind=["']${kind}["'][^>]*>[\\s\\S]*?<\\/section>`, "gi");
+    if (!cards) return source.replace(pattern, "");
+    const heading = kind === "categories" ? "Nos catégories" : "Nos produits";
+    const background = kind === "categories" ? "" : "background:#faf8f5;";
+    return source.replace(pattern, `<section data-mazigho-dynamic="catalogue" data-mazigho-catalogue-kind="${kind}" style="padding:48px 28px;${background}"><p style="text-transform:uppercase;letter-spacing:.12em;color:#a45f46">Catalogue réel</p><h2 style="font-size:30px;margin:8px 0 22px">${heading}</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px">${cards}</div></section>`);
+  };
+  let resolved = replaceMarker(html, "categories", categoryMarkup);
+  resolved = replaceMarker(resolved, "products", productMarkup);
+  return resolved.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 export async function getStudioVisualBuilderProject(storeId: number) {
   const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY);
   if (!raw) return null;
@@ -5194,7 +5219,7 @@ export async function getPublishedStudioVisualBuilderProject(storeId: number) {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
-    return { storeId, html: parsed.html, css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null };
+    return { storeId, html: await resolvePublishedCatalogueMarkers(parsed.html, storeId), css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null };
   } catch {
     return null;
   }
