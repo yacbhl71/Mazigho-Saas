@@ -1572,6 +1572,7 @@ export const adminRouter = router({
         },
       };
     }),
+    getOwnershipAudit: platformProcedure.query(async () => db.getStudioStoreOwnershipAudit()),
     getInventory: platformProcedure.input(z.object({
       query: z.string().trim().max(80).optional(),
       status: z.enum(["setup", "active", "limited", "suspended", "closed"]).optional(),

@@ -3959,6 +3959,45 @@ export async function getStudioStoreInventory(input: StudioInventoryQuery = {}) 
   };
 }
 
+export async function getStudioStoreOwnershipAudit() {
+  await ensureMultiStoreSchema();
+  const database = await getDb();
+  if (!database) return { generatedAt: new Date(), stores: [], duplicateGroups: [], summary: { total: 0, assigned: 0, unassigned: 0, recipeCandidates: 0, duplicateGroups: 0 } };
+  const rows = await database.select({
+    id: stores.id,
+    displayName: stores.displayName,
+    primaryDomain: stores.primaryDomain,
+    status: stores.status,
+    isPlatformStore: stores.isPlatformStore,
+    createdAt: stores.createdAt,
+    membershipStatus: storeMemberships.status,
+    membershipRole: storeMemberships.role,
+    ownerName: users.name,
+    ownerEmail: users.email,
+  }).from(stores)
+    .leftJoin(storeMemberships, and(eq(storeMemberships.storeId, stores.id), eq(storeMemberships.role, "owner")))
+    .leftJoin(users, eq(users.id, storeMemberships.userId))
+    .orderBy(desc(stores.isPlatformStore), asc(stores.displayName), asc(stores.id));
+  const byStore = new Map<number, any>();
+  for (const row of rows) {
+    const current = byStore.get(row.id) ?? { id: row.id, displayName: row.displayName, primaryDomain: row.primaryDomain, status: row.status, isPlatformStore: Boolean(row.isPlatformStore), createdAt: row.createdAt, owners: [] };
+    if (row.membershipStatus === "active" && row.ownerEmail && !current.owners.some((owner: any) => owner.email === row.ownerEmail)) current.owners.push({ name: row.ownerName || null, email: row.ownerEmail });
+    byStore.set(row.id, current);
+  }
+  const storesAudit = Array.from(byStore.values()).map((store: any) => {
+    const source = `${store.displayName} ${store.primaryDomain}`.toLowerCase();
+    const recipeTerms = ["recette", "test", "validation", "final", "copie", "export", "préparation", "preparation", "clonage", "clone", "import", "démo", "demo", "thème", "theme", "livraison", "stable", "corrigé", "corrige", "séquentiel", "sequentiel"];
+    const recipeReasons = recipeTerms.filter(term => source.includes(term));
+    const family = source.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/https?:\/\//g, "").replace(/\.(mazigho\.ch|mazigho\.com|amazigh\.ch)/g, "").replace(/[^a-z0-9]+/g, " ").replace(new RegExp(`\\b(${recipeTerms.map(term => term.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "")).join("|")})\\b`, "g"), " ").replace(/\\b(v?2|[a-f0-9]{6,})\\b/g, " ").replace(/\\s+/g, " ").trim();
+    const likelyRecipe = recipeReasons.length > 0;
+    return { ...store, family: family || store.primaryDomain, likelyRecipe, recipeReasons, recommendation: store.isPlatformStore ? "conserver" : likelyRecipe && store.status === "setup" ? "candidate_archivage" : likelyRecipe ? "examiner" : "conserver" };
+  });
+  const groups = new Map<string, any[]>();
+  for (const store of storesAudit) { if (!store.isPlatformStore) groups.set(store.family, [...(groups.get(store.family) ?? []), store]); }
+  const duplicateGroups = Array.from(groups.entries()).filter(([, members]) => members.length > 1).map(([family, members]) => ({ family, stores: members.map((store: any) => ({ id: store.id, displayName: store.displayName, primaryDomain: store.primaryDomain, status: store.status, owners: store.owners, likelyRecipe: store.likelyRecipe, recommendation: store.recommendation })) }));
+  return { generatedAt: new Date(), stores: storesAudit, duplicateGroups, summary: { total: storesAudit.length, assigned: storesAudit.filter(store => store.owners.length > 0).length, unassigned: storesAudit.filter(store => store.owners.length === 0).length, recipeCandidates: storesAudit.filter(store => store.recommendation === "candidate_archivage").length, duplicateGroups: duplicateGroups.length } };
+}
+
 export async function purgeSaasExternalChStores() {
   const database = await getDb();
   if (!database) throw new Error("DATABASE_UNAVAILABLE");

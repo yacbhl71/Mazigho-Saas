@@ -16,6 +16,7 @@ import { JSON_BODY_LIMIT, payloadTooLargeHandler, URL_ENCODED_BODY_LIMIT } from 
 import { configuredOwnerAccessRepair } from "../ownerAccessRepair";
 import { registerCloneImportRoute } from "../services/import-router";
 import { registerPaymentHostBridgeRoute } from "../paymentHostBridge";
+import { registerInventorySyncRoute } from "../inventorySyncRoute";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -59,6 +60,7 @@ export function configureApi(targetApp: Express = app) {
   targetApp.use(express.urlencoded({ limit: URL_ENCODED_BODY_LIMIT, extended: true }));
   registerCloneImportRoute(targetApp);
   registerPaymentHostBridgeRoute(targetApp);
+  registerInventorySyncRoute(targetApp);
   // OAuth callback under /api/oauth/callback.
   registerOAuthRoutes(targetApp);
   // tRPC API.
