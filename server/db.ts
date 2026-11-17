@@ -5124,6 +5124,7 @@ export async function setStoreSettingValue(storeId: number | undefined, key: str
 }
 
 const STUDIO_VISUAL_BUILDER_PROJECT_KEY = "studio_visual_builder_project_v1";
+type StudioVisualBuilderVersion = { id: string; mode: string; project: Record<string, unknown>; createdAt: string };
 
 export async function getStudioVisualBuilderProject(storeId: number) {
   const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY);
@@ -5135,6 +5136,7 @@ export async function getStudioVisualBuilderProject(storeId: number) {
       mode: typeof parsed.mode === "string" ? parsed.mode : "blank",
       project: parsed.project && typeof parsed.project === "object" ? parsed.project : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+      versions: Array.isArray(parsed.versions) ? parsed.versions.filter((version): version is StudioVisualBuilderVersion => Boolean(version && typeof version === "object" && typeof (version as Record<string, unknown>).id === "string" && typeof (version as Record<string, unknown>).mode === "string" && typeof (version as Record<string, unknown>).createdAt === "string" && (version as Record<string, unknown>).project && typeof (version as Record<string, unknown>).project === "object")).slice(0, 10) : [],
     };
   } catch {
     return null;
@@ -5142,13 +5144,30 @@ export async function getStudioVisualBuilderProject(storeId: number) {
 }
 
 export async function saveStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
+  const current = await getStudioVisualBuilderProject(input.storeId);
   await setStoreSettingValue(
     input.storeId,
     STUDIO_VISUAL_BUILDER_PROJECT_KEY,
-    JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString() }),
+    JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString(), versions: current?.versions ?? [] }),
     "Projet GrapesJS privé du constructeur visuel ; sans publication automatique.",
   );
   return { success: true, storeId: input.storeId } as const;
+}
+
+export async function createStudioVisualBuilderVersion(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
+  const current = await getStudioVisualBuilderProject(input.storeId);
+  const version: StudioVisualBuilderVersion = { id: randomUUID(), mode: input.mode, project: input.project, createdAt: new Date().toISOString() };
+  const versions = [version, ...(current?.versions ?? [])].slice(0, 10);
+  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY, JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString(), versions }), "Projet GrapesJS privé avec historique de versions ; aucune publication automatique.");
+  return { success: true, storeId: input.storeId, version } as const;
+}
+
+export async function restoreStudioVisualBuilderVersion(storeId: number, versionId: string) {
+  const current = await getStudioVisualBuilderProject(storeId);
+  const version = current?.versions.find(item => item.id === versionId);
+  if (!version) throw new Error("VISUAL_BUILDER_VERSION_NOT_FOUND");
+  await setStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY, JSON.stringify({ mode: version.mode, project: version.project, updatedAt: new Date().toISOString(), versions: current?.versions ?? [] }), "Projet GrapesJS restauré depuis une version privée ; aucune publication automatique.");
+  return { success: true, storeId, mode: version.mode, project: version.project, versionId } as const;
 }
 
 const STUDIO_CLIENT_VALIDATION_KEY = "studio_client_validation";

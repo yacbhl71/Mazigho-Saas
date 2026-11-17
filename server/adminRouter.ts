@@ -2673,6 +2673,29 @@ export const adminRouter = router({
       });
       return saved;
     }),
+    createVisualBuilderVersion: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      mode: z.enum(["blank", "theme", "clone"]),
+      project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      const saved = await db.createStudioVisualBuilderVersion(input);
+      logAudit(ctx, { action: "studio.visual_builder.version.create", entityType: "store", entityId: store.id, summary: `Version privée créée : ${store.displayName}`, metadata: { publicationExecuted: false, versionId: saved.version.id } });
+      return saved;
+    }),
+    restoreVisualBuilderVersion: platformProcedure.input(z.object({ storeId: z.number().int().positive(), versionId: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      try {
+        const restored = await db.restoreStudioVisualBuilderVersion(input.storeId, input.versionId);
+        logAudit(ctx, { action: "studio.visual_builder.version.restore", entityType: "store", entityId: store.id, summary: `Version privée restaurée : ${store.displayName}`, metadata: { publicationExecuted: false, versionId: input.versionId } });
+        return restored;
+      } catch (error) {
+        if (error instanceof Error && error.message === "VISUAL_BUILDER_VERSION_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Version visuelle introuvable." });
+        throw error;
+      }
+    }),
     getVisualBuilderCloneSource: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       const [content, catalogue] = await Promise.all([
         db.getStudioOwnerPublicStorefrontContent(input.storeId),
