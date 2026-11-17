@@ -302,7 +302,7 @@ function StudioRailItem({ icon: Icon, title, detail }: { icon: typeof Building2;
   );
 }
 
-export type StudioTab = "pilotage" | "boutiques" | "mise-en-service" | "copilote" | "themes-kits";
+export type StudioTab = "pilotage" | "boutiques" | "proprietaires" | "mise-en-service" | "copilote" | "themes-kits";
 export type MiseEnServiceSubTab = "all" | "drafts" | "readiness" | "access" | "activation";
 
 export default function AdminStudio() {
@@ -311,6 +311,7 @@ export default function AdminStudio() {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.toLowerCase();
       if (hash.includes("boutique")) return "boutiques";
+      if (hash.includes("proprietaire") || hash.includes("ownership") || hash.includes("doublon")) return "proprietaires";
       if (hash.includes("provision") || hash.includes("service") || hash.includes("brouillon")) return "mise-en-service";
       if (hash.includes("copilot") || hash.includes("ai")) return "copilote";
       if (hash.includes("theme") || hash.includes("kit") || hash.includes("saas")) return "themes-kits";
@@ -819,6 +820,17 @@ export default function AdminStudio() {
       barColor: "bg-blue-600",
     },
     {
+      id: "proprietaires" as const,
+      label: "Propriétaires & doublons",
+      desc: "E-mails actifs & revue des copies",
+      icon: UsersRound,
+      badge: ownershipAuditQuery.data ? `${ownershipAuditQuery.data.summary.assigned} attribuées` : "Audit",
+      badgeTone: "bg-violet-100 text-violet-900 border-violet-300",
+      activeBg: "bg-violet-50/80 border-violet-500 ring-violet-200",
+      iconActiveBg: "bg-violet-600 text-white",
+      barColor: "bg-violet-600",
+    },
+    {
       id: "mise-en-service" as const,
       label: "Mise en service",
       desc: "Brouillons, prévol & transferts",
@@ -890,7 +902,7 @@ export default function AdminStudio() {
               <span className="font-semibold text-emerald-700">{inventory?.summary.active ?? 0} active(s)</span>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {studioTabs.map(tab => {
               const isActive = activeTab === tab.id;
               const Icon = tab.icon;
@@ -1011,7 +1023,7 @@ export default function AdminStudio() {
           </div>
         )}
 
-        {activeTab === "boutiques" && (
+        {(activeTab === "boutiques" || activeTab === "proprietaires") && (
           <div className="space-y-6 animate-in fade-in-50 duration-200">
             <section id="studio-boutiques" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6" data-testid="studio-inventory">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
