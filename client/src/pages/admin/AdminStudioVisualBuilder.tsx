@@ -348,8 +348,9 @@ export default function AdminStudioVisualBuilder() {
     const html = editor.getHtml();
     if (html.trim() && !/^<body>\s*<\/body>$/i.test(html.trim())) return html;
     const frame = (editor as Editor & { Canvas?: { getFrameEl?: () => HTMLIFrameElement | undefined } }).Canvas?.getFrameEl?.();
-    const wrapper = frame?.contentDocument?.body?.querySelector('[data-gjs-type="wrapper"]');
-    return wrapper?.innerHTML?.trim() || html;
+    const body = frame?.contentDocument?.body;
+    const wrapper = body?.querySelector('[data-gjs-type="wrapper"]');
+    return wrapper?.innerHTML?.trim() || body?.innerHTML?.trim() || html;
   };
   const addReviewComment = () => {
     const text = newReviewComment.trim();
