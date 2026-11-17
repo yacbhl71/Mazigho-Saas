@@ -325,7 +325,12 @@ async function ensureMultiStoreSchema() {
 
     await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `stores` (`id` int AUTO_INCREMENT PRIMARY KEY, `slug` varchar(80) NOT NULL, `displayName` varchar(160) NOT NULL, `primaryDomain` varchar(255) NOT NULL, `status` enum('setup','active','limited','suspended','closed') NOT NULL DEFAULT 'setup', `isPlatformStore` tinyint NOT NULL DEFAULT 0, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY `stores_slug_unique` (`slug`), UNIQUE KEY `stores_domain_unique` (`primaryDomain`), INDEX `stores_status_idx` (`status`))"));
     await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `storeMemberships` (`id` int AUTO_INCREMENT PRIMARY KEY, `storeId` int NOT NULL, `userId` int NOT NULL, `role` enum('owner','manager','catalog_editor','support_agent','order_operator','accountant','viewer') NOT NULL DEFAULT 'viewer', `status` enum('active','blocked') NOT NULL DEFAULT 'active', `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY `store_memberships_store_user_unique` (`storeId`,`userId`), INDEX `store_memberships_user_idx` (`userId`), INDEX `store_memberships_store_idx` (`storeId`))"));
-    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `storeSettings` (`id` int AUTO_INCREMENT PRIMARY KEY, `storeId` int NOT NULL, `key` varchar(100) NOT NULL, `value` text NOT NULL, `description` text, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY `store_settings_store_key_unique` (`storeId`,`key`), INDEX `store_settings_store_idx` (`storeId`))"));
+    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS `storeSettings` (`id` int AUTO_INCREMENT PRIMARY KEY, `storeId` int NOT NULL, `key` varchar(100) NOT NULL, `value` mediumtext NOT NULL, `description` text, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY `store_settings_store_key_unique` (`storeId`,`key`), INDEX `store_settings_store_idx` (`storeId`))"));
+    try {
+      await db.execute(sql.raw("ALTER TABLE `storeSettings` MODIFY COLUMN `value` mediumtext NOT NULL"));
+    } catch {
+      // Existing installations may not grant ALTER; the normal CRUD path remains compatible.
+    }
 
     // The generic primary store preserves the existing single-store installation without embedding personal data in the codebase.
     await db.execute(sql.raw("INSERT INTO `stores` (`slug`,`displayName`,`primaryDomain`,`status`,`isPlatformStore`) VALUES ('primary-store','MAZIGHO','mazigho.ch','active',1) ON DUPLICATE KEY UPDATE `slug`=`slug`"));
