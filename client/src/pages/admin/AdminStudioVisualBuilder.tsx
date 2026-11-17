@@ -221,10 +221,34 @@ export default function AdminStudioVisualBuilder() {
 
   useEffect(() => {
     const editor = editorRef.current;
-    const savedProject = projectQuery.data?.project;
+    const savedProject = projectQuery.data?.project as Record<string, unknown> | null | undefined;
     if (!editor || projectQuery.isFetching) return;
-    if (savedProject) editor.loadProjectData(savedProject as Parameters<Editor["loadProjectData"]>[0]);
-    else if (selectedMode !== "clone") editor.setComponents(initialComponents(selectedMode));
+    if (savedProject) {
+      const loadedPages = normalizeBuilderPages(savedProject.pages);
+      const loadedPageId = typeof savedProject.activePageId === "string" && loadedPages.some(page => page.id === savedProject.activePageId)
+        ? savedProject.activePageId
+        : loadedPages[0].id;
+      const loadedPage = loadedPages.find(page => page.id === loadedPageId) ?? loadedPages[0];
+      setPages(loadedPages);
+      setActivePageId(loadedPage.id);
+      setPageTitle(loadedPage.title);
+      setPageSlug(loadedPage.slug);
+      setPageLanguage(loadedPage.settings?.language ?? "fr");
+      setPageDescription(loadedPage.settings?.description ?? (typeof savedProject.pageDescription === "string" ? savedProject.pageDescription : ""));
+      setSocialCoverUrl(loadedPage.settings?.socialCoverUrl ?? "");
+      setFaviconUrl(loadedPage.settings?.faviconUrl ?? "");
+      const project = Object.keys(loadedPage.project).length > 0 ? loadedPage.project : savedProject;
+      editor.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
+    } else if (selectedMode !== "clone") {
+      setPages([{ ...defaultBuilderPage, project: {} }]);
+      setActivePageId("home");
+      setPageTitle("Accueil");
+      setPageSlug("/");
+      setPageDescription("");
+      setSocialCoverUrl("");
+      setFaviconUrl("");
+      editor.setComponents(initialComponents(selectedMode));
+    }
   }, [projectQuery.data, projectQuery.isFetching, selectedMode]);
 
   useEffect(() => {
