@@ -3514,6 +3514,33 @@ export const adminRouter = router({
         throw error;
       }
     }),
+    migrateLegacyStorePrimaryDomain: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      confirmationName: z.string().trim().min(2).max(160),
+      primaryDomain: z.string().trim().min(4).max(253),
+      acknowledged: z.literal(true),
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        const migrated = await db.migrateLegacyStorePrimaryDomain(input);
+        logAudit(ctx, {
+          action: "studio.store.legacy_domain.migrate",
+          entityType: "store",
+          entityId: migrated.store.id,
+          summary: `Domaine legacy migré : ${migrated.store.displayName}`,
+          metadata: { previousDomain: migrated.store.previousDomain, primaryDomain: migrated.store.primaryDomain, publicActivationExecuted: false },
+        });
+        return migrated;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        if (code === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        if (code === "STORE_DOMAIN_INVALID") throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez un domaine public valide." });
+        if (code === "STORE_DOMAIN_UPDATE_CONFIRMATION_MISMATCH") throw new TRPCError({ code: "BAD_REQUEST", message: "Recopiez exactement le nom de la boutique et confirmez la migration du domaine." });
+        if (code === "STORE_DOMAIN_ALREADY_IN_USE") throw new TRPCError({ code: "CONFLICT", message: "Ce domaine est déjà attribué à une autre boutique." });
+        if (code === "PLATFORM_STORE_PROTECTED") throw new TRPCError({ code: "FORBIDDEN", message: "Le domaine principal MAZIGHO est protégé." });
+        if (code === "STORE_NOT_LEGACY_ACTIVE") throw new TRPCError({ code: "FORBIDDEN", message: "La migration legacy est réservée aux boutiques actives ou limitées." });
+        throw error;
+      }
+    }),
     getGiftStoreSetupReadiness: platformProcedure.input(z.object({ storeId: z.number().int().positive() })).query(async ({ input }) => {
       try {
         return await db.getStudioGiftStoreSetupReadiness(input.storeId);

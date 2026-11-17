@@ -2634,6 +2634,29 @@ export async function updateGiftStorePrimaryDomain(input: { storeId: number; con
   });
 }
 
+/** Migrate an operator-owned active legacy domain without changing store status. */
+export async function migrateLegacyStorePrimaryDomain(input: { storeId: number; confirmationName: string; primaryDomain: string; acknowledged: boolean }) {
+  await ensureMultiStoreSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const primaryDomain = normalizePublicStoreDomain(input.primaryDomain);
+
+  return db.transaction(async tx => {
+    const [store] = await tx.select().from(stores).where(eq(stores.id, input.storeId)).limit(1);
+    if (!store) throw new Error("STORE_NOT_FOUND");
+    if (store.isPlatformStore) throw new Error("PLATFORM_STORE_PROTECTED");
+    if (store.status !== "active" && store.status !== "limited") throw new Error("STORE_NOT_LEGACY_ACTIVE");
+    if (!input.acknowledged || input.confirmationName.trim() !== store.displayName.trim()) throw new Error("STORE_DOMAIN_UPDATE_CONFIRMATION_MISMATCH");
+
+    const [domainCollision] = await tx.select({ id: stores.id }).from(stores)
+      .where(and(eq(stores.primaryDomain, primaryDomain), ne(stores.id, store.id))).limit(1);
+    if (domainCollision) throw new Error("STORE_DOMAIN_ALREADY_IN_USE");
+
+    await tx.update(stores).set({ primaryDomain, updatedAt: new Date() }).where(eq(stores.id, store.id));
+    return { store: { id: store.id, displayName: store.displayName, previousDomain: store.primaryDomain, primaryDomain, status: store.status } };
+  });
+}
+
 export async function getStudioGiftStoreSetupReadiness(storeId: number) {
   await ensureMultiStoreSchema();
   await ensureStoreProvisioningDraftSchema();
