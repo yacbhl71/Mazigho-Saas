@@ -157,7 +157,8 @@ export default function AdminStudioVisualBuilder() {
   const [selectedComponent, setSelectedComponent] = useState<any>(null);
   const [selectedTagName, setSelectedTagName] = useState("");
   const [selectedText, setSelectedText] = useState("");
-  const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "" });
+  const [selectedStyles, setSelectedStyles] = useState({ color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "", fontFamily: "", fontWeight: "" });
+  const [videoSettings, setVideoSettings] = useState({ controls: false, autoplay: false, loop: false, muted: false, poster: "" });
   const [selectedLocked, setSelectedLocked] = useState(false);
   const [selectedHref, setSelectedHref] = useState("");
   const [selectedAlt, setSelectedAlt] = useState("");
@@ -708,6 +709,7 @@ export default function AdminStudioVisualBuilder() {
     const attributes = component?.getAttributes?.() || {};
     setSelectedHref(String(attributes.href || ""));
     setSelectedAlt(String(attributes.alt || ""));
+    setVideoSettings({ controls: Boolean(attributes.controls), autoplay: Boolean(attributes.autoplay), loop: Boolean(attributes.loop), muted: Boolean(attributes.muted), poster: String(attributes.poster || "") });
     setSelectedStyles({
       color: String(styles.color || ""),
       backgroundColor: String(styles.backgroundColor || ""),
@@ -717,6 +719,8 @@ export default function AdminStudioVisualBuilder() {
       textAlign: String(styles.textAlign || ""),
       lineHeight: String(styles.lineHeight || ""),
       letterSpacing: String(styles.letterSpacing || ""),
+      fontFamily: String(styles.fontFamily || ""),
+      fontWeight: String(styles.fontWeight || ""),
     });
   };
 
@@ -745,10 +749,16 @@ export default function AdminStudioVisualBuilder() {
     else setSelectedAlt(safeValue);
     if (selectedComponent?.addAttributes) selectedComponent.addAttributes({ [key]: safeValue });
   };
+  const updateVideoSetting = (key: keyof typeof videoSettings, value: boolean | string) => {
+    if (contentEditMode || selectedTagName !== "video") return;
+    setVideoSettings(previous => ({ ...previous, [key]: value }));
+    if (selectedComponent?.addAttributes) selectedComponent.addAttributes({ [key]: value || undefined });
+    setHasUnsavedChanges(true);
+  };
 
   const resetSelectedStyles = () => {
     if (contentEditMode) return;
-    const defaults = { color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "" };
+    const defaults = { color: "", backgroundColor: "", fontSize: "", padding: "", borderRadius: "", textAlign: "", lineHeight: "", letterSpacing: "", fontFamily: "", fontWeight: "" };
     setSelectedStyles(defaults);
     selectedComponent?.setStyle?.(defaults);
   };
@@ -844,7 +854,7 @@ export default function AdminStudioVisualBuilder() {
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Lien</span><input type="text" value={selectedHref} onChange={event => updateSelectedAttribute("href", event.target.value)} placeholder="/boutique ou https://…" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /><span className="text-[11px] text-slate-500">Chemins internes, HTTPS, e-mail et téléphone uniquement.</span></label>
             <label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Texte alternatif de l’image</span><input type="text" value={selectedAlt} onChange={event => updateSelectedAttribute("alt", event.target.value)} placeholder="Décrivez l’image" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label><label className="block space-y-1.5"><span className="text-xs font-semibold text-slate-700">Animation sûre</span><select value={selectedAnimation} onChange={event => updateSelectedAnimation(event.target.value)} disabled={contentEditMode} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs disabled:opacity-50">{animationPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select><span className="text-[11px] text-slate-500">CSS uniquement, désactivée automatiquement si le visiteur préfère réduire les mouvements.</span></label>
             <div className="grid grid-cols-2 gap-2">{([['color','Texte'],['backgroundColor','Fond']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder="#172033" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
-            <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi'],['lineHeight','Interligne'],['letterSpacing','Lettres']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : key === 'lineHeight' ? '1.5' : key === 'letterSpacing' ? '0.04em' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div>
+            <div className="grid grid-cols-2 gap-2">{([['fontSize','Taille'],['borderRadius','Arrondi'],['lineHeight','Interligne'],['letterSpacing','Lettres']] as const).map(([key,label]) => <label key={key} className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">{label}</span><input type="text" value={selectedStyles[key]} onChange={event => updateSelectedStyle(key, event.target.value)} placeholder={key === 'fontSize' ? '32px' : key === 'lineHeight' ? '1.5' : key === 'letterSpacing' ? '0.04em' : '12px'} className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label>)}</div><div className="grid grid-cols-2 gap-2"><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Police</span><select value={selectedStyles.fontFamily} onChange={event => updateSelectedStyle("fontFamily", event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="">Par défaut</option><option value="Inter, sans-serif">Inter</option><option value="Georgia, serif">Éditorial</option><option value="Arial, sans-serif">Classique</option><option value="Trebuchet MS, sans-serif">Chaleureuse</option></select></label><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Graisse</span><select value={selectedStyles.fontWeight} onChange={event => updateSelectedStyle("fontWeight", event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="">Par défaut</option><option value="400">Normale</option><option value="600">Semi-gras</option><option value="700">Gras</option></select></label></div>{selectedTagName === "video" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-bold text-amber-900">Lecture vidéo</p><div className="mt-2 grid grid-cols-2 gap-2 text-xs font-semibold text-amber-950">{([['controls','Contrôles'],['autoplay','Lecture auto'],['loop','Boucle'],['muted','Sans son']] as const).map(([key,label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={videoSettings[key]} onChange={event => updateVideoSetting(key, event.target.checked)} disabled={contentEditMode} />{label}</label>)}</div><label className="mt-3 block space-y-1"><span className="text-xs font-semibold text-amber-950">Image de couverture (URL HTTPS)</span><input value={videoSettings.poster} onChange={event => updateVideoSetting("poster", normalizeBuilderHref(event.target.value))} disabled={contentEditMode} placeholder="https://..." className="w-full rounded-lg border border-amber-200 bg-white px-2 py-2 text-xs" /></label></div>}
             <div className="grid grid-cols-2 gap-2"><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Alignement</span><select value={selectedStyles.textAlign} onChange={event => updateSelectedStyle('textAlign', event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"><option value="">Par défaut</option><option value="left">Gauche</option><option value="center">Centre</option><option value="right">Droite</option><option value="justify">Justifié</option></select></label><label className="space-y-1.5"><span className="text-xs font-semibold text-slate-700">Espacement interne</span><input type="text" value={selectedStyles.padding} onChange={event => updateSelectedStyle('padding', event.target.value)} placeholder="24px" className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-fuchsia-500" /></label></div>
             <button type="button" onClick={resetSelectedStyles} disabled={contentEditMode} className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Réinitialiser les styles</button>
             <p className="text-[11px] leading-5 text-slate-500">Les changements restent dans le brouillon privé jusqu’à l’enregistrement.</p>
