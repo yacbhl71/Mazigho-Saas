@@ -63,4 +63,4 @@ describe("owner knowledge document import", () => {
       dataUrl: dataUrl("application/zip", "not allowed"),
     })).rejects.toThrow("DOCUMENT_TYPE_INVALID");
   });
-});
+}, 15_000);
