@@ -19,7 +19,7 @@ import { MaintenancePage } from "./components/MaintenancePage";
 import PWAOnlineStatus from "./components/PWAOnlineStatus";
 import { isPrivateSetupOwnerPanelPath } from "@shared/setupStoreOwnerAccess";
 import { MazighoSurfaceSwitcher } from "./components/MazighoSurfaceSwitcher";
-import Home from "./pages/Home";
+import Home, { PublishedBuilderFrame } from "./pages/Home";
 const MazighoSaasLanding = lazy(() => import("./pages/MazighoSaasLanding"));
 const BoutiqueKeyInHandLanding = lazy(() => import("./pages/BoutiqueKeyInHandLanding"));
 const ProContactPage = lazy(() => import("./pages/ProLandingInfoPage").then(module => ({ default: module.ProContactPage })));
@@ -409,6 +409,8 @@ function Router() {
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const forcePreview = maintenancePreview?.get("preview_maintenance") === "1";
   const forceStoreMaintenancePreview = maintenancePreview?.get("preview_store_maintenance") === "1";
+  const publishedPathEligible = path !== "/" && !path.startsWith("/admin") && !path.startsWith("/api") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+  const publishedPathQuery = trpc.design.getPublishedBuilder.useQuery({ path }, { enabled: publishedPathEligible, retry: false, refetchOnWindowFocus: false });
 
   // The Studio hostname is an operator-only front door. It keeps the main
   // MAZIGHO storefront at its own address while preserving every existing
@@ -461,6 +463,10 @@ function Router() {
         <MaintenancePage title={storefrontMaintenance.title} message={storefrontMaintenance.message} brandName={storefrontMaintenance.brandName || undefined} />
       </>
     );
+  }
+
+  if (publishedPathEligible && publishedPathQuery.data) {
+    return <PublishedBuilderFrame data={publishedPathQuery.data} />;
   }
 
   return (

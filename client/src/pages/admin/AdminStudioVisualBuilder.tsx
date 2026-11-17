@@ -171,6 +171,7 @@ export default function AdminStudioVisualBuilder() {
   const [newReviewComment, setNewReviewComment] = useState("");
   const editorRef = useRef<Editor | null>(null);
   const draggedLayerRef = useRef<any>(null);
+  const renderingPagesRef = useRef(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const selectedImageRef = useRef<any>(null);
@@ -258,7 +259,7 @@ export default function AdminStudioVisualBuilder() {
       handleSelectedComponent(component);
       setLayerRevision(previous => previous + 1);
     });
-    editor.on("component:add component:remove component:update", () => { setLayerRevision(previous => previous + 1); setHasUnsavedChanges(true); setPreflightChecked(false); });
+    editor.on("component:add component:remove component:update", () => { setLayerRevision(previous => previous + 1); if (!renderingPagesRef.current) { setHasUnsavedChanges(true); setPreflightChecked(false); } });
     editor.on("component:deselected", () => {
       selectedImageRef.current = null;
       setHasSelectedImage(false);
@@ -369,7 +370,19 @@ export default function AdminStudioVisualBuilder() {
 
   const publishProject = () => {
     if (!selectedStoreId || !editorRef.current || !preflightChecked || preflightIssues.length > 0 || !window.confirm("Publier cette composition sur la vitrine publique ?")) return;
-    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: getProjectPayload(), html: editorRef.current.getHtml(), css: `${editorRef.current.getCss() || ""}\n${responsiveEditorCssWithAnimations}` });
+    const editor = editorRef.current;
+    const currentPages = capturePages();
+    const currentPage = currentPages.find(page => page.id === activePageId) ?? currentPages[0];
+    if (!currentPage) return;
+    renderingPagesRef.current = true;
+    const publishedPages = currentPages.map(page => {
+      const project = page.id === currentPage.id ? currentPage.project : page.project;
+      editor.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
+      return { id: page.id, title: page.title, slug: page.slug.startsWith("/") ? page.slug : `/${page.slug}`, html: editor.getHtml(), css: `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`, settings: { language: page.settings?.language ?? "fr", description: page.settings?.description ?? "", socialCoverUrl: page.settings?.socialCoverUrl ?? "", faviconUrl: page.settings?.faviconUrl ?? "" } };
+    });
+    editor.loadProjectData(currentPage.project as Parameters<Editor["loadProjectData"]>[0]);
+    renderingPagesRef.current = false;
+    publishProjectMutation.mutate({ storeId: selectedStoreId, mode: selectedMode, project: { ...getProjectPayload(), pages: currentPages }, html: publishedPages.find(page => page.id === activePageId)?.html ?? editor.getHtml(), css: publishedPages.find(page => page.id === activePageId)?.css ?? `${editor.getCss() || ""}\n${responsiveEditorCssWithAnimations}`, publishedPages });
   };
 
   const resetDraft = () => {

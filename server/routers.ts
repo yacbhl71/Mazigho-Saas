@@ -308,9 +308,9 @@ export const appRouter = router({
       const { getLocalizedDesignProfile } = await import("./db");
       return await getLocalizedDesignProfile(locale, ctx.store?.id);
     }),
-    getPublishedBuilder: storefrontProcedure.query(async ({ ctx }) => {
+    getPublishedBuilder: storefrontProcedure.input(z.object({ path: z.string().max(240).startsWith("/") }).optional()).query(async ({ ctx, input }) => {
       const { getPublishedStudioVisualBuilderProject } = await import("./db");
-      return await getPublishedStudioVisualBuilderProject(ctx.store?.id ?? 0);
+      return await getPublishedStudioVisualBuilderProject(ctx.store?.id ?? 0, input?.path ?? "/");
     }),
   }),
 

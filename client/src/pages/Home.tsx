@@ -19,6 +19,7 @@ import { getLocalizedCountryName } from "@/lib/countryLocale";
 import { getLocalizedCategoryPresentation } from "@/lib/categoryPresentation";
 import { isProductVisibleForStorefront } from "@shared/storefrontProductVisibility";
 import { getLimitedStorefrontCopy } from "@/lib/limitedStorefrontCopy";
+import { useLocation } from "wouter";
 
 const optimizedBuiltInImageUrls: Record<string, string> = {
   "/assets/home-lifestyle-top.jpg": "/assets/home-lifestyle-top.webp",
@@ -46,6 +47,31 @@ function escapePublishedMeta(value: unknown) {
 function safePublishedMetaUrl(value: unknown) {
   const url = String(value ?? "").trim();
   return /^https:\/\//i.test(url) || /^\/(?!\/)/.test(url) ? url : "";
+}
+
+export function PublishedBuilderFrame({ data }: { data: { html: string; css: string; metadata?: { title?: string; description?: string; language?: string; socialCoverUrl?: string; faviconUrl?: string } } }) {
+  const metadata = data.metadata || { title: "Votre boutique", description: "", language: "fr", socialCoverUrl: "", faviconUrl: "" };
+  const socialCoverUrl = safePublishedMetaUrl(metadata.socialCoverUrl);
+  const faviconUrl = safePublishedMetaUrl(metadata.faviconUrl);
+  const metaTags = `${metadata.description ? `<meta name="description" content="${escapePublishedMeta(metadata.description)}">` : ""}${socialCoverUrl ? `<meta property="og:image" content="${escapePublishedMeta(socialCoverUrl)}"><meta name="twitter:card" content="summary_large_image">` : ""}${faviconUrl ? `<link rel="icon" href="${escapePublishedMeta(faviconUrl)}">` : ""}`;
+  const publishedDocument = `<!doctype html><html lang="${escapePublishedMeta(metadata.language || "fr")}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapePublishedMeta(metadata.title || "Votre boutique")}</title>${metaTags}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}img,video{max-width:100%;height:auto}a{color:inherit}</style><style>${data.css}</style></head><body>${data.html}</body></html>`;
+  return <iframe title={metadata.title || "Vitrine publiée"} srcDoc={publishedDocument} sandbox="allow-same-origin" className="min-h-screen w-full border-0" />;
+}
+
+export function PublishedBuilderPage() {
+  const [location] = useLocation();
+  const query = trpc.design.getPublishedBuilder.useQuery({ path: location || "/" }, { retry: false, refetchOnWindowFocus: false });
+  if (query.isLoading) return <div className="min-h-screen animate-pulse bg-slate-100" aria-busy="true" />;
+  if (!query.data) return <div className="grid min-h-screen place-items-center bg-slate-50 p-6 text-center"><div><h1 className="text-2xl font-bold text-slate-950">Page introuvable</h1><p className="mt-2 text-slate-600">Cette page n’est pas publiée sur cette boutique.</p><a href="/" className="mt-5 inline-flex rounded-lg bg-slate-950 px-4 py-2 font-semibold text-white">Retour à l’accueil</a></div></div>;
+  return <PublishedBuilderFrame data={query.data} />;
+}
+
+export function PublishedBuilderRouteOverride() {
+  const [location] = useLocation();
+  const isEligiblePath = location !== "/" && !location.startsWith("/admin") && !location.startsWith("/api") && !["/login", "/register", "/mon-compte", "/parametres"].some(path => location === path || location.startsWith(`${path}/`));
+  const query = trpc.design.getPublishedBuilder.useQuery({ path: location || "/" }, { enabled: isEligiblePath, retry: false, refetchOnWindowFocus: false });
+  if (!isEligiblePath || query.isLoading || !query.data) return null;
+  return <PublishedBuilderFrame data={query.data} />;
 }
 
 const categoryAccents = [
@@ -171,11 +197,7 @@ export default function Home() {
 
   if (publishedBuilderQuery.data) {
     const metadata = publishedBuilderQuery.data.metadata || { title: "Votre boutique", description: "", language: "fr", socialCoverUrl: "", faviconUrl: "" };
-    const socialCoverUrl = safePublishedMetaUrl(metadata.socialCoverUrl);
-    const faviconUrl = safePublishedMetaUrl(metadata.faviconUrl);
-    const metaTags = `${metadata.description ? `<meta name="description" content="${escapePublishedMeta(metadata.description)}">` : ""}${socialCoverUrl ? `<meta property="og:image" content="${escapePublishedMeta(socialCoverUrl)}"><meta name="twitter:card" content="summary_large_image">` : ""}${faviconUrl ? `<link rel="icon" href="${escapePublishedMeta(faviconUrl)}">` : ""}`;
-    const publishedDocument = `<!doctype html><html lang="${escapePublishedMeta(metadata.language)}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapePublishedMeta(metadata.title)}</title>${metaTags}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}img,video{max-width:100%;height:auto}a{color:inherit}</style><style>${publishedBuilderQuery.data.css}</style></head><body>${publishedBuilderQuery.data.html}</body></html>`;
-    return <iframe title="Vitrine publiée" srcDoc={publishedDocument} sandbox="allow-same-origin" className="min-h-screen w-full border-0" />;
+    return <PublishedBuilderFrame data={{ html: publishedBuilderQuery.data.html, css: publishedBuilderQuery.data.css, metadata }} />;
   }
 
   // Le statut « limited » bloque le commerce, pas le design. Une boutique

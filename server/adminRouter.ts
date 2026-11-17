@@ -2702,6 +2702,19 @@ export const adminRouter = router({
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
       html: z.string().max(3_000_000),
       css: z.string().max(1_000_000),
+      publishedPages: z.array(z.object({
+        id: z.string().min(1).max(120),
+        title: z.string().max(160),
+        slug: z.string().regex(/^\/[a-zA-Z0-9_\-/]*$/).max(180),
+        html: z.string().max(3_000_000),
+        css: z.string().max(1_000_000),
+        settings: z.object({
+          language: z.string().max(12),
+          description: z.string().max(320),
+          socialCoverUrl: z.string().max(2_000),
+          faviconUrl: z.string().max(2_000),
+        }),
+      })).max(40).optional(),
       versionId: z.string().uuid().optional(),
     })).mutation(async ({ ctx, input }) => {
       const store = await db.getStudioManagedStore(input.storeId);

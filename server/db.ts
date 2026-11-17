@@ -5252,22 +5252,39 @@ export async function restoreStudioVisualBuilderVersion(storeId: number, version
   return { success: true, storeId, mode: version.mode, project: version.project, versionId } as const;
 }
 
-export async function publishStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown>; html: string; css: string; versionId?: string }) {
+type PublishedBuilderPage = { id: string; title: string; slug: string; html: string; css: string; settings: { language: string; description: string; socialCoverUrl: string; faviconUrl: string } };
+
+export async function publishStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown>; html: string; css: string; publishedPages?: PublishedBuilderPage[]; versionId?: string }) {
   const html = sanitizePublishedBuilderHtml(input.html).trim();
   const css = sanitizePublishedBuilderCss(input.css).trim();
   if (!html || html.length > 3_000_000 || css.length > 1_000_000) throw new Error("VISUAL_BUILDER_PUBLICATION_INVALID");
   const publishedAt = new Date().toISOString();
-  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY, JSON.stringify({ mode: input.mode, project: input.project, html, css, versionId: input.versionId ?? null, publishedAt }), "Version du constructeur visuel explicitement publiée après validation Studio.");
+  const publishedPages = (input.publishedPages ?? []).filter(page => page.html.trim() && page.slug.startsWith("/"));
+  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY, JSON.stringify({ mode: input.mode, project: input.project, html, css, publishedPages, versionId: input.versionId ?? null, publishedAt }), "Version du constructeur visuel explicitement publiée après validation Studio.");
   return { success: true, storeId: input.storeId, publishedAt } as const;
 }
 
-export async function getPublishedStudioVisualBuilderProject(storeId: number) {
+export async function getPublishedStudioVisualBuilderProject(storeId: number, requestedPath = "/") {
   const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
-    return { storeId, html: await resolvePublishedCatalogueMarkers(parsed.html, storeId), css: parsed.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null, metadata: getPublishedBuilderMetadata(parsed.project && typeof parsed.project === "object" ? parsed.project as Record<string, unknown> : {}) };
+    const normalizedPath = requestedPath.split("?")[0].split("#")[0] || "/";
+    const pages = Array.isArray(parsed.publishedPages) ? parsed.publishedPages.filter((page): page is PublishedBuilderPage => Boolean(page && typeof page === "object" && typeof (page as Record<string, unknown>).slug === "string" && typeof (page as Record<string, unknown>).html === "string" && typeof (page as Record<string, unknown>).css === "string")) : [];
+    const selectedPage = pages.find(page => page.slug === normalizedPath);
+    if (pages.length > 0 && !selectedPage) return null;
+    const page = selectedPage ?? { title: "", html: parsed.html, css: parsed.css, settings: undefined };
+    const fallbackProject = parsed.project && typeof parsed.project === "object" ? parsed.project as Record<string, unknown> : {};
+    const pageProject = selectedPage ? {} : fallbackProject;
+    const metadata = selectedPage ? {
+      title: String(selectedPage.title || "Votre boutique").trim().slice(0, 120),
+      description: String(selectedPage.settings?.description || "").trim().slice(0, 320),
+      language: /^[a-z]{2}(?:-[A-Z]{2})?$/.test(String(selectedPage.settings?.language || "fr")) ? String(selectedPage.settings?.language || "fr") : "fr",
+      socialCoverUrl: publishedBuilderUrl(selectedPage.settings?.socialCoverUrl),
+      faviconUrl: publishedBuilderUrl(selectedPage.settings?.faviconUrl),
+    } : getPublishedBuilderMetadata(pageProject);
+    return { storeId, html: await resolvePublishedCatalogueMarkers(page.html, storeId), css: page.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null, metadata };
   } catch {
     return null;
   }
