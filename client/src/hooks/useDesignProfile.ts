@@ -31,6 +31,30 @@ export type RoundGalleryItem = {
   href: string;
 };
 
+export type HomeFaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+export type HomeStatItem = {
+  id: string;
+  value: string;
+  label: string;
+};
+
+export type HomeTextBannerLayout =
+  | "banner"
+  | "split"
+  | "framedSplit"
+  | "spotlight"
+  | "roundGallery"
+  | "productGrid"
+  | "countdownBanner"
+  | "beforeAfter"
+  | "faqAccordion"
+  | "statsCounter";
+
 export type HomeTextBanner = {
   id: string;
   type?: string;
@@ -42,9 +66,18 @@ export type HomeTextBanner = {
   imageUrl?: string;
   mobileImageUrl?: string;
   imageAlt?: string;
-  layout?: "banner" | "split" | "framedSplit" | "spotlight" | "roundGallery";
+  layout?: HomeTextBannerLayout;
   theme?: "primary" | "dark" | "soft" | "light";
   galleryItems?: RoundGalleryItem[];
+  productIds?: number[];
+  countdownEndsAt?: string;
+  secondaryImageUrl?: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+  faqItems?: HomeFaqItem[];
+  statItems?: HomeStatItem[];
+  visibilityDevice?: "all" | "mobile" | "desktop";
+  imageFocalPoint?: "top" | "center" | "bottom";
   enabled: boolean;
 };
 

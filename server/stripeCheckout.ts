@@ -1,9 +1,10 @@
+import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import Stripe from "stripe";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { mayAcceptStorefrontCommerce, mayServeStorefront } from "./services/storeScope";
-import { bindStripeConnectSessionToPendingOrder, cancelUnboundStripePendingOrder, createAlgeriaCashOnDeliveryOrder, createStripePendingOrder, getOrderForStripeSessionForStore, getStoreMaintenanceMode, getStoreStripeConnectCheckoutContext, getStoreStripeConnectSetup, getStripeCheckoutCart, markOrderPaidByStripeSession, validatePromotion } from "./db";
+import { bindStripeConnectSessionToPendingOrder, cancelUnboundStripePendingOrder, createAlgeriaCashOnDeliveryOrder, createStripePendingOrder, getOrderForStripeSessionForStore, getStoreMaintenanceMode, getStoreStripeConnectCheckoutContext, getStoreStripeConnectSetup, getStripeCheckoutCart, markOrderPaidByStripeSession, recordPaymentJournal, replaceByokServerCart, validatePromotion } from "./db";
 import { completePaidStripeOrder, isVerifiedPaidStripeTestSession } from "./stripeWebhook";
 import { convertChfCents } from "../shared/storeCurrency";
 import { getCheckoutPaymentGate } from "./services/checkoutPaymentGate";
@@ -12,6 +13,24 @@ import { getStripeConnectCredentials, type StripeConnectMode } from "./services/
 import { CHECKOUT_LEGAL_VERSION } from "../shared/checkoutLegalAcceptance";
 import { callPaymentService } from "./paymentServiceProxy";
 import type { ByokCheckoutQuote } from "./db";
+
+const inFlightCheckoutLocks = new Set<string>();
+
+async function withCheckoutDoubleClickLock<T>(storeId: number, userId: number, fn: () => Promise<T>): Promise<T> {
+  const key = `${storeId}:${userId}`;
+  if (inFlightCheckoutLocks.has(key)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "Une tentative de paiement est déjà en cours de préparation. Veuillez patienter.",
+    });
+  }
+  inFlightCheckoutLocks.add(key);
+  try {
+    return await fn();
+  } finally {
+    inFlightCheckoutLocks.delete(key);
+  }
+}
 
 const storefrontProtectedProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   if (!ctx.store) {
@@ -95,6 +114,7 @@ function checkoutCartError(error: unknown, context: string) {
 const byokSessionInput = z.object({
   provider: z.enum(["stripe", "paypal"]),
   method: z.enum(["card", "paypal"]).optional(),
+  idempotencyKey: z.string().trim().regex(/^[A-Za-z0-9._:-]{16,255}$/).optional(),
   countryCode: z.string().length(2).regex(/^[A-Za-z]{2}$/),
   shippingAddress: z.object({
     name: z.string().trim().min(2).max(160),
@@ -118,7 +138,6 @@ const byokSessionInput = z.object({
 type ByokSessionContext = Parameters<typeof callPaymentService>[0] & { user: { id: number }; store?: { id: number } | null };
 
 async function createByokCheckoutSession(input: z.infer<typeof byokSessionInput>, ctx: ByokSessionContext) {
-  const { replaceByokServerCart } = await import("./db");
   const storeId = ctx.store!.id;
   const countryCode = input.countryCode.toUpperCase();
   // Same checkout engine as Stripe Connect: catalogue, variants, stock, delivery, shipping, currency and promotion.
@@ -138,6 +157,13 @@ async function createByokCheckoutSession(input: z.infer<typeof byokSessionInput>
   };
   // The payment service reads a server cart: mirror the validated browser basket first.
   const cartId = await replaceByokServerCart(ctx.user.id, storeId, input.items, quote).catch(error => { throw checkoutCartError(error, "BYOK server cart error"); });
+  const windowBucket = Math.floor(Date.now() / 30_000);
+  const deterministicDigest = crypto
+    .createHash("sha256")
+    .update(JSON.stringify({ storeId, userId: ctx.user.id, provider: input.provider, method: input.method ?? null, cartId, quote, windowBucket }))
+    .digest("hex")
+    .slice(0, 32);
+  const idempotencyKey = input.idempotencyKey ?? `byok_${storeId}_${ctx.user.id}_${deterministicDigest}`;
   const response = await callPaymentService<{ session: { redirectUrl: string | null; orderId: string } }>(ctx, "/api/checkout/create-session", {
     method: "POST",
     storeId,
@@ -149,35 +175,36 @@ async function createByokCheckoutSession(input: z.infer<typeof byokSessionInput>
       currency: cart.currency.code,
       country: countryCode,
       shippingAddress: JSON.stringify({ source: "byok_checkout", ...input.shippingAddress, countryCode }),
-      idempotencyKey: `byok_${ctx.user.id}_${Date.now()}`,
+      idempotencyKey,
       cartId: String(cartId),
     },
   });
   if (!response.session.redirectUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Le prestataire de paiement n’a pas fourni de lien de paiement." });
-  return { url: response.session.redirectUrl, orderId: response.session.orderId };
+  return { url: response.session.redirectUrl, orderId: response.session.orderId, idempotencyKey };
 }
 
 export const stripeCheckoutRouter = router({
   createByokSession: storefrontProtectedProcedure
     .input(byokSessionInput)
     .mutation(async ({ input, ctx }) => {
-      const { recordPaymentJournal } = await import("./db");
       const storeId = ctx.store!.id;
-      try {
-        return await createByokCheckoutSession(input, ctx);
-      } catch (error) {
-        const known = error instanceof TRPCError && (error.code === "PRECONDITION_FAILED" || error.code === "BAD_REQUEST");
-        await recordPaymentJournal({
-          storeId,
-          level: known ? "warning" : "error",
-          source: "checkout",
-          event: "checkout.failed",
-          provider: input.provider,
-          code: error instanceof TRPCError ? error.code : null,
-          message: `Paiement non ouvert : ${error instanceof Error ? error.message : "erreur inconnue"}`,
-        });
-        throw error;
-      }
+      return await withCheckoutDoubleClickLock(storeId, ctx.user.id, async () => {
+        try {
+          return await createByokCheckoutSession(input, ctx);
+        } catch (error) {
+          const known = error instanceof TRPCError && (error.code === "PRECONDITION_FAILED" || error.code === "BAD_REQUEST");
+          await recordPaymentJournal?.({
+            storeId,
+            level: known ? "warning" : "error",
+            source: "checkout",
+            event: "checkout.failed",
+            provider: input.provider,
+            code: error instanceof TRPCError ? error.code : null,
+            message: `Paiement non ouvert : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+          });
+          throw error;
+        }
+      });
     }),
   // Return page of a BYOK hosted payment. The random session id is the only
   // capability; Stripe is reconciled server-side and PayPal is captured here.
@@ -282,124 +309,129 @@ export const stripeCheckoutRouter = router({
       if (!mode) throw new TRPCError({ code: "PRECONDITION_FAILED", message: stripeUnavailable("live", "create") });
       const stripe = getStripeClient(mode);
       if (!stripe) throw new TRPCError({ code: "PRECONDITION_FAILED", message: stripeUnavailable(mode, "create") });
-      try {
-        const storeId = ctx.store!.id;
-        const cart = await getStripeCheckoutCart(ctx.user.id, input.countryCode, input.items, storeId);
-        const connect = await getStoreStripeConnectCheckoutContext(storeId, mode);
-        if (!connect.ready) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Cette boutique doit terminer la configuration Stripe Connect ${mode === "live" ? "Production" : "de test"} avant d’encaisser.` });
-        }
-        // Resolve promo (optional). Discount applies to the product subtotal, never to shipping.
-        const { promotionId, discountAmount, discountAmountChf, promoCodeLabel } = await resolveCheckoutPromotion(input.promoCode, cart, ctx.user.id, storeId);
-        const chargeAmount = cart.totalAmount - discountAmount;
-        if (chargeAmount <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette promotion réduit le total à zéro et ne peut pas être encaissée par Stripe Connect." });
-        const applicationFeeAmount = calculateMazighoApplicationFee(chargeAmount, connect.commissionRateBps);
-        const pendingOrder = await createStripePendingOrder({
-          userId: ctx.user.id,
-          mode,
-          countryCode: input.countryCode,
-          totalAmount: cart.totalAmount,
-          cart,
-          promotionId,
-          discountAmount,
-          discountAmountChf,
-          legalAcceptanceVersion: input.legalAcceptanceVersion,
-          legalAccepted: input.legalAccepted,
-          storeId,
-        });
-        const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
-        for (const item of cart.items) {
-          lineItems.push({
-            price_data: {
-              currency: cart.currency.code.toLowerCase(),
-              product_data: { name: item.name },
-              unit_amount: item.unitAmount,
-            },
-            quantity: item.quantity,
-          });
-        }
-        if (cart.customerShippingAmount > 0) {
-          lineItems.push({
-            price_data: {
-              currency: cart.currency.code.toLowerCase(),
-              product_data: { name: "Livraison" },
-              unit_amount: cart.customerShippingAmount,
-            },
-            quantity: 1,
-          });
-        }
-        const origin = `https://${ctx.store!.primaryDomain}`;
-        // No stock is reserved when the session opens: it is taken only once
-        // Stripe confirms the payment. The hosted session stays short-lived.
-        // Stripe requires at least 30 minutes; one minute avoids a boundary
-        // rejection between request construction and API receipt.
-        const checkoutExpiresAt = Math.floor(Date.now() / 1000) + 31 * 60;
-        // TWINT is retained for the Swiss franc storefront; card is used for the other configured currencies.
-        const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = cart.currency.code === "CHF" ? ["card", "twint"] : ["card"];
-        const sessionParams: Stripe.Checkout.SessionCreateParams = {
-          mode: "payment",
-          expires_at: checkoutExpiresAt,
-          payment_method_types: paymentMethodTypes,
-          line_items: lineItems,
-          shipping_address_collection: {
-            allowed_countries: [input.countryCode.toUpperCase() as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry],
-          },
-          phone_number_collection: { enabled: true },
-          customer_email: ctx.user.email || undefined,
-          client_reference_id: String(ctx.user.id),
-          success_url: `${origin}/commandes?stripe_session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${origin}/panier`,
-          metadata: {
-            user_id: String(ctx.user.id),
-            country_code: input.countryCode.toUpperCase(),
-            total_amount: String(cart.totalAmount),
-            total_amount_chf: String(cart.totalAmountChf),
-            currency_code: cart.currency.code,
-            currency_rate_bps: String(cart.currency.rateBps),
-            promo_code: promoCodeLabel,
-            customer_shipping_amount: String(cart.customerShippingAmount),
-            shipping_policy: cart.shippingPolicy,
-            store_id: String(storeId),
-            order_id: String(pendingOrder.id),
-            commission_rate_bps: String(connect.commissionRateBps),
-            stripe_connect_mode: mode,
-          },
-          payment_intent_data: { application_fee_amount: applicationFeeAmount },
-        };
+      return await withCheckoutDoubleClickLock(ctx.store!.id, ctx.user.id, async () => {
         try {
-          if (discountAmount > 0) {
-            const coupon = await stripe.coupons.create({ amount_off: discountAmount, currency: cart.currency.code.toLowerCase(), duration: "once", name: `MAZIGHO ${promoCodeLabel}` }, { stripeAccount: connect.accountId });
-            sessionParams.discounts = [{ coupon: coupon.id }];
+          const storeId = ctx.store!.id;
+          const cart = await getStripeCheckoutCart(ctx.user.id, input.countryCode, input.items, storeId);
+          const connect = await getStoreStripeConnectCheckoutContext(storeId, mode);
+          if (!connect.ready) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Cette boutique doit terminer la configuration Stripe Connect ${mode === "live" ? "Production" : "de test"} avant d’encaisser.` });
           }
-          const session = await stripe.checkout.sessions.create(sessionParams, { stripeAccount: connect.accountId });
-          if (!session.url) throw new Error("STRIPE_SESSION_URL_MISSING");
-          await bindStripeConnectSessionToPendingOrder({
-            storeId,
+          // Resolve promo (optional). Discount applies to the product subtotal, never to shipping.
+          const { promotionId, discountAmount, discountAmountChf, promoCodeLabel } = await resolveCheckoutPromotion(input.promoCode, cart, ctx.user.id, storeId);
+          const chargeAmount = cart.totalAmount - discountAmount;
+          if (chargeAmount <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette promotion réduit le total à zéro et ne peut pas être encaissée par Stripe Connect." });
+          const applicationFeeAmount = calculateMazighoApplicationFee(chargeAmount, connect.commissionRateBps);
+          const pendingOrder = await createStripePendingOrder({
             userId: ctx.user.id,
             mode,
-            orderId: pendingOrder.id,
-            sessionId: session.id,
-            stripeAccountId: connect.accountId,
-            applicationFeeAmount,
-            commissionRateBps: connect.commissionRateBps,
+            countryCode: input.countryCode,
+            totalAmount: cart.totalAmount,
+            cart,
+            promotionId,
+            discountAmount,
+            discountAmountChf,
+            legalAcceptanceVersion: input.legalAcceptanceVersion,
+            legalAccepted: input.legalAccepted,
+            storeId,
           });
-          return { sessionId: session.id, orderId: pendingOrder.id, url: session.url };
+          const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+          for (const item of cart.items) {
+            lineItems.push({
+              price_data: {
+                currency: cart.currency.code.toLowerCase(),
+                product_data: { name: item.name },
+                unit_amount: item.unitAmount,
+              },
+              quantity: item.quantity,
+            });
+          }
+          if (cart.customerShippingAmount > 0) {
+            lineItems.push({
+              price_data: {
+                currency: cart.currency.code.toLowerCase(),
+                product_data: { name: "Livraison" },
+                unit_amount: cart.customerShippingAmount,
+              },
+              quantity: 1,
+            });
+          }
+          const origin = `https://${ctx.store!.primaryDomain}`;
+          // No stock is reserved when the session opens: it is taken only once
+          // Stripe confirms the payment. The hosted session stays short-lived.
+          // Stripe requires at least 30 minutes; one minute avoids a boundary
+          // rejection between request construction and API receipt.
+          const checkoutExpiresAt = Math.floor(Date.now() / 1000) + 31 * 60;
+          // TWINT is retained for the Swiss franc storefront; card is used for the other configured currencies.
+          const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = cart.currency.code === "CHF" ? ["card", "twint"] : ["card"];
+          const sessionParams: Stripe.Checkout.SessionCreateParams = {
+            mode: "payment",
+            expires_at: checkoutExpiresAt,
+            payment_method_types: paymentMethodTypes,
+            line_items: lineItems,
+            shipping_address_collection: {
+              allowed_countries: [input.countryCode.toUpperCase() as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry],
+            },
+            phone_number_collection: { enabled: true },
+            customer_email: ctx.user.email || undefined,
+            client_reference_id: String(ctx.user.id),
+            success_url: `${origin}/commandes?stripe_session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${origin}/panier`,
+            metadata: {
+              user_id: String(ctx.user.id),
+              country_code: input.countryCode.toUpperCase(),
+              total_amount: String(cart.totalAmount),
+              total_amount_chf: String(cart.totalAmountChf),
+              currency_code: cart.currency.code,
+              currency_rate_bps: String(cart.currency.rateBps),
+              promo_code: promoCodeLabel,
+              customer_shipping_amount: String(cart.customerShippingAmount),
+              shipping_policy: cart.shippingPolicy,
+              store_id: String(storeId),
+              order_id: String(pendingOrder.id),
+              commission_rate_bps: String(connect.commissionRateBps),
+              stripe_connect_mode: mode,
+            },
+            payment_intent_data: { application_fee_amount: applicationFeeAmount },
+          };
+          try {
+            if (discountAmount > 0) {
+              const coupon = await stripe.coupons.create({ amount_off: discountAmount, currency: cart.currency.code.toLowerCase(), duration: "once", name: `MAZIGHO ${promoCodeLabel}` }, { stripeAccount: connect.accountId });
+              sessionParams.discounts = [{ coupon: coupon.id }];
+            }
+            const session = await stripe.checkout.sessions.create(sessionParams, { stripeAccount: connect.accountId });
+            if (!session.url) throw new Error("STRIPE_SESSION_URL_MISSING");
+            await bindStripeConnectSessionToPendingOrder({
+              storeId,
+              userId: ctx.user.id,
+              mode,
+              orderId: pendingOrder.id,
+              sessionId: session.id,
+              stripeAccountId: connect.accountId,
+              applicationFeeAmount,
+              commissionRateBps: connect.commissionRateBps,
+            });
+            return { sessionId: session.id, orderId: pendingOrder.id, url: session.url };
+          } catch (error) {
+            await cancelUnboundStripePendingOrder({ storeId, userId: ctx.user.id, orderId: pendingOrder.id });
+            throw error;
+          }
         } catch (error) {
-          await cancelUnboundStripePendingOrder({ storeId, userId: ctx.user.id, orderId: pendingOrder.id });
-          throw error;
+          console.error(`Stripe ${mode} Checkout error`, error);
+          if (error instanceof TRPCError) throw error;
+          const code = error instanceof Error ? error.message : "";
+          if (CHECKOUT_CART_ERRORS[code]) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: CHECKOUT_CART_ERRORS[code] });
+          }
+          if (code === "CHECKOUT_LEGAL_PROFILE_INCOMPLETE") {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cette boutique doit compléter ses informations légales, fiscales et de livraison avant de pouvoir ouvrir un paiement." });
+          }
+          if (code === "CHECKOUT_LEGAL_ACCEPTANCE_REQUIRED") {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "L’acceptation des conditions de vente est requise avant le paiement." });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: stripeUnavailable(mode, "create") });
         }
-      } catch (error) {
-        console.error(`Stripe ${mode} Checkout error`, error);
-        if (error instanceof TRPCError) throw error;
-        const code = error instanceof Error ? error.message : "";
-        if (code === "CHECKOUT_LEGAL_PROFILE_INCOMPLETE") {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cette boutique doit compléter ses informations légales, fiscales et de livraison avant de pouvoir ouvrir un paiement." });
-        }
-        if (code === "CHECKOUT_LEGAL_ACCEPTANCE_REQUIRED") {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "L’acceptation des conditions de vente est requise avant le paiement." });
-        }
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: stripeUnavailable(mode, "create") });
-      }
+      });
     }),
 
   getSessionStatus: storefrontProtectedProcedure

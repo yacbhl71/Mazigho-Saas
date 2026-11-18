@@ -5085,7 +5085,43 @@ export async function getStoreHandoverFacts(storeId: number) {
   await ensureMultiStoreSchema();
   await ensureByokCheckoutSchema();
   const db = await getDb();
-  if (!db) throw new Error("Database unavailable");
+  if (!db) {
+    const demoStore = DEMO_STORES.find(s => s.id === storeId);
+    if (!demoStore || demoStore.isPlatformStore) throw new Error("STORE_NOT_FOUND");
+    const [legal, platformLegal, shipping, paymentRoute] = await Promise.all([
+      getLegalProfile(demoStore.id),
+      getLegalProfile(1),
+      getCheckoutShippingPolicy(demoStore.id, "CH"),
+      getStorePaymentRoute(demoStore.id),
+    ]);
+    const sellableProducts = DEMO_PRODUCTS.filter(p => p.storeId === demoStore.id && p.status === "active" && p.price > 0).length;
+    return {
+      store: { id: demoStore.id, displayName: demoStore.displayName, primaryDomain: demoStore.primaryDomain, status: demoStore.status },
+      buyer: null,
+      otherAccess: [],
+      connectorKeys: [],
+      legal: {
+        operatorName: legal.operatorName,
+        complete:
+          legal.operatorName !== defaultLegalProfile.operatorName &&
+          legal.contactEmail !== defaultLegalProfile.contactEmail &&
+          legal.country !== defaultLegalProfile.country &&
+          legal.businessStatus !== defaultLegalProfile.businessStatus &&
+          legal.returnsPolicy !== defaultLegalProfile.returnsPolicy,
+        sameAsPlatform: legal.operatorName.trim().toLowerCase() === platformLegal.operatorName.trim().toLowerCase(),
+      },
+      delivery: {
+        ready:
+          shipping.servedCountries.length > 0 &&
+          Boolean(shipping.deliveryLeadTime.trim()) &&
+          Boolean(shipping.returnsSummary.trim()),
+      },
+      paymentRoute,
+      sellableProducts,
+      succeededTestPayments: 0,
+      succeededLivePayments: 0,
+    };
+  }
   const [store] = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
   if (!store || store.isPlatformStore) throw new Error("STORE_NOT_FOUND");
   const [memberRows, legal, platformLegal, shipping, paymentRoute, sellableRows, intentRows, connectorChanges] = await Promise.all([
@@ -5125,6 +5161,22 @@ export async function getStoreHandoverFacts(storeId: number) {
     succeededTestPayments: succeeded.filter(row => Number(row.isTestMode) === 1).reduce((sum, row) => sum + Number(row.total), 0),
     succeededLivePayments: succeeded.filter(row => Number(row.isTestMode) !== 1).reduce((sum, row) => sum + Number(row.total), 0),
   };
+}
+
+const STUDIO_STORE_HANDOVER_SIGNOFF_KEY = "studio_store_handover_signoff_v1";
+
+export async function getStoreHandoverSignoffRaw(storeId: number): Promise<string | null> {
+  return getStoreSettingValue(storeId, STUDIO_STORE_HANDOVER_SIGNOFF_KEY);
+}
+
+export async function setStoreHandoverSignoffRaw(storeId: number, serialized: string) {
+  await setStoreSettingValue(
+    storeId,
+    STUDIO_STORE_HANDOVER_SIGNOFF_KEY,
+    serialized,
+    "Checklist de livraison opérationnelle horodatée MAZIGHO Studio.",
+  );
+  return { success: true } as const;
 }
 
 export async function setStorePaymentRoute(storeId: number, route: StorePaymentRoute) {
@@ -13557,7 +13609,17 @@ export type HomeTextBanner = {
   imageUrl?: string;
   mobileImageUrl?: string;
   imageAlt?: string;
-  layout?: "banner" | "split" | "framedSplit" | "spotlight" | "roundGallery";
+  layout?:
+    | "banner"
+    | "split"
+    | "framedSplit"
+    | "spotlight"
+    | "roundGallery"
+    | "productGrid"
+    | "countdownBanner"
+    | "beforeAfter"
+    | "faqAccordion"
+    | "statsCounter";
   theme?: "primary" | "dark" | "soft" | "light";
   galleryItems?: Array<{
     id: string;
@@ -13566,6 +13628,23 @@ export type HomeTextBanner = {
     imageAlt: string;
     href: string;
   }>;
+  productIds?: number[];
+  countdownEndsAt?: string;
+  secondaryImageUrl?: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+  faqItems?: Array<{
+    id: string;
+    question: string;
+    answer: string;
+  }>;
+  statItems?: Array<{
+    id: string;
+    value: string;
+    label: string;
+  }>;
+  visibilityDevice?: "all" | "mobile" | "desktop";
+  imageFocalPoint?: "top" | "center" | "bottom";
   enabled: boolean;
 };
 
@@ -14045,22 +14124,83 @@ export function normalizeDesignProfile(value: unknown): DesignProfile {
           if (itemId && label && imageUrl && imageAlt) galleryItems.push({ id: itemId, label, imageUrl, imageAlt, href });
         }
       }
-      textBanners.push({
+      const allowedLayouts = [
+        "banner",
+        "split",
+        "framedSplit",
+        "spotlight",
+        "roundGallery",
+        "productGrid",
+        "countdownBanner",
+        "beforeAfter",
+        "faqAccordion",
+        "statsCounter",
+      ];
+      const bannerItem: HomeTextBanner = {
         id,
         type: typeof b.type === "string" ? b.type.trim().slice(0, 80) : "custom",
         title,
         eyebrow: typeof b.eyebrow === "string" ? b.eyebrow.trim().slice(0, 120) : "",
-      text: typeof b.text === "string" ? b.text.trim().slice(0, 600) : "",
-      buttonLabel: typeof b.buttonLabel === "string" ? b.buttonLabel.trim().slice(0, 60) : "",
-      buttonUrl: typeof b.buttonUrl === "string" ? b.buttonUrl.trim().slice(0, 300) : "",
-      imageUrl: typeof b.imageUrl === "string" ? b.imageUrl.trim().slice(0, 1000) : "",
-      mobileImageUrl: typeof b.mobileImageUrl === "string" ? b.mobileImageUrl.trim().slice(0, 1000) : "",
-      imageAlt: typeof b.imageAlt === "string" ? b.imageAlt.trim().slice(0, 180) : "",
-      layout: ["banner", "split", "framedSplit", "spotlight", "roundGallery"].includes(String(b.layout)) ? b.layout as HomeTextBanner["layout"] : "banner",
-      theme: ["primary", "dark", "soft", "light"].includes(String(b.theme)) ? b.theme as HomeTextBanner["theme"] : "primary",
-      galleryItems,
-      enabled: typeof b.enabled === "boolean" ? b.enabled : true,
-      });
+        text: typeof b.text === "string" ? b.text.trim().slice(0, 600) : "",
+        buttonLabel: typeof b.buttonLabel === "string" ? b.buttonLabel.trim().slice(0, 60) : "",
+        buttonUrl: typeof b.buttonUrl === "string" ? b.buttonUrl.trim().slice(0, 300) : "",
+        imageUrl: typeof b.imageUrl === "string" ? b.imageUrl.trim().slice(0, 1000) : "",
+        mobileImageUrl: typeof b.mobileImageUrl === "string" ? b.mobileImageUrl.trim().slice(0, 1000) : "",
+        imageAlt: typeof b.imageAlt === "string" ? b.imageAlt.trim().slice(0, 180) : "",
+        layout: allowedLayouts.includes(String(b.layout)) ? b.layout as HomeTextBanner["layout"] : "banner",
+        theme: ["primary", "dark", "soft", "light"].includes(String(b.theme)) ? b.theme as HomeTextBanner["theme"] : "primary",
+        galleryItems,
+        enabled: typeof b.enabled === "boolean" ? b.enabled : true,
+      };
+      if (Array.isArray(b.productIds)) {
+        bannerItem.productIds = b.productIds
+          .map(pid => Number(pid))
+          .filter(pid => Number.isInteger(pid) && pid > 0)
+          .slice(0, 8);
+      }
+      if (typeof b.countdownEndsAt === "string" && b.countdownEndsAt.trim()) {
+        bannerItem.countdownEndsAt = b.countdownEndsAt.trim().slice(0, 64);
+      }
+      if (typeof b.secondaryImageUrl === "string") {
+        bannerItem.secondaryImageUrl = b.secondaryImageUrl.trim().slice(0, 1000);
+      }
+      if (typeof b.beforeLabel === "string") {
+        bannerItem.beforeLabel = b.beforeLabel.trim().slice(0, 60);
+      }
+      if (typeof b.afterLabel === "string") {
+        bannerItem.afterLabel = b.afterLabel.trim().slice(0, 60);
+      }
+      if (Array.isArray(b.faqItems)) {
+        const faqItems: NonNullable<HomeTextBanner["faqItems"]> = [];
+        for (const rawFaq of b.faqItems.slice(0, 8)) {
+          if (!rawFaq || typeof rawFaq !== "object") continue;
+          const faq = rawFaq as Record<string, unknown>;
+          const faqId = typeof faq.id === "string" ? faq.id.trim().slice(0, 60) : "";
+          const question = typeof faq.question === "string" ? faq.question.trim().slice(0, 200) : "";
+          const answer = typeof faq.answer === "string" ? faq.answer.trim().slice(0, 800) : "";
+          if (faqId && question && answer) faqItems.push({ id: faqId, question, answer });
+        }
+        bannerItem.faqItems = faqItems;
+      }
+      if (Array.isArray(b.statItems)) {
+        const statItems: NonNullable<HomeTextBanner["statItems"]> = [];
+        for (const rawStat of b.statItems.slice(0, 6)) {
+          if (!rawStat || typeof rawStat !== "object") continue;
+          const stat = rawStat as Record<string, unknown>;
+          const statId = typeof stat.id === "string" ? stat.id.trim().slice(0, 60) : "";
+          const statValue = typeof stat.value === "string" ? stat.value.trim().slice(0, 40) : "";
+          const statLabel = typeof stat.label === "string" ? stat.label.trim().slice(0, 120) : "";
+          if (statId && statValue && statLabel) statItems.push({ id: statId, value: statValue, label: statLabel });
+        }
+        bannerItem.statItems = statItems;
+      }
+      if (["all", "mobile", "desktop"].includes(String(b.visibilityDevice))) {
+        bannerItem.visibilityDevice = b.visibilityDevice as HomeTextBanner["visibilityDevice"];
+      }
+      if (["top", "center", "bottom"].includes(String(b.imageFocalPoint))) {
+        bannerItem.imageFocalPoint = b.imageFocalPoint as HomeTextBanner["imageFocalPoint"];
+      }
+      textBanners.push(bannerItem);
     }
   }
   normalized.textBanners = textBanners;
@@ -14194,9 +14334,147 @@ export async function getDesignProfile(storeId?: number): Promise<DesignProfile>
   }
 }
 
+export type DesignProfileVersionSnapshot = {
+  id: string;
+  createdAt: string;
+  label: string;
+  blockCount: number;
+  profile: DesignProfile;
+};
+
+export type DesignProfileDraftState = {
+  updatedAt: string;
+  blocks: HomeTextBanner[];
+  homeOrder: string[];
+};
+
+const DESIGN_PROFILE_HISTORY_KEY = "design_profile_history";
+const DESIGN_PROFILE_DRAFT_KEY = "design_profile_draft";
+const MAX_DESIGN_PROFILE_HISTORY = 5;
+
+export async function getDesignProfileHistory(storeId?: number): Promise<DesignProfileVersionSnapshot[]> {
+  const raw = await getStoreSettingValue(storeId, DESIGN_PROFILE_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(entry => entry && typeof entry === "object" && typeof entry.id === "string" && entry.profile)
+      .slice(0, MAX_DESIGN_PROFILE_HISTORY)
+      .map(entry => {
+        const normalizedProfile = normalizeDesignProfile(entry.profile);
+        return {
+          id: String(entry.id),
+          createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
+          label: typeof entry.label === "string" ? entry.label : "Version enregistrée",
+          blockCount: normalizedProfile.textBanners.length,
+          profile: normalizedProfile,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export async function recordDesignProfileSnapshot(
+  profile: DesignProfile,
+  label: string,
+  storeId?: number
+): Promise<DesignProfileVersionSnapshot[]> {
+  const history = await getDesignProfileHistory(storeId);
+  const snapshot: DesignProfileVersionSnapshot = {
+    id: `ver-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: new Date().toISOString(),
+    label,
+    blockCount: profile.textBanners.length,
+    profile: normalizeDesignProfile(profile),
+  };
+  const nextHistory = [snapshot, ...history].slice(0, MAX_DESIGN_PROFILE_HISTORY);
+  await setStoreSettingValue(
+    storeId,
+    DESIGN_PROFILE_HISTORY_KEY,
+    JSON.stringify(nextHistory),
+    "Historique des 5 dernières versions du DesignProfile de la boutique"
+  );
+  return nextHistory;
+}
+
+export async function restoreDesignProfileVersion(versionId: string, storeId?: number): Promise<DesignProfile> {
+  const history = await getDesignProfileHistory(storeId);
+  const target = history.find(item => item.id === versionId);
+  if (!target) {
+    throw new Error("DESIGN_PROFILE_VERSION_NOT_FOUND");
+  }
+  const current = await getDesignProfile(storeId);
+  await recordDesignProfileSnapshot(current, "Sauvegarde avant restauration", storeId);
+  const restored = normalizeDesignProfile(target.profile);
+  await setStoreSettingValue(
+    storeId,
+    "design_profile",
+    JSON.stringify(restored),
+    "Personnalisation visuelle publique restaurée depuis l’historique"
+  );
+  return restored;
+}
+
+export async function getDesignProfileDraft(storeId?: number): Promise<DesignProfileDraftState | null> {
+  const raw = await getStoreSettingValue(storeId, DESIGN_PROFILE_DRAFT_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.blocks)) return null;
+    const normalized = normalizeDesignProfile({
+      textBanners: parsed.blocks,
+      homeOrder: Array.isArray(parsed.homeOrder) ? parsed.homeOrder : undefined,
+    });
+    return {
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+      blocks: normalized.textBanners,
+      homeOrder: normalized.homeOrder,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDesignProfileDraft(
+  input: { blocks: HomeTextBanner[]; homeOrder: string[] },
+  storeId?: number
+): Promise<DesignProfileDraftState> {
+  const current = await getDesignProfile(storeId);
+  const normalized = normalizeDesignProfile({
+    ...current,
+    textBanners: input.blocks,
+    homeOrder: input.homeOrder,
+  });
+  const draft: DesignProfileDraftState = {
+    updatedAt: new Date().toISOString(),
+    blocks: normalized.textBanners,
+    homeOrder: normalized.homeOrder,
+  };
+  await setStoreSettingValue(
+    storeId,
+    DESIGN_PROFILE_DRAFT_KEY,
+    JSON.stringify(draft),
+    "Brouillon non publié des blocs libres de la page d’accueil"
+  );
+  return draft;
+}
+
+export async function clearDesignProfileDraft(storeId?: number): Promise<void> {
+  await setStoreSettingValue(storeId, DESIGN_PROFILE_DRAFT_KEY, "", "Brouillon publié ou effacé");
+}
+
 export async function updateDesignProfile(data: DesignProfileInput, storeId?: number): Promise<DesignProfile> {
   const existing = await getDesignProfile(storeId);
   const profile = normalizeDesignProfile({ ...existing, ...data, navigationItems: data.navigationItems ?? existing.navigationItems });
+  try {
+    if (JSON.stringify(existing) !== JSON.stringify(profile)) {
+      await recordDesignProfileSnapshot(existing, "Version précédente automatique", storeId);
+    }
+  } catch {
+    // Never fail a live profile update if snapshot recording fails in mocked environments
+  }
   await setStoreSettingValue(storeId, "design_profile", JSON.stringify(profile), "Personnalisation visuelle publique propre à cette boutique");
   return profile;
 }

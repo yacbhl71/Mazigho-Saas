@@ -49,7 +49,15 @@ export default defineConfig({
           ) {
             return "charts-vendor";
           }
-          return "vendor";
+          if (
+            normalizedId.includes("/node_modules/grapesjs/") ||
+            normalizedId.includes("/node_modules/@grapesjs/")
+          ) {
+            return "visual-builder-vendor";
+          }
+          if (normalizedId.includes("/node_modules/@sentry/")) {
+            return "sentry-vendor";
+          }
         },
       },
     },
@@ -58,7 +66,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
     allowedHosts: true,
-    hmr: process.env.DISABLE_HMR !== "true",
+    hmr: process.env.ENABLE_HMR === "true",
     watch: process.env.DISABLE_HMR === "true" ? null : {},
   },
 });

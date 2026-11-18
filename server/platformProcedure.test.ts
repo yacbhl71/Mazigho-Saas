@@ -177,6 +177,10 @@ describe("MAZIGHO Studio platform guard", () => {
     await expect(caller.admin.studio.reissueGiftStoreOwnerInvitation({ storeId: 1, confirmationEmail: "client@example.test" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.transferStoreOwnership({ storeId: 1, confirmationName: "Boutique cliente", newOwnerName: "Nouveau propriétaire", newOwnerEmail: "nouveau@example.test", confirmationEmail: "nouveau@example.test", acknowledged: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.restoreStoreOwnerMembership({ storeId: 1, confirmationName: "Boutique cliente", ownerEmail: "client@example.test", acknowledged: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.getStoreHandoverChecklist({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.updateStoreHandoverManualChecks({ storeId: 1, checks: { storefront_visual_qa: true }, notes: "Test" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.confirmStoreHandoverDelivery({ storeId: 1, confirmationStoreName: "Boutique cliente", acknowledged: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.revokeStoreHandoverDelivery({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("refuses technical platform controls from a non-administrator", async () => {

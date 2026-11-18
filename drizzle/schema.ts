@@ -95,7 +95,7 @@ export const storeSettings = mysqlTable("storeSettings", {
   id: int("id").autoincrement().primaryKey(),
   storeId: int("storeId").notNull(),
   key: varchar("key", { length: 100 }).notNull(),
-  value: text("value").notNull(),
+  value: mediumtext("value").notNull(),
   description: text("description"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -112,7 +112,7 @@ export const storeCmsPages = mysqlTable("storeCmsPages", {
   title: varchar("title", { length: 255 }).notNull(),
   category: varchar("category", { length: 24 }).default("à vérifier").notNull(),
   sourceUrl: varchar("sourceUrl", { length: 1000 }),
-  blocks: text("blocks").notNull(),
+  blocks: mediumtext("blocks").notNull(),
   reviewRequired: int("reviewRequired").default(1).notNull(),
   status: varchar("status", { length: 24 }).default("draft").notNull(),
   originalUpdatedAt: varchar("originalUpdatedAt", { length: 80 }),

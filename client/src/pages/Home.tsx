@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, ArrowUpRight, Check, ChevronRight, Quote, Search, ShoppingCart, Sparkles, Star, UserRound } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, Quote, Search, ShoppingCart, Sparkles, Star, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useStorePrice } from "@/hooks/useStorePrice";
@@ -90,6 +91,96 @@ const discoveryTileMeta = [
   { image: "/assets/category-high-tech.webp", href: "/categorie/high-tech-gadgets" },
   { image: "/assets/category-auto.webp", href: "/categorie/auto-accessoires" },
 ];
+
+function LiveCountdownDigits({ endsAt }: { endsAt?: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const target = endsAt ? Date.parse(endsAt) : NaN;
+  const remainingMs = Number.isFinite(target) ? Math.max(0, target - now) : 2 * 86400000 + 14 * 3600000;
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return (
+    <div className="mt-6 grid max-w-md grid-cols-4 gap-3 text-center">
+      {[
+        { value: pad(days), label: "Jours" },
+        { value: pad(hours), label: "Heures" },
+        { value: pad(minutes), label: "Minutes" },
+        { value: pad(seconds), label: "Secondes" },
+      ].map(unit => (
+        <div key={unit.label} className="rounded-2xl border border-white/20 bg-black/25 px-3 py-3 backdrop-blur-sm text-white">
+          <p className="text-2xl font-extrabold tracking-tight md:text-3xl">{unit.value}</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-white/75">{unit.label}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InteractiveBeforeAfterSlider({
+  beforeImage,
+  afterImage,
+  beforeLabel = "Avant",
+  afterLabel = "Après",
+  focalClass = "object-center",
+}: {
+  beforeImage: string;
+  afterImage: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+  focalClass?: string;
+}) {
+  const [position, setPosition] = useState(50);
+  return (
+    <div className="space-y-3">
+      <div className="relative min-h-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 md:min-h-[360px]">
+        {afterImage ? (
+          <img
+            src={afterImage}
+            alt={afterLabel}
+            className={`absolute inset-0 h-full w-full object-cover ${focalClass}`}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : null}
+        <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${position}%` }}>
+          {beforeImage ? (
+            <img
+              src={beforeImage}
+              alt={beforeLabel}
+              className={`h-full w-full object-cover ${focalClass}`}
+              loading="lazy"
+              decoding="async"
+            />
+          ) : null}
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-lg" style={{ left: `${position}%` }} />
+        <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-slate-950/75 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+          {beforeLabel}
+        </span>
+        <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-slate-950/75 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+          {afterLabel}
+        </span>
+      </div>
+      <input
+        type="range"
+        aria-label="Curseur de comparaison Avant / Après"
+        min={5}
+        max={95}
+        value={position}
+        onChange={e => setPosition(Number(e.target.value))}
+        className="w-full cursor-ew-resize accent-[var(--mazigho-primary)]"
+      />
+    </div>
+  );
+}
 
 export default function Home() {
   const { locale } = useLocale();
@@ -505,15 +596,30 @@ export default function Home() {
           const textClass = isDark || blockTheme === "primary" ? "text-white" : "text-slate-950";
           const mutedClass = isDark || blockTheme === "primary" ? "text-white/80" : "text-slate-600";
           const hasImage = Boolean(banner.imageUrl);
+          const visibilityClass =
+            banner.visibilityDevice === "mobile"
+              ? "md:hidden"
+              : banner.visibilityDevice === "desktop"
+              ? "hidden md:block"
+              : "";
+          const focalClass =
+            banner.imageFocalPoint === "top"
+              ? "object-top"
+              : banner.imageFocalPoint === "bottom"
+              ? "object-bottom"
+              : "object-center";
+
           const content = <div className={`relative ${hasImage && blockLayout === "banner" ? "z-10 max-w-2xl" : ""} ${textClass}`}>
             {banner.eyebrow ? <p className={`text-xs font-bold uppercase tracking-[0.28em] ${mutedClass}`}>{banner.eyebrow}</p> : null}
             <h2 className="mt-3 text-2xl font-semibold leading-tight md:text-4xl">{banner.title}</h2>
             {banner.text ? <p className={`mt-3 max-w-xl text-sm leading-6 md:text-base ${mutedClass}`}>{banner.text}</p> : null}
+            {blockLayout === "countdownBanner" ? <LiveCountdownDigits endsAt={banner.countdownEndsAt} /> : null}
             {banner.buttonLabel && banner.buttonUrl ? <Button asChild className={`mt-6 ${isDark || blockTheme === "primary" ? "bg-white text-slate-900 hover:bg-white/90" : "text-white hover:brightness-95"}`} style={isDark || blockTheme === "primary" ? undefined : { backgroundColor: palette.primary }}><Link href={banner.buttonUrl}>{banner.buttonLabel}<ArrowRight className="ml-2 h-4 w-4" /></Link></Button> : null}
           </div>;
+
           if (blockLayout === "roundGallery") {
             const galleryItems = (banner.galleryItems || []).slice(0, 6);
-            return <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`), backgroundColor: palette.soft }} className="py-14 md:py-20">
+            return <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`), backgroundColor: palette.soft }} className={`py-14 md:py-20 ${visibilityClass}`}>
               <div className="container">
                 <div className="mx-auto max-w-5xl text-center">
                   {banner.eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.28em]" style={{ color: palette.primary }}>{banner.eyebrow}</p> : null}
@@ -523,15 +629,128 @@ export default function Home() {
                 </div>
                 <div className="mx-auto mt-9 grid max-w-6xl grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
                   {galleryItems.map(item => {
-                    const itemContent = <><img src={item.imageUrl} alt={item.imageAlt} width={400} height={400} loading="lazy" decoding="async" className="aspect-square w-full rounded-full object-cover shadow-sm transition-transform duration-300 group-hover:scale-105" /><p className="mt-3 text-center text-sm font-semibold leading-5" style={{ color: palette.primary }}>{item.label}</p></>;
+                    const itemContent = <><img src={item.imageUrl} alt={item.imageAlt} width={400} height={400} loading="lazy" decoding="async" className={`aspect-square w-full rounded-full object-cover shadow-sm transition-transform duration-300 group-hover:scale-105 ${focalClass}`} /><p className="mt-3 text-center text-sm font-semibold leading-5" style={{ color: palette.primary }}>{item.label}</p></>;
                     return item.href ? <Link key={item.id} href={item.href} className="group mx-auto block w-full max-w-[156px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mazigho-accent)] focus-visible:ring-offset-4">{itemContent}</Link> : <div key={item.id} className="mx-auto w-full max-w-[156px]">{itemContent}</div>;
                   })}
                 </div>
               </div>
             </section>;
           }
-          return <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className="container py-4 md:py-8">
-            {blockLayout === "split" ? <div className="grid overflow-hidden rounded-[1.5rem] border border-slate-200 md:grid-cols-2" style={blockStyle}><div className="flex items-center px-7 py-9 md:px-12 md:py-12">{content}</div><div className="relative min-h-[230px] bg-slate-100 md:min-h-full">{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" /> : <div className="absolute inset-0 bg-gradient-to-br from-[var(--mazigho-soft)] via-white to-slate-100" />}</div></div> : blockLayout === "framedSplit" ? <div className="rounded-[1.5rem] p-3 md:p-4" style={blockStyle}><div className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:gap-8"><div className="flex items-center px-4 py-6 md:px-8 md:py-10">{content}</div><div className="relative min-h-[230px] overflow-hidden rounded-[1rem] border border-white/20 bg-slate-100 shadow-sm md:min-h-full">{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" /> : <div className="absolute inset-0 bg-gradient-to-br from-[var(--mazigho-soft)] via-white to-slate-100" />}</div></div></div> : blockLayout === "spotlight" ? <div className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 px-7 py-8 md:px-12 md:py-12" style={blockStyle}>{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className="absolute inset-0 h-full w-full object-cover opacity-15" loading="lazy" decoding="async" /> : null}<div aria-hidden="true" className="absolute -right-10 -top-12 h-52 w-52 rounded-full border-[26px] border-white/20" />{content}</div> : <div className="relative overflow-hidden rounded-[1.5rem] px-7 py-8 md:px-12 md:py-12" style={blockStyle}>{hasImage ? <><img src={banner.imageUrl} alt={banner.imageAlt || ""} className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" /><div className="absolute inset-0 bg-slate-950/55" /></> : null}{content}</div>}
+
+          if (blockLayout === "productGrid") {
+            const selectedIds = banner.productIds || [];
+            const matchedProducts = selectedIds.length > 0
+              ? catalogProducts.filter(p => selectedIds.includes(p.id)).slice(0, 4)
+              : featuredProducts.slice(0, 4);
+            const gridProducts = matchedProducts.length > 0 ? matchedProducts : featuredProducts.slice(0, 4);
+            return (
+              <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className={`container py-6 md:py-10 ${visibilityClass}`}>
+                <div className="rounded-[1.5rem] border border-slate-200 p-6 md:p-10" style={blockStyle}>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-8">
+                    <div>
+                      {banner.eyebrow ? <p className={`text-xs font-bold uppercase tracking-[0.28em] ${mutedClass}`}>{banner.eyebrow}</p> : null}
+                      <h2 className={`mt-2 text-2xl font-semibold tracking-tight md:text-4xl ${textClass}`}>{banner.title}</h2>
+                      {banner.text ? <p className={`mt-2 max-w-2xl text-sm leading-6 ${mutedClass}`}>{banner.text}</p> : null}
+                    </div>
+                    {banner.buttonLabel && banner.buttonUrl ? (
+                      <Link href={banner.buttonUrl} className={`inline-flex items-center gap-1.5 text-sm font-semibold ${textClass} hover:opacity-80`}>
+                        {banner.buttonLabel} <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {gridProducts.map(product => {
+                      const img = product.images?.[0]?.imageUrl;
+                      const hasDiscount = Boolean(product.originalPrice && product.originalPrice > product.price);
+                      return (
+                        <Link key={product.id} href={`/produit/${product.slug}`} className="group block rounded-2xl border border-slate-200/80 bg-white overflow-hidden text-slate-900 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+                          <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+                            {img ? (
+                              <img src={img} alt={product.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                            ) : (
+                              <div className="grid h-full place-items-center text-3xl text-slate-300">✦</div>
+                            )}
+                          </div>
+                          <div className="p-4">
+                            <h3 className="font-semibold text-sm line-clamp-2">{product.name}</h3>
+                            <div className="mt-2 flex items-baseline gap-2">
+                              <span className="font-bold text-base" style={{ color: palette.primary }}>{formatPrice(product.price, locale)}</span>
+                              {hasDiscount && <span className="text-xs text-slate-400 line-through">{formatPrice(product.originalPrice!, locale)}</span>}
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+            );
+          }
+
+          if (blockLayout === "beforeAfter") {
+            return (
+              <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className={`container py-6 md:py-10 ${visibilityClass}`}>
+                <div className="grid gap-8 items-center rounded-[1.5rem] border border-slate-200 p-6 md:grid-cols-2 md:p-10" style={blockStyle}>
+                  <div>{content}</div>
+                  <InteractiveBeforeAfterSlider
+                    beforeImage={banner.imageUrl || ""}
+                    afterImage={banner.secondaryImageUrl || banner.imageUrl || ""}
+                    beforeLabel={banner.beforeLabel || "Avant"}
+                    afterLabel={banner.afterLabel || "Après"}
+                    focalClass={focalClass}
+                  />
+                </div>
+              </section>
+            );
+          }
+
+          if (blockLayout === "faqAccordion") {
+            const faqItems = banner.faqItems || [];
+            return (
+              <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className={`container py-6 md:py-10 ${visibilityClass}`}>
+                <div className="rounded-[1.5rem] border border-slate-200 p-6 md:p-10" style={blockStyle}>
+                  <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+                    <div>{content}</div>
+                    <div className="space-y-3">
+                      {faqItems.map(faq => (
+                        <details key={faq.id} className="group rounded-2xl border border-slate-200/80 bg-white p-4 text-slate-900 shadow-sm">
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-sm md:text-base">
+                            <span>{faq.question}</span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
+                          </summary>
+                          <p className="mt-3 text-sm leading-6 text-slate-600">{faq.answer}</p>
+                        </details>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          }
+
+          if (blockLayout === "statsCounter") {
+            const statItems = banner.statItems || [];
+            return (
+              <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className={`container py-6 md:py-10 ${visibilityClass}`}>
+                <div className="rounded-[1.5rem] border border-slate-200 p-7 md:p-12" style={blockStyle}>
+                  <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] items-center">
+                    <div>{content}</div>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      {statItems.map(stat => (
+                        <div key={stat.id} className="rounded-2xl border border-white/15 bg-white/10 p-5 text-center backdrop-blur-sm">
+                          <p className={`text-3xl font-extrabold tracking-tight md:text-4xl ${textClass}`}>{stat.value}</p>
+                          <p className={`mt-2 text-xs font-semibold uppercase tracking-wider ${mutedClass}`}>{stat.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          }
+
+          return <section key={`text-${banner.id}`} style={{ order: orderIndex(`text:${banner.id}`) }} className={`container py-4 md:py-8 ${visibilityClass}`}>
+            {blockLayout === "split" ? <div className="grid overflow-hidden rounded-[1.5rem] border border-slate-200 md:grid-cols-2" style={blockStyle}><div className="flex items-center px-7 py-9 md:px-12 md:py-12">{content}</div><div className="relative min-h-[230px] bg-slate-100 md:min-h-full">{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className={`absolute inset-0 h-full w-full object-cover ${focalClass}`} loading="lazy" decoding="async" /> : <div className="absolute inset-0 bg-gradient-to-br from-[var(--mazigho-soft)] via-white to-slate-100" />}</div></div> : blockLayout === "framedSplit" ? <div className="rounded-[1.5rem] p-3 md:p-4" style={blockStyle}><div className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:gap-8"><div className="flex items-center px-4 py-6 md:px-8 md:py-10">{content}</div><div className="relative min-h-[230px] overflow-hidden rounded-[1rem] border border-white/20 bg-slate-100 shadow-sm md:min-h-full">{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className={`absolute inset-0 h-full w-full object-cover ${focalClass}`} loading="lazy" decoding="async" /> : <div className="absolute inset-0 bg-gradient-to-br from-[var(--mazigho-soft)] via-white to-slate-100" />}</div></div></div> : blockLayout === "spotlight" || blockLayout === "countdownBanner" ? <div className="relative overflow-hidden rounded-[1.5rem] border border-slate-200 px-7 py-8 md:px-12 md:py-12" style={blockStyle}>{hasImage ? <img src={banner.imageUrl} alt={banner.imageAlt || ""} className={`absolute inset-0 h-full w-full object-cover opacity-15 ${focalClass}`} loading="lazy" decoding="async" /> : null}<div aria-hidden="true" className="absolute -right-10 -top-12 h-52 w-52 rounded-full border-[26px] border-white/20" />{content}</div> : <div className="relative overflow-hidden rounded-[1.5rem] px-7 py-8 md:px-12 md:py-12" style={blockStyle}>{hasImage ? <><img src={banner.imageUrl} alt={banner.imageAlt || ""} className={`absolute inset-0 h-full w-full object-cover ${focalClass}`} loading="lazy" decoding="async" /><div className="absolute inset-0 bg-slate-950/55" /></> : null}{content}</div>}
           </section>;
         })}
         </div>
