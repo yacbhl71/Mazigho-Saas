@@ -46,4 +46,17 @@ describe("storefront theme access", () => {
     expect(source).toContain("Thème verrouillé : il ne sera jamais appliqué sans attribution explicite.");
     expect(source).toContain("isPremiumStorefrontTheme(theme.id)");
   });
+
+  it("renders real store profile, categories, products, and editorial section in the multi-screen preview", () => {
+    const pickerSource = worktree("client/src/components/owner/OwnerStorefrontThemePicker.tsx");
+    const panelSource = worktree("client/src/pages/OwnerStorePanel.tsx");
+
+    expect(pickerSource).toContain("activeCategories");
+    expect(pickerSource).toContain("activeProducts");
+    expect(pickerSource).toContain('section.id === "editorial"');
+    expect(pickerSource).toContain("enabledCustomBanners");
+    expect(pickerSource).not.toContain('["Nouveautés", "Bestsellers", "Édition Limitée"]');
+    expect(pickerSource).not.toContain("Sophie M. · Client vérifié");
+    expect(panelSource).toContain("categories={categories} products={products}");
+  });
 });

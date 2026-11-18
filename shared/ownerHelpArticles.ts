@@ -212,6 +212,48 @@ export const ownerHelpArticles: readonly OwnerHelpArticle[] = [
     target: "simulation",
     actionLabel: "Ouvrir la Simulation panier",
   },
+  {
+    id: "handover-first-day-checklist",
+    category: "start",
+    title: "Prise en main après remise de ma boutique clé en main",
+    summary: "Les quatre vérifications essentielles dès votre première connexion en tant que propriétaire unique.",
+    steps: [
+      "Définissez votre mot de passe personnel dès l’ouverture du lien d’activation reçu et ne le partagez jamais.",
+      "Dans Équipe, vérifiez que votre compte est bien Propriétaire actif et qu’aucun accès temporaire de préparation ne subsiste.",
+      "Dans Réglages et Intégrations, contrôlez vos mentions légales d’exploitant ainsi que vos propres clés d’encaissement Stripe ou PayPal.",
+    ],
+    caution: "Une fois la boutique remise, vous êtes seul responsable des clés de paiement et des conditions commerciales publiées.",
+    target: "readiness",
+    actionLabel: "Vérifier mon espace propriétaire",
+  },
+  {
+    id: "byok-sandbox-to-live-and-key-rotation",
+    category: "access",
+    title: "Passer mes clés Stripe / PayPal de Test à Production et les renouveler",
+    summary: "Branchez vos propres clés d’encaissement (BYOK), validez un paiement test puis basculez en mode Production ou effectuez une rotation de clé.",
+    steps: [
+      "Dans Intégrations > Paiements de la boutique, enregistrez d’abord vos clés Test/Sandbox (Stripe sk_test_ + whsec_ ou PayPal Sandbox Client ID + Secret) et lancez le test de connexion.",
+      "Réalisez une commande de test complète sur votre vitrine afin de valider le panier, la livraison et le retour de confirmation.",
+      "Remplacez ensuite vos identifiants par vos clés de Production (Stripe sk_live_ ou PayPal Live), décochez le mode Test et enregistrez : en cas de suspicion de fuite, générez immédiatement une nouvelle clé chez votre prestataire et mettez-la à jour ici.",
+    ],
+    caution: "Ne collez jamais de clé secrète (sk_live_, secret PayPal ou whsec_) dans un message de support ou dans le contenu public de la vitrine.",
+    target: "integrations",
+    actionLabel: "Gérer mes clés de paiement",
+  },
+  {
+    id: "orders-and-returns-workflow",
+    category: "operations",
+    title: "Traiter les commandes payées, les expéditions et les retours",
+    summary: "Suivez le cycle complet d’une commande client depuis la confirmation du paiement jusqu’à la livraison.",
+    steps: [
+      "Consultez vos commandes confirmées : le stock est automatiquement déduit dès la validation du paiement en ligne.",
+      "Préparez le colis, renseignez le transporteur ainsi que le numéro ou lien de suivi, puis passez le statut à Expédiée.",
+      "Si un client soumet une demande de retour, examinez le motif et les quantités avant d’accepter ou de refuser la demande.",
+    ],
+    caution: "La fiche de remise transporteur n’est générée qu’une fois la commande marquée comme expédiée.",
+    target: "operations",
+    actionLabel: "Ouvrir les opérations",
+  },
 ] as const;
 
 function normalize(value: string) {

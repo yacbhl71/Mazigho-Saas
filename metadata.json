@@ -1,6 +1,6 @@
 {
-  "name": "MAZIGHO | Plateforme E-Commerce & SaaS Multi-Boutiques",
-  "description": "MAZIGHO : boutique en ligne d'objets utiles et collections créatives, et plateforme SaaS multi-tenant (MAZIGHO Studio & Boutique Clé-en-main).",
+  "name": "MAZIGHO",
+  "description": "MAZIGHO : Plateforme E-Commerce Multi-boutiques & Management Studio.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

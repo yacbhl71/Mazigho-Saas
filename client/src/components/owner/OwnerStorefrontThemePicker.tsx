@@ -111,12 +111,37 @@ const DEFAULT_SECTIONS: StorefrontSectionItem[] = [
   },
 ];
 
+export type OwnerPreviewCategoryItem = {
+  id?: number;
+  name: string;
+  slug?: string;
+  imageUrl?: string | null;
+};
+
+export type OwnerPreviewProductItem = {
+  id?: number;
+  name: string;
+  price?: number;
+  originalPrice?: number | null;
+  status?: string;
+  featured?: boolean | number;
+  images?: Array<{ imageUrl?: string | null } | string>;
+};
+
 export default function OwnerStorefrontThemePicker({
   storeName,
+  primaryDomain,
+  currencyCode = "CHF",
+  categories = [],
+  products = [],
   profile,
   onApplied,
 }: {
   storeName: string;
+  primaryDomain?: string | null;
+  currencyCode?: string;
+  categories?: OwnerPreviewCategoryItem[];
+  products?: OwnerPreviewProductItem[];
   profile: DesignProfile | null;
   onApplied: (profile: unknown) => void;
 }) {
@@ -670,10 +695,10 @@ export default function OwnerStorefrontThemePicker({
                 <Button
                   type="button"
                   className="bg-blue-600 hover:bg-blue-700 text-white font-medium min-h-11 px-5"
-                  disabled={saveSectionsMutation.isPending}
+                  disabled={saveSectionLayoutMutation.isPending || saveSectionsMutation.isPending}
                   onClick={saveSectionsLayout}
                 >
-                  {saveSectionsMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                  {saveSectionLayoutMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
                   Sauvegarder l’agencement des sections
                 </Button>
               </div>
@@ -683,243 +708,450 @@ export default function OwnerStorefrontThemePicker({
       )}
 
       {/* TAB 3: RESPONSIVE MULTI-DEVICE PREVIEW (DESKTOP, TABLET, MOBILE) */}
-      {activeTab === "preview" && (
-        <div className="space-y-4">
-          {/* Device Viewport Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Appareil :</span>
-              <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setDeviceViewport("desktop")}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                    deviceViewport === "desktop" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Monitor className="h-3.5 w-3.5" /> Ordinateur (1440px)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeviceViewport("tablet")}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                    deviceViewport === "tablet" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Tablet className="h-3.5 w-3.5" /> Tablette (768px)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeviceViewport("mobile")}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                    deviceViewport === "mobile" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Smartphone className="h-3.5 w-3.5" /> Mobile (375px)
-                </button>
+      {activeTab === "preview" && (() => {
+        const previewDomain = primaryDomain?.trim() || `${storeName.toLowerCase().replace(/\s+/g, "-")}.ch`;
+        const brandTitle = profile?.brandName?.trim() || storeName;
+        const brandSubtitle = profile?.brandMessage?.trim() || "";
+        const visibleNavItems = (profile?.navigationItems ?? []).filter(item => item.visible !== false).slice(0, 5);
+        const activeCategories = categories.filter(cat => Boolean(cat?.name?.trim())).slice(0, 6);
+        const activeProducts = [...products]
+          .filter(prod => prod && prod.status !== "archived" && Boolean(prod.name?.trim()))
+          .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
+          .slice(0, 6);
+        const reassuranceList = (profile?.reassuranceItems ?? []).filter(
+          item => Boolean(item?.title?.trim() || item?.text?.trim()),
+        );
+        const enabledCustomBanners = (profile?.textBanners ?? []).filter(banner => banner.enabled !== false);
+        const fontFamilyClass =
+          selectedTypography === "editorial"
+            ? "font-serif"
+            : selectedTypography === "classic"
+            ? "font-sans tracking-normal"
+            : "font-sans tracking-tight";
+
+        const resolveFirstProductImage = (product: OwnerPreviewProductItem): string | null => {
+          if (!Array.isArray(product.images)) return null;
+          for (const entry of product.images) {
+            if (typeof entry === "string" && entry.trim()) return entry.trim();
+            if (entry && typeof entry === "object" && typeof entry.imageUrl === "string" && entry.imageUrl.trim()) {
+              return entry.imageUrl.trim();
+            }
+          }
+          return null;
+        };
+
+        const formatPrice = (cents?: number | null) => {
+          const amount = (Number(cents ?? 0) / 100).toFixed(2);
+          return `${amount} ${currencyCode}`;
+        };
+
+        return (
+          <div className="space-y-4">
+            {/* Device Viewport Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Appareil :</span>
+                <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setDeviceViewport("desktop")}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      deviceViewport === "desktop" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Monitor className="h-3.5 w-3.5" /> Ordinateur (1440px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeviceViewport("tablet")}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      deviceViewport === "tablet" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Tablet className="h-3.5 w-3.5" /> Tablette (768px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeviceViewport("mobile")}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      deviceViewport === "mobile" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Smartphone className="h-3.5 w-3.5" /> Mobile (375px)
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs border-slate-300">
+                  Thème : {selectedTheme.label}
+                </Badge>
+                <Badge variant="outline" className="text-xs border-emerald-200 bg-emerald-50 text-emerald-900">
+                  Données réelles · {activeCategories.length} cat. · {activeProducts.length} prod.
+                </Badge>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("sections")}>
+                  <Layers className="mr-1.5 h-3.5 w-3.5 text-blue-600" /> Réordonner les sections
+                </Button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs border-slate-300">
-                Thème : {selectedTheme.label}
-              </Badge>
-              <Button size="sm" variant="outline" onClick={() => setActiveTab("sections")}>
-                <Layers className="mr-1.5 h-3.5 w-3.5 text-blue-600" /> Réordonner les sections
-              </Button>
-            </div>
-          </div>
-
-          {/* Interactive Responsive Mockup Frame */}
-          <div className="flex justify-center bg-slate-900/5 p-4 sm:p-8 rounded-3xl border border-slate-200 overflow-x-auto">
-            <div
-              className={`bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden transition-all duration-300 ${
-                deviceViewport === "desktop"
-                  ? "w-full max-w-5xl"
-                  : deviceViewport === "tablet"
-                  ? "w-[768px]"
-                  : "w-[375px]"
-              }`}
-            >
-              {/* Browser chrome header */}
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-2.5">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            {/* Interactive Responsive Mockup Frame */}
+            <div className="flex justify-center bg-slate-900/5 p-4 sm:p-8 rounded-3xl border border-slate-200 overflow-x-auto">
+              <div
+                className={`bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden transition-all duration-300 ${fontFamilyClass} ${
+                  deviceViewport === "desktop"
+                    ? "w-full max-w-5xl"
+                    : deviceViewport === "tablet"
+                    ? "w-[768px]"
+                    : "w-[375px]"
+                }`}
+              >
+                {/* Browser chrome header */}
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                  </div>
+                  <div className="rounded-md border border-slate-200 bg-white px-3 py-0.5 text-[11px] text-slate-600 font-mono truncate max-w-[240px] sm:max-w-md">
+                    https://{previewDomain}
+                  </div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">{deviceViewport}</span>
                 </div>
-                <div className="rounded-md border border-slate-200 bg-white px-3 py-0.5 text-[11px] text-slate-600 font-mono">
-                  https://{storeName.toLowerCase().replace(/\s+/g, "-")}.ch
-                </div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">{deviceViewport}</span>
-              </div>
 
-              {/* Mockup Storefront Body rendered with theme colors and section order */}
-              <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-100">
-                {sections
-                  .filter(s => s.enabled)
-                  .map((section, idx) => (
-                    <div key={section.id} className="relative p-5 transition hover:bg-slate-50/50">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          #{idx + 1} · {section.badge}
-                        </span>
-                        <Badge variant="outline" className="text-[10px] bg-slate-50">
-                          {section.name}
-                        </Badge>
-                      </div>
-
-                      {section.id === "announcement" && (
-                        <div className="rounded-lg bg-slate-900 text-white p-2 text-center text-xs font-medium flex items-center justify-center gap-2">
-                          <Tag className="h-3 w-3 text-amber-400" />
-                          <span>Livraison offerte dès 50 CHF · Offre limitée jusqu'à minuit !</span>
-                        </div>
-                      )}
-
-                      {section.id === "highlight" && (
-                        <div className="relative rounded-xl overflow-hidden h-40 bg-slate-900 flex items-center p-6 text-white">
-                          <img
-                            src={selectedTheme.visual}
-                            alt="Hero"
-                            className="absolute inset-0 w-full h-full object-cover opacity-45"
-                          />
-                          <div className="relative z-10 max-w-sm">
-                            <span className="text-xs uppercase tracking-widest text-amber-300 font-bold">
-                              {selectedTheme.eyebrow}
-                            </span>
-                            <h3 className="text-xl font-bold mt-1">{storeName}</h3>
-                            <p className="text-xs text-slate-200 mt-1 line-clamp-2">{selectedTheme.description}</p>
-                            <button
-                              type="button"
-                              className={`mt-3 px-3 py-1.5 text-xs font-bold rounded-lg shadow ${selectedTheme.palette.button}`}
-                            >
-                              Découvrir la collection
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {section.id === "flash_sale" && (
-                        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Zap className="h-4 w-4 text-rose-600 animate-pulse" />
-                            <span className="text-xs font-bold text-rose-950">Ventes Flash exclusives</span>
-                          </div>
-                          <div className="flex items-center gap-1 font-mono text-xs font-bold text-rose-700 bg-white px-2 py-1 rounded border border-rose-200">
-                            <Clock className="h-3 w-3" /> 04:22:18
-                          </div>
-                        </div>
-                      )}
-
-                      {section.id === "discovery" && (
-                        <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2">
-                            Nos Rayons & Collections
-                          </h4>
-                          <div className="grid grid-cols-3 gap-2">
-                            {["Nouveautés", "Bestsellers", "Édition Limitée"].map(cat => (
-                              <div
-                                key={cat}
-                                className="rounded-lg border border-slate-200 p-2 text-center text-xs font-semibold bg-slate-50 hover:bg-white"
-                              >
-                                {cat}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {section.id === "featured" && (
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                              Sélection Bestsellers
-                            </h4>
-                            <span className="text-[11px] text-violet-700 font-medium">Tout voir →</span>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {[1, 2, 3].map(item => (
-                              <div key={item} className="rounded-lg border border-slate-200 p-2 bg-white">
-                                <div className="h-16 bg-slate-100 rounded-md mb-1.5 flex items-center justify-center text-slate-400 text-xs">
-                                  Produit #{item}
-                                </div>
-                                <p className="text-xs font-bold truncate">Article {item}</p>
-                                <p className="text-[11px] font-bold text-slate-900 mt-0.5">39.00 CHF</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {section.id === "frequently_bought" && (
-                        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 text-xs">
-                          <p className="font-bold text-violet-950">Fréquemment Achetés Ensemble (-15%)</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="h-10 w-10 rounded bg-white border border-violet-200 flex items-center justify-center text-[10px]">
-                              Art. 1
-                            </div>
-                            <span>+</span>
-                            <div className="h-10 w-10 rounded bg-white border border-violet-200 flex items-center justify-center text-[10px]">
-                              Art. 2
-                            </div>
-                            <span className="font-bold ml-auto text-violet-900">Total : 59 CHF</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {section.id === "reassurance" && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px] text-slate-600 bg-slate-50 p-3 rounded-xl">
-                          <div>⚡ Livraison express</div>
-                          <div>🔒 Paiement 100% sécurisé</div>
-                          <div>↩️ Retours faciles</div>
-                          <div>💬 Support 7j/7</div>
-                        </div>
-                      )}
-
-                      {section.id === "story" && (
-                        <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-800">
-                          <span className="font-bold uppercase tracking-wider text-[10px] text-stone-500">
-                            Notre Savoir-Faire
-                          </span>
-                          <p className="font-semibold text-sm mt-0.5">L’excellence au service de vos exigences.</p>
-                          <p className="text-stone-600 text-[11px] mt-1">
-                            Chaque pièce est sélectionnée et contrôlée avec rigueur pour offrir une qualité durable.
-                          </p>
-                        </div>
-                      )}
-
-                      {section.id === "testimonials" && (
-                        <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200 text-xs">
-                          <div className="flex items-center gap-1 text-amber-500 mb-1">
-                            {"★★★★★"} <span className="text-[11px] font-bold text-emerald-950 ml-1">4.9 / 5</span>
-                          </div>
-                          <p className="italic text-emerald-900 text-[11px]">
-                            « Commande reçue en 48h, emballage soigné et produit parfait. Je recommande vivement ! »
-                          </p>
-                          <span className="text-[10px] text-emerald-700 font-semibold block mt-1">
-                            Sophie M. · Client vérifié
-                          </span>
-                        </div>
-                      )}
-
-                      {section.id === "whatsapp_chat" && (
-                        <div className="p-2.5 bg-emerald-500 text-white rounded-xl flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <MessageCircle className="h-4 w-4" />
-                            <span className="font-bold">Une question ? Chattez en direct sur WhatsApp</span>
-                          </div>
-                          <span className="bg-white text-emerald-900 font-bold px-2 py-0.5 rounded text-[10px]">
-                            Écrire
-                          </span>
-                        </div>
-                      )}
+                {/* Storefront Header Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {profile?.brandLogoUrl ? (
+                      <img src={profile.brandLogoUrl} alt={brandTitle} className="h-7 w-7 rounded-md object-cover border border-slate-200" />
+                    ) : (
+                      <span
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white"
+                        style={{ backgroundColor: customPrimaryColor }}
+                      >
+                        {brandTitle.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-950 truncate">{brandTitle}</p>
+                      {brandSubtitle && <p className="text-[10px] text-slate-500 truncate">{brandSubtitle}</p>}
                     </div>
-                  ))}
+                  </div>
+                  {deviceViewport !== "mobile" && (
+                    <nav className="flex flex-wrap items-center gap-3 text-[11px] font-medium text-slate-600">
+                      {visibleNavItems.length > 0 ? (
+                        visibleNavItems.map(item => <span key={item.id}>{item.label}</span>)
+                      ) : (
+                        <>
+                          <span>Accueil</span>
+                          <span>Boutique</span>
+                          <span>Contact</span>
+                        </>
+                      )}
+                    </nav>
+                  )}
+                </div>
+
+                {/* Mockup Storefront Body rendered with real store data and section order */}
+                <div className="max-h-[640px] overflow-y-auto divide-y divide-slate-100">
+                  {sections
+                    .filter(s => s.enabled)
+                    .map((section, idx) => (
+                      <div key={section.id} className="relative p-5 transition hover:bg-slate-50/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            #{idx + 1} · {section.badge}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] bg-slate-50">
+                            {section.name}
+                          </Badge>
+                        </div>
+
+                        {section.id === "highlight" && (
+                          <div className="relative rounded-xl overflow-hidden min-h-44 bg-slate-900 flex items-center p-6 text-white">
+                            <img
+                              src={profile?.highlightImageUrl || selectedTheme.visual}
+                              alt={profile?.highlightTitle || brandTitle}
+                              className="absolute inset-0 w-full h-full object-cover opacity-45"
+                            />
+                            <div className="relative z-10 max-w-md">
+                              <span className="text-xs uppercase tracking-widest text-amber-300 font-bold">
+                                {profile?.highlightEyebrow || selectedTheme.eyebrow}
+                              </span>
+                              <h3 className="text-xl font-bold mt-1">
+                                {profile?.highlightTitle || brandTitle}
+                              </h3>
+                              <p className="text-xs text-slate-200 mt-1 line-clamp-3">
+                                {profile?.highlightText || selectedTheme.description}
+                              </p>
+                              <button
+                                type="button"
+                                style={{ backgroundColor: customPrimaryColor }}
+                                className="mt-3 px-3.5 py-1.5 text-xs font-bold rounded-lg text-white shadow"
+                              >
+                                {profile?.discoveryBrowseShopLabel || "Découvrir la collection"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {section.id === "discovery" && (
+                          <div>
+                            <div className="mb-2">
+                              {profile?.discoveryEyebrow && (
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                  {profile.discoveryEyebrow}
+                                </p>
+                              )}
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                                {profile?.discoveryTitle || "Nos Rayons & Collections"}
+                              </h4>
+                              {profile?.discoveryText && (
+                                <p className="text-[11px] text-slate-600 mt-0.5">{profile.discoveryText}</p>
+                              )}
+                            </div>
+                            {activeCategories.length > 0 ? (
+                              <div className={`grid gap-2 ${deviceViewport === "mobile" ? "grid-cols-2" : "grid-cols-3"}`}>
+                                {activeCategories.map((cat, catIdx) => (
+                                  <div
+                                    key={cat.id ?? `${cat.name}-${catIdx}`}
+                                    className="rounded-lg border border-slate-200 p-2 text-center text-xs font-semibold bg-slate-50 hover:bg-white flex flex-col items-center gap-1.5"
+                                  >
+                                    {cat.imageUrl && (
+                                      <img
+                                        src={cat.imageUrl}
+                                        alt={cat.name}
+                                        className="h-12 w-full rounded object-cover"
+                                      />
+                                    )}
+                                    <span className="truncate w-full">{cat.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-center text-xs text-slate-500">
+                                Aucune catégorie active dans votre catalogue. Ajoutez vos catégories dans l’onglet Catalogue.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {section.id === "featured" && (
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <div>
+                                {profile?.bestSellersTopLabel && (
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    {profile.bestSellersTopLabel}
+                                  </p>
+                                )}
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                                  {profile?.bestSellersTitle || "Produits de la boutique"}
+                                </h4>
+                              </div>
+                              <span className="text-[11px] font-medium" style={{ color: customPrimaryColor }}>
+                                {profile?.discoveryAllShopLabel || "Tout voir →"}
+                              </span>
+                            </div>
+                            {activeProducts.length > 0 ? (
+                              <div className={`grid gap-2 ${deviceViewport === "mobile" ? "grid-cols-2" : "grid-cols-3"}`}>
+                                {activeProducts.map((product, prodIdx) => {
+                                  const imgUrl = resolveFirstProductImage(product);
+                                  const hasDiscount = Number(product.originalPrice ?? 0) > Number(product.price ?? 0);
+                                  return (
+                                    <div key={product.id ?? `${product.name}-${prodIdx}`} className="rounded-lg border border-slate-200 p-2 bg-white">
+                                      {imgUrl ? (
+                                        <img
+                                          src={imgUrl}
+                                          alt={product.name}
+                                          className="h-20 w-full rounded-md object-cover mb-1.5 bg-slate-100"
+                                        />
+                                      ) : (
+                                        <div className="h-20 bg-slate-100 rounded-md mb-1.5 flex items-center justify-center text-slate-400 text-[11px] px-2 text-center">
+                                          {product.name}
+                                        </div>
+                                      )}
+                                      <p className="text-xs font-bold text-slate-900 truncate">{product.name}</p>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <p className="text-[11px] font-bold text-slate-900">
+                                          {formatPrice(product.price)}
+                                        </p>
+                                        {hasDiscount && (
+                                          <p className="text-[10px] text-slate-400 line-through">
+                                            {formatPrice(product.originalPrice)}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-center text-xs text-slate-500">
+                                Aucun produit actif dans votre catalogue. Ajoutez vos articles dans l’onglet Produits.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {section.id === "reassurance" && (
+                          <div className={`grid gap-2 text-center text-[11px] text-slate-700 bg-slate-50 p-3 rounded-xl ${deviceViewport === "mobile" ? "grid-cols-2" : "grid-cols-4"}`}>
+                            {(reassuranceList.length > 0
+                              ? reassuranceList
+                              : [
+                                  { title: "Livraison soignée", text: "Expédition suivie" },
+                                  { title: "Paiement sécurisé", text: "Protection complète" },
+                                  { title: "Retours encadrés", text: "Conditions claires" },
+                                  { title: "Service client dédié", text: "Accompagnement réactif" },
+                                ]
+                            ).map((item, itemIdx) => (
+                              <div key={`${item.title}-${itemIdx}`} className="rounded-lg bg-white p-2 border border-slate-200/80">
+                                <p className="font-semibold text-slate-900">{item.title}</p>
+                                {item.text && <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{item.text}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {section.id === "story" && (
+                          <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-800 flex flex-col sm:flex-row gap-3 items-start">
+                            {profile?.storyImageUrl && (
+                              <img
+                                src={profile.storyImageUrl}
+                                alt={profile?.storyTitle || brandTitle}
+                                className="h-20 w-full sm:w-28 rounded-lg object-cover shrink-0 border border-stone-200"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <span className="font-bold uppercase tracking-wider text-[10px] text-stone-500">
+                                {profile?.storyEyebrow || "Notre Savoir-Faire"}
+                              </span>
+                              <p className="font-semibold text-sm mt-0.5">
+                                {profile?.storyTitle || `L’histoire de ${brandTitle}`}
+                              </p>
+                              <p className="text-stone-600 text-[11px] mt-1 leading-relaxed">
+                                {profile?.storyText || selectedTheme.description}
+                              </p>
+                              {profile?.storyCtaLabel && (
+                                <span className="inline-block mt-1.5 text-[11px] font-semibold" style={{ color: customPrimaryColor }}>
+                                  {profile.storyCtaLabel} →
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {section.id === "testimonials" && (
+                          <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200 text-xs">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 block mb-0.5">
+                              {profile?.testimonialsEyebrow || "Témoignages"}
+                            </span>
+                            <p className="font-bold text-emerald-950 text-sm">
+                              {profile?.testimonialsTitle || "Avis clients"}
+                            </p>
+                            <p className="text-emerald-900 text-[11px] mt-1 leading-relaxed">
+                              {profile?.testimonialsText || "Retours vérifiés et expériences d’achat des clients de la boutique."}
+                            </p>
+                            {profile?.testimonialsCtaLabel && (
+                              <span className="inline-block mt-1.5 text-[11px] font-semibold text-emerald-800">
+                                {profile.testimonialsCtaLabel} →
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {section.id === "editorial" && (
+                          <div className="p-3.5 bg-violet-50/50 rounded-xl border border-violet-200 text-xs flex flex-col sm:flex-row gap-3 items-start justify-between">
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 block">
+                                {profile?.editorialEyebrow || "Sélection éditoriale"}
+                              </span>
+                              <p className="font-bold text-slate-950 text-sm mt-0.5">
+                                {profile?.editorialTitle || `Sélection & conseils ${brandTitle}`}
+                              </p>
+                            </div>
+                            {profile?.editorialImageUrl && (
+                              <img
+                                src={profile.editorialImageUrl}
+                                alt={profile?.editorialTitle || "Éditorial"}
+                                className="h-20 w-full sm:w-28 rounded-lg object-cover shrink-0 border border-violet-200"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                  {/* Custom Homepage Blocks (textBanners) preserved in profile */}
+                  {enabledCustomBanners
+                    .filter(banner => {
+                      if (deviceViewport === "mobile" && banner.visibilityDevice === "desktop") return false;
+                      if (deviceViewport !== "mobile" && banner.visibilityDevice === "mobile") return false;
+                      return true;
+                    })
+                    .map((banner, bannerIdx) => (
+                      <div key={banner.id || `custom-banner-${bannerIdx}`} className="relative p-5 bg-amber-50/20">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                            Bloc libre #{bannerIdx + 1} · {banner.layout || "banner"}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] border-amber-200 bg-amber-50 text-amber-900">
+                            {banner.title || "Bloc personnalisé"}
+                          </Badge>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs flex flex-col sm:flex-row gap-3 items-start">
+                          {banner.imageUrl && (
+                            <img
+                              src={banner.imageUrl}
+                              alt={banner.title || "Bloc libre"}
+                              className="h-20 w-full sm:w-28 rounded-lg object-cover shrink-0 border border-slate-200"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            {banner.eyebrow && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                                {banner.eyebrow}
+                              </span>
+                            )}
+                            {banner.title && <p className="font-bold text-slate-950 text-sm mt-0.5">{banner.title}</p>}
+                            {banner.text && <p className="text-slate-600 text-[11px] mt-1 leading-relaxed">{banner.text}</p>}
+                            {banner.layout === "statsCounter" && (banner.statItems || []).length > 0 && (
+                              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                                {(banner.statItems || []).map(stat => (
+                                  <div key={stat.id} className="rounded bg-slate-100 p-1.5 text-center">
+                                    <p className="font-bold text-slate-900">{stat.value}</p>
+                                    <p className="text-[10px] text-slate-500">{stat.label}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {banner.layout === "faqAccordion" && (banner.faqItems || []).length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {(banner.faqItems || []).slice(0, 3).map(faq => (
+                                  <div key={faq.id} className="rounded bg-slate-50 px-2 py-1 text-[11px]">
+                                    <p className="font-semibold text-slate-800">{faq.question}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {banner.buttonLabel && (
+                              <span
+                                className="inline-block mt-2 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
+                                style={{ backgroundColor: customPrimaryColor }}
+                              >
+                                {banner.buttonLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 4: STYLES & TYPOGRAPHY QUICK CUSTOMIZER */}
       {activeTab === "styles" && (

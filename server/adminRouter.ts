@@ -42,7 +42,13 @@ import { keyInHandLandingContentSchema, proLandingContentSchema } from "../share
 import { getClonerStatus, getCloneStatus, startClone } from "./services/clonerProxy";
 import { cloneImportPayloadSchema, ensureImportedStoreStudioProvisioning, importCloneDraft } from "./services/import-router";
 import { callPaymentService } from "./paymentServiceProxy";
-import { buildStoreHandoverChecklist } from "./services/storeHandoverChecklist";
+import {
+  buildStoreHandoverChecklist,
+  evaluateStoreHandoverDeliveryGate,
+  HANDOVER_MANUAL_CHECK_DEFINITIONS,
+  parseStoreHandoverSignoffRecord,
+  type HandoverManualCheckKey,
+} from "./services/storeHandoverChecklist";
 
 /** Supplier imports are a Pro benefit unless Studio explicitly grants one client store. */
 async function assertDropshippingAccess(storeId: number | undefined) {
@@ -2635,12 +2641,154 @@ export const adminRouter = router({
         if (error instanceof Error && error.message === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
         throw error;
       });
-      const currency = await db.getStoreCurrencyConfig(input.storeId);
+      const [currency, signoffRaw] = await Promise.all([
+        db.getStoreCurrencyConfig(input.storeId),
+        db.getStoreHandoverSignoffRaw(input.storeId),
+      ]);
       // Public checkout options of the payment service: which connectors really accept payments.
       const options = await callPaymentService<{ options?: Array<{ provider: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${input.storeId}&currency=${encodeURIComponent(currency.code)}`, { storeId: input.storeId })
         .then(result => (result.options ?? []).filter(option => option.status !== "unavailable"))
         .catch(() => null);
-      return buildStoreHandoverChecklist(facts, options);
+      const baseChecklist = buildStoreHandoverChecklist(facts, options);
+      const signoffRecord = parseStoreHandoverSignoffRecord(signoffRaw);
+      return evaluateStoreHandoverDeliveryGate(baseChecklist, signoffRecord);
+    }),
+    updateStoreHandoverManualChecks: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      checkedKeys: z.array(z.enum([
+        "storefront_visual_qa",
+        "responsive_multi_device",
+        "checkout_e2e_verified",
+        "byok_secrets_isolation",
+        "buyer_handover_guide",
+      ])).max(20),
+      notes: z.string().trim().max(2000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const facts = await db.getStoreHandoverFacts(input.storeId).catch(error => {
+        if (error instanceof Error && error.message === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        throw error;
+      });
+      const [currency, signoffRaw] = await Promise.all([
+        db.getStoreCurrencyConfig(input.storeId),
+        db.getStoreHandoverSignoffRaw(input.storeId),
+      ]);
+      const existing = parseStoreHandoverSignoffRecord(signoffRaw);
+      const nowIso = new Date().toISOString();
+      const operatorLabel = ctx.user?.name?.trim() || ctx.user?.email?.trim() || "Opérateur Studio";
+      const checkedSet = new Set<HandoverManualCheckKey>(input.checkedKeys);
+      const nextCheckedItems = { ...existing.checkedItems };
+      for (const def of HANDOVER_MANUAL_CHECK_DEFINITIONS) {
+        const isChecked = checkedSet.has(def.key);
+        const prev = existing.checkedItems[def.key];
+        nextCheckedItems[def.key] = {
+          checked: isChecked,
+          checkedAt: isChecked ? (prev?.checked && prev.checkedAt ? prev.checkedAt : nowIso) : null,
+          checkedBy: isChecked ? (prev?.checked && prev.checkedBy ? prev.checkedBy : operatorLabel) : null,
+        };
+      }
+      const nextRecord = {
+        ...existing,
+        checkedItems: nextCheckedItems,
+        notes: input.notes !== undefined ? input.notes : existing.notes,
+        updatedAt: nowIso,
+      };
+      await db.setStoreHandoverSignoffRaw(input.storeId, JSON.stringify(nextRecord));
+      logAudit(ctx, {
+        action: "studio.store.handover_checklist.update",
+        entityType: "store",
+        entityId: input.storeId,
+        summary: `Checklist de livraison mise à jour pour ${facts.store.displayName}`,
+        metadata: { checkedKeys: input.checkedKeys, updatedAt: nowIso },
+      });
+      const options = await callPaymentService<{ options?: Array<{ provider: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${input.storeId}&currency=${encodeURIComponent(currency.code)}`, { storeId: input.storeId })
+        .then(result => (result.options ?? []).filter(option => option.status !== "unavailable"))
+        .catch(() => null);
+      return evaluateStoreHandoverDeliveryGate(buildStoreHandoverChecklist(facts, options), nextRecord, nowIso);
+    }),
+    confirmStoreHandoverDelivery: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      confirmationStoreName: z.string().trim().min(1).max(160),
+      notes: z.string().trim().max(2000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const facts = await db.getStoreHandoverFacts(input.storeId).catch(error => {
+        if (error instanceof Error && error.message === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        throw error;
+      });
+      if (input.confirmationStoreName.trim() !== facts.store.displayName.trim()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Recopiez exactement le nom de la boutique (« ${facts.store.displayName} ») pour valider la livraison.`,
+        });
+      }
+      const [currency, signoffRaw] = await Promise.all([
+        db.getStoreCurrencyConfig(input.storeId),
+        db.getStoreHandoverSignoffRaw(input.storeId),
+      ]);
+      const options = await callPaymentService<{ options?: Array<{ provider: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${input.storeId}&currency=${encodeURIComponent(currency.code)}`, { storeId: input.storeId })
+        .then(result => (result.options ?? []).filter(option => option.status !== "unavailable"))
+        .catch(() => null);
+      const baseChecklist = buildStoreHandoverChecklist(facts, options);
+      const existing = parseStoreHandoverSignoffRecord(signoffRaw);
+      const preGate = evaluateStoreHandoverDeliveryGate(baseChecklist, existing);
+      if (!preGate.signoff.canConfirmDelivery) {
+        const automatedLabels = preGate.signoff.criticalAutomatedBlockers.map(b => b.label);
+        const manualLabels = preGate.signoff.criticalManualBlockers.map(b => b.label);
+        const allBlockers = [...automatedLabels, ...manualLabels];
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Livraison bloquée : ${allBlockers.length} contrôle(s) critique(s) non validé(s) (${allBlockers.join(", ")}).`,
+        });
+      }
+      const nowIso = new Date().toISOString();
+      const operatorLabel = ctx.user?.name?.trim() || ctx.user?.email?.trim() || "Opérateur Studio";
+      const nextRecord = {
+        ...existing,
+        notes: input.notes !== undefined ? input.notes : existing.notes,
+        updatedAt: nowIso,
+        deliveredAt: nowIso,
+        deliveredBy: operatorLabel,
+      };
+      await db.setStoreHandoverSignoffRaw(input.storeId, JSON.stringify(nextRecord));
+      logAudit(ctx, {
+        action: "studio.store.handover_delivery.confirm",
+        entityType: "store",
+        entityId: input.storeId,
+        summary: `Livraison opérationnelle validée et horodatée pour ${facts.store.displayName}`,
+        metadata: { deliveredAt: nowIso, deliveredBy: operatorLabel },
+      });
+      return evaluateStoreHandoverDeliveryGate(baseChecklist, nextRecord, nowIso);
+    }),
+    revokeStoreHandoverDelivery: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+    })).mutation(async ({ ctx, input }) => {
+      const facts = await db.getStoreHandoverFacts(input.storeId).catch(error => {
+        if (error instanceof Error && error.message === "STORE_NOT_FOUND") throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+        throw error;
+      });
+      const [currency, signoffRaw] = await Promise.all([
+        db.getStoreCurrencyConfig(input.storeId),
+        db.getStoreHandoverSignoffRaw(input.storeId),
+      ]);
+      const existing = parseStoreHandoverSignoffRecord(signoffRaw);
+      const nowIso = new Date().toISOString();
+      const nextRecord = {
+        ...existing,
+        updatedAt: nowIso,
+        deliveredAt: null,
+        deliveredBy: null,
+      };
+      await db.setStoreHandoverSignoffRaw(input.storeId, JSON.stringify(nextRecord));
+      logAudit(ctx, {
+        action: "studio.store.handover_delivery.revoke",
+        entityType: "store",
+        entityId: input.storeId,
+        summary: `Horodatage de livraison rouvert pour ${facts.store.displayName}`,
+        metadata: { updatedAt: nowIso },
+      });
+      const options = await callPaymentService<{ options?: Array<{ provider: string; label: string; status: string; isTestMode: boolean }> }>(ctx, `/api/checkout/payment-methods?storeId=${input.storeId}&currency=${encodeURIComponent(currency.code)}`, { storeId: input.storeId })
+        .then(result => (result.options ?? []).filter(option => option.status !== "unavailable"))
+        .catch(() => null);
+      return evaluateStoreHandoverDeliveryGate(buildStoreHandoverChecklist(facts, options), nextRecord, nowIso);
     }),
     setStorePaymentRoute: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
@@ -2985,7 +3133,7 @@ export const adminRouter = router({
         footerDeliveryTitle: z.string().trim().max(80), footerDeliveryText: z.string().trim().max(220), footerSecureTitle: z.string().trim().max(80), footerSecureText: z.string().trim().max(220), footerServiceTitle: z.string().trim().max(80), footerServiceText: z.string().trim().max(220), footerCopyrightText: z.string().trim().max(160),
         footerShowNavigation: z.boolean(), footerShowCategories: z.boolean(), footerShowHelp: z.boolean(), footerShowReassurance: z.boolean(),
         footerSocialLinks: z.array(z.object({ id: z.enum(["instagram", "facebook", "tiktok", "youtube", "pinterest", "linkedin"]), url: z.string().trim().max(500).refine(value => value === "" || /^https:\/\//i.test(value), "Utilisez une URL https:// ou laissez le réseau social vide."), })).length(6),
-        homeOrder: z.array(z.string().max(60)).max(40), textBanners: z.array(z.object({ id: z.string().trim().min(1).max(60), eyebrow: z.string().trim().max(120), title: z.string().trim().min(1).max(180), text: z.string().trim().max(600), buttonLabel: z.string().trim().max(60), buttonUrl: z.string().trim().max(300), imageUrl: z.string().trim().max(1000).optional(), imageAlt: z.string().trim().max(180).optional(), layout: z.enum(["banner", "split", "framedSplit", "spotlight", "roundGallery"]).optional(), theme: z.enum(["primary", "dark", "soft", "light"]).optional(), galleryItems: z.array(z.object({ id: z.string().trim().min(4).max(60), label: z.string().trim().min(2).max(80), imageUrl: visualUrlSchema, imageAlt: z.string().trim().min(2).max(180), href: z.string().trim().max(300) })).max(6).optional(), enabled: z.boolean() })).max(8),
+        homeOrder: z.array(z.string().max(60)).max(40), textBanners: z.array(z.object({ id: z.string().trim().min(1).max(60), eyebrow: z.string().trim().max(120), title: z.string().trim().min(1).max(180), text: z.string().trim().max(600), buttonLabel: z.string().trim().max(60), buttonUrl: z.string().trim().max(300), imageUrl: z.string().trim().max(1000).optional(), imageAlt: z.string().trim().max(180).optional(), layout: z.enum(["banner", "split", "framedSplit", "spotlight", "roundGallery", "productGrid", "countdownBanner", "beforeAfter", "faqAccordion", "statsCounter"]).optional(), theme: z.enum(["primary", "dark", "soft", "light"]).optional(), galleryItems: z.array(z.object({ id: z.string().trim().min(4).max(60), label: z.string().trim().min(2).max(80), imageUrl: visualUrlSchema, imageAlt: z.string().trim().min(2).max(180), href: z.string().trim().max(300) })).max(6).optional(), productIds: z.array(z.number().int().positive()).max(8).optional(), countdownEndsAt: z.string().trim().max(64).optional(), secondaryImageUrl: z.string().trim().max(1000).optional(), beforeLabel: z.string().trim().max(60).optional(), afterLabel: z.string().trim().max(60).optional(), faqItems: z.array(z.object({ id: z.string().trim().min(2).max(60), question: z.string().trim().min(2).max(200), answer: z.string().trim().min(2).max(800) })).max(8).optional(), statItems: z.array(z.object({ id: z.string().trim().min(2).max(60), value: z.string().trim().min(1).max(40), label: z.string().trim().min(2).max(120) })).max(6).optional(), visibilityDevice: z.enum(["all", "mobile", "desktop"]).optional(), imageFocalPoint: z.enum(["top", "center", "bottom"]).optional(), enabled: z.boolean() })).max(8),
       }),
     })).mutation(async ({ ctx, input }) => {
       const profile = await db.saveStudioOwnerPublicStorefrontProfile({ storeId: input.storeId, profile: input.profile });
@@ -5525,7 +5673,7 @@ export const adminRouter = router({
         buttonUrl: z.string().trim().max(300).default(""),
         imageUrl: z.string().trim().max(1000).default(""),
         imageAlt: z.string().trim().max(180).default(""),
-        layout: z.enum(["banner", "split", "framedSplit", "spotlight", "roundGallery"]).default("banner"),
+        layout: z.enum(["banner", "split", "framedSplit", "spotlight", "roundGallery", "productGrid", "countdownBanner", "beforeAfter", "faqAccordion", "statsCounter"]).default("banner"),
         theme: z.enum(["primary", "dark", "soft", "light"]).default("primary"),
         galleryItems: z.array(z.object({
           id: z.string().trim().min(4).max(60),
@@ -5534,6 +5682,15 @@ export const adminRouter = router({
           imageAlt: z.string().trim().min(2).max(180),
           href: z.string().trim().max(300).default(""),
         })).max(6).default([]),
+        productIds: z.array(z.number().int().positive()).max(8).optional(),
+        countdownEndsAt: z.string().trim().max(64).optional(),
+        secondaryImageUrl: z.string().trim().max(1000).optional(),
+        beforeLabel: z.string().trim().max(60).optional(),
+        afterLabel: z.string().trim().max(60).optional(),
+        faqItems: z.array(z.object({ id: z.string().trim().min(2).max(60), question: z.string().trim().min(2).max(200), answer: z.string().trim().min(2).max(800) })).max(8).optional(),
+        statItems: z.array(z.object({ id: z.string().trim().min(2).max(60), value: z.string().trim().min(1).max(40), label: z.string().trim().min(2).max(120) })).max(6).optional(),
+        visibilityDevice: z.enum(["all", "mobile", "desktop"]).optional(),
+        imageFocalPoint: z.enum(["top", "center", "bottom"]).optional(),
         enabled: z.boolean().default(true),
       })).max(8).default([]),
     })).mutation(async ({ ctx, input }) => {

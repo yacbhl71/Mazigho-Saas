@@ -113,3 +113,168 @@ export function buildStoreHandoverChecklist(facts: StoreHandoverFacts, paymentOp
     blockingCount: items.filter(item => item.status === "todo" || item.status === "warning").length,
   };
 }
+
+export type HandoverManualCheckKey =
+  | "storefront_visual_qa"
+  | "responsive_multi_device"
+  | "checkout_e2e_verified"
+  | "byok_secrets_isolation"
+  | "buyer_handover_guide";
+
+export type HandoverManualCheckDefinition = {
+  key: HandoverManualCheckKey;
+  label: string;
+  description: string;
+  critical: boolean;
+};
+
+export const HANDOVER_MANUAL_CHECK_DEFINITIONS: readonly HandoverManualCheckDefinition[] = [
+  {
+    key: "storefront_visual_qa",
+    label: "Vitrine publique & Constructeur visuel vérifiés",
+    description:
+      "Le rendu public (accueil, sections, catalogue dynamique et navigation) est conforme et ne présente ni HTML vide ni contenu de démonstration résiduel.",
+    critical: true,
+  },
+  {
+    key: "responsive_multi_device",
+    label: "Contrôle responsive Desktop / Tablette / Mobile",
+    description:
+      "L’affichage et la navigation tactile ont été vérifiés sur grand écran, tablette et mobile (accueil, fiches produits, panier).",
+    critical: true,
+  },
+  {
+    key: "checkout_e2e_verified",
+    label: "Recette panier, livraison, stock et paiement validée",
+    description:
+      "Le parcours complet (ajout panier, calcul livraison, paiement de test et décrémentation du stock) a été exécuté sans erreur.",
+    critical: true,
+  },
+  {
+    key: "byok_secrets_isolation",
+    label: "Isolation BYOK & absence de secrets exposés",
+    description:
+      "Aucune clé plate-forme MAZIGHO n’est utilisée pour encaisser sur cette boutique et aucun secret n’apparaît dans le code source public.",
+    critical: true,
+  },
+  {
+    key: "buyer_handover_guide",
+    label: "Guide de prise en main propriétaire transmis",
+    description:
+      "Le propriétaire dispose de ses accès et de la procédure de gestion quotidienne (catalogue, commandes, passage Sandbox → Production).",
+    critical: false,
+  },
+] as const;
+
+export type HandoverManualCheckState = {
+  checked: boolean;
+  checkedAt: string | null;
+  checkedBy: string | null;
+};
+
+export type StoreHandoverSignoffRecord = {
+  checkedItems: Partial<Record<HandoverManualCheckKey, HandoverManualCheckState>>;
+  notes: string;
+  updatedAt: string | null;
+  deliveredAt: string | null;
+  deliveredBy: string | null;
+};
+
+export type HandoverManualCheckView = HandoverManualCheckDefinition & HandoverManualCheckState;
+
+export type HandoverDeliveryStatus = "blocked" | "ready_to_deliver" | "delivered";
+
+export function parseStoreHandoverSignoffRecord(raw: string | null | undefined): StoreHandoverSignoffRecord {
+  const empty: StoreHandoverSignoffRecord = {
+    checkedItems: {},
+    notes: "",
+    updatedAt: null,
+    deliveredAt: null,
+    deliveredBy: null,
+  };
+  if (!raw) return empty;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const rawItems =
+      parsed.checkedItems && typeof parsed.checkedItems === "object"
+        ? (parsed.checkedItems as Record<string, unknown>)
+        : {};
+    const checkedItems: Partial<Record<HandoverManualCheckKey, HandoverManualCheckState>> = {};
+    for (const def of HANDOVER_MANUAL_CHECK_DEFINITIONS) {
+      const entry = rawItems[def.key];
+      if (entry && typeof entry === "object") {
+        const record = entry as Record<string, unknown>;
+        const checked = Boolean(record.checked);
+        checkedItems[def.key] = {
+          checked,
+          checkedAt: checked && typeof record.checkedAt === "string" ? record.checkedAt : null,
+          checkedBy: checked && typeof record.checkedBy === "string" ? record.checkedBy : null,
+        };
+      }
+    }
+    return {
+      checkedItems,
+      notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 2000) : "",
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+      deliveredAt: typeof parsed.deliveredAt === "string" ? parsed.deliveredAt : null,
+      deliveredBy: typeof parsed.deliveredBy === "string" ? parsed.deliveredBy : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function evaluateStoreHandoverDeliveryGate(
+  baseChecklist: ReturnType<typeof buildStoreHandoverChecklist>,
+  signoffRecord: StoreHandoverSignoffRecord,
+  evaluatedAt: string = new Date().toISOString(),
+) {
+  const manualChecks: HandoverManualCheckView[] = HANDOVER_MANUAL_CHECK_DEFINITIONS.map(def => {
+    const saved = signoffRecord.checkedItems[def.key];
+    return {
+      ...def,
+      checked: Boolean(saved?.checked),
+      checkedAt: saved?.checked ? saved.checkedAt ?? null : null,
+      checkedBy: saved?.checked ? saved.checkedBy ?? null : null,
+    };
+  });
+
+  const criticalAutomatedBlockers = baseChecklist.items
+    .filter(item => item.status === "todo" || item.status === "warning")
+    .map(item => ({ key: item.key, label: item.label, detail: item.detail, status: item.status }));
+
+  const criticalManualBlockers = manualChecks
+    .filter(item => item.critical && !item.checked)
+    .map(item => ({ key: item.key, label: item.label, detail: item.description }));
+
+  const canConfirmDelivery = criticalAutomatedBlockers.length === 0 && criticalManualBlockers.length === 0;
+  const isDeliveryBlocked = !canConfirmDelivery;
+
+  const deliveryStatus: HandoverDeliveryStatus = isDeliveryBlocked
+    ? "blocked"
+    : signoffRecord.deliveredAt
+    ? "delivered"
+    : "ready_to_deliver";
+
+  const manualReadyCount = manualChecks.filter(item => item.checked).length;
+
+  return {
+    ...baseChecklist,
+    evaluatedAt,
+    manualChecks,
+    manualReadyCount,
+    manualTotalCount: manualChecks.length,
+    signoff: {
+      notes: signoffRecord.notes,
+      updatedAt: signoffRecord.updatedAt,
+      deliveredAt: canConfirmDelivery ? signoffRecord.deliveredAt : null,
+      deliveredBy: canConfirmDelivery ? signoffRecord.deliveredBy : null,
+      deliveryStatus,
+      canConfirmDelivery,
+      isDeliveryBlocked,
+      criticalAutomatedBlockers,
+      criticalManualBlockers,
+    },
+  };
+}
+

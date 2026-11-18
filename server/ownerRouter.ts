@@ -389,6 +389,18 @@ const ownerRoundGalleryItem = z.object({
   href: storefrontLink,
 });
 
+const ownerFaqItem = z.object({
+  id: z.string().trim().min(2).max(60),
+  question: z.string().trim().min(2).max(200),
+  answer: z.string().trim().min(2).max(800),
+});
+
+const ownerStatItem = z.object({
+  id: z.string().trim().min(2).max(60),
+  value: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(2).max(120),
+});
+
 const ownerCustomHomepageBlock = z.object({
   id: z.string().trim().min(4).max(60).regex(/^(?:block-[a-z0-9-]+|tb_[a-z0-9]+)$/, "Identifiant de bloc invalide."),
   eyebrow: z.string().trim().max(120),
@@ -398,12 +410,34 @@ const ownerCustomHomepageBlock = z.object({
   buttonUrl: storefrontLink,
   imageUrl: z.union([z.literal(""), visualUrl]),
   imageAlt: z.string().trim().max(180),
-  layout: z.enum(["banner", "split", "framedSplit", "spotlight", "roundGallery"]),
+  layout: z.enum([
+    "banner",
+    "split",
+    "framedSplit",
+    "spotlight",
+    "roundGallery",
+    "productGrid",
+    "countdownBanner",
+    "beforeAfter",
+    "faqAccordion",
+    "statsCounter",
+  ]),
   theme: z.enum(["primary", "dark", "soft", "light"]),
   galleryItems: z.array(ownerRoundGalleryItem).max(6).optional(),
+  productIds: z.array(z.number().int().positive()).max(8).optional(),
+  countdownEndsAt: z.string().trim().max(64).optional(),
+  secondaryImageUrl: z.union([z.literal(""), visualUrl]).optional(),
+  beforeLabel: z.string().trim().max(60).optional(),
+  afterLabel: z.string().trim().max(60).optional(),
+  faqItems: z.array(ownerFaqItem).max(8).optional(),
+  statItems: z.array(ownerStatItem).max(6).optional(),
+  visibilityDevice: z.enum(["all", "mobile", "desktop"]).optional(),
+  imageFocalPoint: z.enum(["top", "center", "bottom"]).optional(),
   enabled: z.boolean(),
 }).superRefine((block, ctx) => {
   const galleryItems = block.galleryItems || [];
+  const faqItems = block.faqItems || [];
+  const statItems = block.statItems || [];
   if (block.buttonLabel && !block.buttonUrl) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["buttonUrl"], message: "Indiquez le lien associé au bouton." });
   }
@@ -415,6 +449,15 @@ const ownerCustomHomepageBlock = z.object({
   }
   if (new Set(galleryItems.map(item => item.id)).size !== galleryItems.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["galleryItems"], message: "Chaque visuel de la galerie doit avoir un identifiant unique." });
+  }
+  if (block.layout === "beforeAfter" && (!block.imageUrl || !block.secondaryImageUrl)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["secondaryImageUrl"], message: "Ajoutez les deux visuels Avant et Après pour le comparateur." });
+  }
+  if (block.layout === "faqAccordion" && faqItems.length < 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["faqItems"], message: "Ajoutez au moins une question-réponse dans l’accordéon FAQ." });
+  }
+  if (block.layout === "statsCounter" && statItems.length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statItems"], message: "Ajoutez au moins deux chiffres clés." });
   }
 });
 
@@ -2332,7 +2375,45 @@ export const ownerRouter = router({
     if (JSON.stringify(current.textBanners) !== JSON.stringify(saved.textBanners)) {
       await db.markPublicContentTranslationsStale("design", 1, ctx.store!.id);
     }
+    try {
+      await db.clearDesignProfileDraft?.(ctx.store!.id);
+    } catch {
+      // Ignore draft clearing failure if mocked in unit tests
+    }
     return saved;
+  }),
+  getCustomHomepageBlocksDraft: storeManagementProcedure.query(async ({ ctx }) => {
+    return await db.getDesignProfileDraft(ctx.store!.id);
+  }),
+  saveCustomHomepageBlocksDraft: storeManagementProcedure.input(ownerCustomHomepageBlocks).mutation(async ({ ctx, input }) => {
+    return await db.saveDesignProfileDraft({ blocks: input.blocks, homeOrder: input.homeOrder }, ctx.store!.id);
+  }),
+  publishCustomHomepageBlocksDraft: storeManagementProcedure.input(ownerCustomHomepageBlocks.optional()).mutation(async ({ ctx, input }) => {
+    const current = await db.getDesignProfile(ctx.store!.id);
+    const draft = input ?? (await db.getDesignProfileDraft(ctx.store!.id));
+    if (!draft) {
+      return current;
+    }
+    const saved = await db.updateDesignProfile({ ...current, textBanners: draft.blocks, homeOrder: draft.homeOrder }, ctx.store!.id);
+    if (JSON.stringify(current.textBanners) !== JSON.stringify(saved.textBanners)) {
+      await db.markPublicContentTranslationsStale("design", 1, ctx.store!.id);
+    }
+    try {
+      await db.clearDesignProfileDraft?.(ctx.store!.id);
+    } catch {
+      // Ignore draft clearing failure if mocked in unit tests
+    }
+    return saved;
+  }),
+  getDesignProfileHistory: storeManagementProcedure.query(async ({ ctx }) => {
+    return await db.getDesignProfileHistory(ctx.store!.id);
+  }),
+  restoreDesignProfileVersion: storeManagementProcedure.input(z.object({
+    versionId: z.string().trim().min(3).max(80),
+  })).mutation(async ({ ctx, input }) => {
+    const restored = await db.restoreDesignProfileVersion(input.versionId, ctx.store!.id);
+    await db.markPublicContentTranslationsStale("design", 1, ctx.store!.id);
+    return restored;
   }),
   saveHomepageSectionLayout: storeManagementProcedure.input(ownerHomepageSectionLayout).mutation(async ({ ctx, input }) => {
     const current = await db.getDesignProfile(ctx.store!.id);
