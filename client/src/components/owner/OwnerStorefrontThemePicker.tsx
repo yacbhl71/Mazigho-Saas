@@ -35,6 +35,7 @@ import {
   type StorefrontThemePlanTier,
 } from "@shared/storefrontThemeCatalog";
 import { trpc } from "@/lib/trpc";
+import type { DesignProfile } from "@/hooks/useDesignProfile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,27 +54,11 @@ export type StorefrontSectionItem = {
 
 const DEFAULT_SECTIONS: StorefrontSectionItem[] = [
   {
-    id: "announcement",
-    name: "Barre d’Annonce & Compte à Rebours",
-    category: "marketing",
-    badge: "Boutique",
-    description: "Message défilant en tête : livraison offerte, code promo et compte à rebours de fin d'offre.",
-    enabled: true,
-  },
-  {
     id: "highlight",
     name: "Hero Diaporama & Bannière Principale",
     category: "hero",
     badge: "Visuel",
     description: "Grande image plein écran ou carrousel avec titre accrocheur, texte et bouton d’action principal.",
-    enabled: true,
-  },
-  {
-    id: "flash_sale",
-    name: "Ventes Flash & Compte à Rebours d'Urgence",
-    category: "marketing",
-    badge: "Conversion",
-    description: "Bannière dynamique avec timer et jauge de stock pour inciter à l'achat immédiat.",
     enabled: true,
   },
   {
@@ -90,14 +75,6 @@ const DEFAULT_SECTIONS: StorefrontSectionItem[] = [
     category: "products",
     badge: "Produits",
     description: "Grille de produits sélectionnés avec prix, étiquettes promo et bouton d'ajout rapide au panier.",
-    enabled: true,
-  },
-  {
-    id: "frequently_bought",
-    name: "Cross-Sell « Fréquemment Achetés Ensemble »",
-    category: "products",
-    badge: "Panier moyen",
-    description: "Module de recommandation automatique combinant plusieurs articles avec remise groupée.",
     enabled: true,
   },
   {
@@ -125,20 +102,22 @@ const DEFAULT_SECTIONS: StorefrontSectionItem[] = [
     enabled: true,
   },
   {
-    id: "whatsapp_chat",
-    name: "Bulle & Bouton Direct WhatsApp Sales",
-    category: "social",
-    badge: "Service",
-    description: "Bouton d'échange direct pour répondre aux questions des clients et finaliser les commandes.",
+    id: "editorial",
+    name: "Sélection éditoriale & Conseils",
+    category: "story",
+    badge: "Éditorial",
+    description: "Bloc éditorial qui met en avant une sélection, un conseil ou une histoire complémentaire.",
     enabled: true,
   },
 ];
 
 export default function OwnerStorefrontThemePicker({
   storeName,
+  profile,
   onApplied,
 }: {
   storeName: string;
+  profile: DesignProfile | null;
   onApplied: (profile: unknown) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"themes" | "sections" | "preview" | "styles">("themes");
@@ -153,7 +132,7 @@ export default function OwnerStorefrontThemePicker({
 
   // Customizer styling options
   const [customPrimaryColor, setCustomPrimaryColor] = useState<string>("#7c3aed");
-  const [selectedTypography, setSelectedTypography] = useState<"modern" | "editorial" | "swiss" | "bold">("modern");
+  const [selectedTypography, setSelectedTypography] = useState<"modern" | "editorial" | "classic">("modern");
 
   const themeAccessQuery = trpc.owner.getStorefrontThemeAccess.useQuery(undefined, { refetchOnWindowFocus: false });
 
@@ -167,6 +146,16 @@ export default function OwnerStorefrontThemePicker({
       setSelectedThemeId(availableThemes[0]!.id);
     }
   }, [availableThemes, selectedThemeId]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const order = profile.homeOrder?.filter(key => DEFAULT_SECTIONS.some(section => section.id === key)) ?? [];
+    const enabled = new Set(order);
+    setSections(DEFAULT_SECTIONS.map(section => ({ ...section, enabled: order.length ? enabled.has(section.id) : profile[`show${section.id.charAt(0).toUpperCase()}${section.id.slice(1)}` as keyof DesignProfile] !== false }))
+      .sort((a, b) => (order.indexOf(a.id) === -1 ? 99 : order.indexOf(a.id)) - (order.indexOf(b.id) === -1 ? 99 : order.indexOf(b.id))));
+    if (["editorial", "modern", "classic"].includes(profile.typographyId)) setSelectedTypography(profile.typographyId);
+    if (profile.customPrimary) setCustomPrimaryColor(profile.customPrimary);
+  }, [profile]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [previewTheme, setPreviewTheme] = useState<StorefrontThemeCatalogItem | null>(null);
@@ -205,6 +194,14 @@ export default function OwnerStorefrontThemePicker({
       toast.success("Agencement des sections enregistré avec succès (style Shopify) !");
     },
     onError: error => toast.error(error.message || "Impossible d'enregistrer l'ordre des sections."),
+  });
+  const saveSectionLayoutMutation = trpc.owner.saveHomepageSectionLayout.useMutation({
+    onSuccess: saved => { onApplied(saved); toast.success("Agencement et visibilité des sections enregistrés."); },
+    onError: error => toast.error(error.message || "Impossible d'enregistrer l'agencement des sections."),
+  });
+  const saveStylesMutation = trpc.owner.saveStorefrontStyles.useMutation({
+    onSuccess: saved => { onApplied(saved); toast.success("Styles et typographie enregistrés avec succès !"); },
+    onError: error => toast.error(error.message || "Impossible d'enregistrer les styles."),
   });
 
   const canConfirm = acknowledged && confirmationName.trim() === storeName.trim();
@@ -257,9 +254,18 @@ export default function OwnerStorefrontThemePicker({
 
   const saveSectionsLayout = () => {
     const activeSectionKeys = sections.filter(s => s.enabled).map(s => s.id);
-    saveSectionsMutation.mutate({
-      blocks: [],
-      homeOrder: activeSectionKeys,
+    const visibility = Object.fromEntries(sections.map(section => [section.id, section.enabled])) as Record<string, boolean>;
+    saveSectionLayoutMutation.mutate({
+      homeOrder: activeSectionKeys as Array<"highlight" | "reassurance" | "discovery" | "story" | "testimonials" | "editorial" | "featured">,
+      visibility: {
+        highlight: visibility.highlight ?? true,
+        reassurance: visibility.reassurance ?? true,
+        discovery: visibility.discovery ?? true,
+        story: visibility.story ?? true,
+        testimonials: visibility.testimonials ?? true,
+        editorial: visibility.editorial ?? true,
+        featured: visibility.featured ?? true,
+      },
     });
   };
 
@@ -558,10 +564,10 @@ export default function OwnerStorefrontThemePicker({
                     type="button"
                     size="sm"
                     className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                    disabled={saveSectionsMutation.isPending}
+                    disabled={saveSectionLayoutMutation.isPending || saveSectionsMutation.isPending}
                     onClick={saveSectionsLayout}
                   >
-                    {saveSectionsMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+                    {saveSectionLayoutMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
                     Enregistrer l'agencement
                   </Button>
                 </div>
@@ -935,8 +941,7 @@ export default function OwnerStorefrontThemePicker({
                   {[
                     { id: "modern", name: "Moderne (Plus Jakarta)", desc: "Épurée, dynamique et technologique." },
                     { id: "editorial", name: "Éditorial (Playfair)", desc: "Élégante, littéraire et luxe." },
-                    { id: "swiss", name: "Suisse (Manrope)", desc: "Neutre, lisible et universelle." },
-                    { id: "bold", name: "Athlétique (Outfit)", desc: "Puissante, affirmée et streetwear." },
+                    { id: "classic", name: "Classique (Manrope)", desc: "Neutre, lisible et universelle." },
                   ].map(font => (
                     <button
                       key={font.id}
@@ -987,10 +992,11 @@ export default function OwnerStorefrontThemePicker({
               <div className="pt-4 flex justify-end">
                 <Button
                   type="button"
-                  onClick={() => toast.success("Styles et typographies enregistrés avec succès !")}
+                  disabled={saveStylesMutation.isPending}
+                  onClick={() => saveStylesMutation.mutate({ typographyId: selectedTypography, primary: customPrimaryColor })}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-medium min-h-11 px-5"
                 >
-                  <Check className="mr-2 h-4 w-4" /> Appliquer les styles
+                  {saveStylesMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Appliquer les styles
                 </Button>
               </div>
             </CardContent>

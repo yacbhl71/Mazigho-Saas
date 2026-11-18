@@ -436,6 +436,14 @@ export const ownerCustomHomepageBlocks = z.object({
   });
 });
 
+const ownerHomepageSectionLayout = z.object({
+  homeOrder: z.array(z.enum(["highlight", "reassurance", "discovery", "story", "testimonials", "editorial", "featured"])).max(7),
+  visibility: z.object({
+    highlight: z.boolean(), reassurance: z.boolean(), discovery: z.boolean(), story: z.boolean(),
+    testimonials: z.boolean(), editorial: z.boolean(), featured: z.boolean(),
+  }),
+});
+
 export const ownerCataloguePageCopy = z.object({
   promosTitle: z.string().trim().min(2).max(120),
   promosLead: z.string().trim().min(2).max(420),
@@ -2326,6 +2334,19 @@ export const ownerRouter = router({
     }
     return saved;
   }),
+  saveHomepageSectionLayout: storeManagementProcedure.input(ownerHomepageSectionLayout).mutation(async ({ ctx, input }) => {
+    const current = await db.getDesignProfile(ctx.store!.id);
+    return await db.updateDesignProfile({
+      ...current,
+      homeOrder: input.homeOrder,
+      showReassurance: input.visibility.reassurance,
+      showDiscovery: input.visibility.discovery,
+      showStory: input.visibility.story,
+      showTestimonials: input.visibility.testimonials,
+      showEditorial: input.visibility.editorial,
+      showFeatured: input.visibility.featured,
+    }, ctx.store!.id);
+  }),
   saveCataloguePageCopy: storeManagementProcedure.input(ownerCataloguePageCopy).mutation(async ({ ctx, input }) => {
     const current = await db.getDesignProfile(ctx.store!.id);
     return await db.updateDesignProfile({ ...current, ...input, cataloguePageCopyCustomized: true }, ctx.store!.id);
@@ -2379,6 +2400,18 @@ export const ownerRouter = router({
       customPrimary: input.primary.toUpperCase(),
       customAccent: input.accent.toUpperCase(),
       customSoft: input.soft.toUpperCase(),
+    }, ctx.store!.id);
+  }),
+  saveStorefrontStyles: storeManagementProcedure.input(z.object({
+    typographyId: z.enum(["editorial", "modern", "classic"]),
+    primary: storefrontHexColor,
+  })).mutation(async ({ ctx, input }) => {
+    const current = await db.getDesignProfile(ctx.store!.id);
+    return await db.updateDesignProfile({
+      ...current,
+      typographyId: input.typographyId,
+      customColorsEnabled: true,
+      customPrimary: input.primary.toUpperCase(),
     }, ctx.store!.id);
   }),
   saveStorefrontHeaderLayout: storeManagementProcedure.input(z.object({
