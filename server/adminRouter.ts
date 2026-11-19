@@ -2810,27 +2810,113 @@ export const adminRouter = router({
       id: z.number().int().positive().optional(),
       title: z.string().trim().min(1).max(180),
       category: z.enum(["association", "vitrine", "evenement", "boutique", "autre"]),
+      projectMode: z.enum(["storefront", "independent", "hybrid"]).optional(),
+      commerceEnabled: z.boolean().optional(),
       mode: z.enum(["blank", "theme", "clone"]),
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
-    })).mutation(async ({ ctx, input }) => db.saveStudioVisualProject({ ownerUserId: ctx.user.id, ...input })),
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        return await db.saveStudioVisualProject({ ownerUserId: ctx.user.id, ...input });
+      } catch (error) {
+        if (error instanceof Error && error.message === "VISUAL_PROJECT_SECRET_DETECTED") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Aucune clé API ou donnée sensible de paiement ne peut être enregistrée dans un projet visuel." });
+        }
+        throw error;
+      }
+    }),
     deleteIndependentVisualProject: platformProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteStudioVisualProject(ctx.user.id, input.id)),
     duplicateIndependentVisualProject: platformProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.duplicateStudioVisualProject(ctx.user.id, input.id)),
+    attachIndependentVisualProjectToStore: platformProcedure.input(z.object({
+      id: z.number().int().positive(),
+      storeId: z.number().int().positive(),
+      projectMode: z.enum(["storefront", "hybrid"]).default("hybrid"),
+      commerceEnabled: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      try {
+        const attached = await db.attachStudioVisualProjectToStore({
+          ownerUserId: ctx.user.id,
+          id: input.id,
+          storeId: input.storeId,
+          projectMode: input.projectMode,
+          commerceEnabled: input.commerceEnabled,
+        });
+        logAudit(ctx, {
+          action: "studio.visual_builder.library_project.attach_store",
+          entityType: "store",
+          entityId: store.id,
+          summary: `Projet indépendant rattaché à la boutique : ${store.displayName}`,
+          metadata: {
+            sourceLibraryProjectId: input.id,
+            projectMode: attached.projectMode,
+            commerceEnabled: attached.commerceEnabled,
+            sourceLibraryPreserved: true,
+            publicationExecuted: false,
+            paymentKeysModified: false,
+          },
+        });
+        return attached;
+      } catch (error) {
+        if (error instanceof Error && error.message === "STUDIO_VISUAL_PROJECT_NOT_FOUND") {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Projet indépendant introuvable dans votre bibliothèque." });
+        }
+        throw error;
+      }
+    }),
+    updateVisualBuilderProjectMode: platformProcedure.input(z.object({
+      storeId: z.number().int().positive(),
+      projectMode: z.enum(["storefront", "hybrid"]),
+      commerceEnabled: z.boolean(),
+    })).mutation(async ({ ctx, input }) => {
+      const store = await db.getStudioManagedStore(input.storeId);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
+      const updated = await db.updateStudioVisualBuilderProjectMode(input);
+      logAudit(ctx, {
+        action: "studio.visual_builder.project.mode_update",
+        entityType: "store",
+        entityId: store.id,
+        summary: `Mode du projet visuel mis à jour : ${store.displayName}`,
+        metadata: {
+          projectMode: updated.projectMode,
+          commerceEnabled: updated.commerceEnabled,
+          preservedPageCount: updated.preservedPageCount,
+          publicationExecuted: false,
+          paymentKeysModified: false,
+        },
+      });
+      return updated;
+    }),
     saveVisualBuilderProject: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       mode: z.enum(["blank", "theme", "clone"]),
+      projectMode: z.enum(["storefront", "independent", "hybrid"]).optional(),
+      commerceEnabled: z.boolean().optional(),
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
     })).mutation(async ({ ctx, input }) => {
       const store = await db.getStudioManagedStore(input.storeId);
       if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
-      const saved = await db.saveStudioVisualBuilderProject(input);
-      logAudit(ctx, {
-        action: "studio.visual_builder.project.save",
-        entityType: "store",
-        entityId: store.id,
-        summary: `Projet visuel privé enregistré : ${store.displayName}`,
-        metadata: { mode: input.mode, publicationExecuted: false },
-      });
-      return saved;
+      try {
+        const saved = await db.saveStudioVisualBuilderProject(input);
+        logAudit(ctx, {
+          action: "studio.visual_builder.project.save",
+          entityType: "store",
+          entityId: store.id,
+          summary: `Projet visuel privé enregistré : ${store.displayName}`,
+          metadata: {
+            mode: input.mode,
+            projectMode: saved.projectMode,
+            commerceEnabled: saved.commerceEnabled,
+            publicationExecuted: false,
+          },
+        });
+        return saved;
+      } catch (error) {
+        if (error instanceof Error && error.message === "VISUAL_PROJECT_SECRET_DETECTED") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Aucune clé API ou donnée sensible de paiement ne peut être enregistrée dans un projet visuel." });
+        }
+        throw error;
+      }
     }),
     createVisualBuilderVersion: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
@@ -2858,6 +2944,8 @@ export const adminRouter = router({
     publishVisualBuilderProject: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       mode: z.enum(["blank", "theme", "clone"]),
+      projectMode: z.enum(["storefront", "independent", "hybrid"]).optional(),
+      commerceEnabled: z.boolean().optional(),
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
       html: z.string().max(3_000_000),
       css: z.string().max(1_000_000),
@@ -2880,10 +2968,12 @@ export const adminRouter = router({
       if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Boutique introuvable." });
       try {
         const published = await db.publishStudioVisualBuilderProject(input);
-        logAudit(ctx, { action: "studio.visual_builder.project.publish", entityType: "store", entityId: store.id, summary: `Version visuelle publiée : ${store.displayName}`, metadata: { publicationExecuted: true, versionId: input.versionId ?? null } });
+        logAudit(ctx, { action: "studio.visual_builder.project.publish", entityType: "store", entityId: store.id, summary: `Version visuelle publiée : ${store.displayName}`, metadata: { publicationExecuted: true, projectMode: published.projectMode, commerceEnabled: published.commerceEnabled, versionId: input.versionId ?? null } });
         return published;
       } catch (error) {
         if (error instanceof Error && error.message === "VISUAL_BUILDER_PUBLICATION_INVALID") throw new TRPCError({ code: "BAD_REQUEST", message: "Le contenu visuel ne peut pas être publié dans cet état." });
+        if (error instanceof Error && error.message === "VISUAL_BUILDER_INDEPENDENT_PUBLICATION_FORBIDDEN") throw new TRPCError({ code: "BAD_REQUEST", message: "Un site vitrine sans boutique ne peut pas être publié directement comme boutique. Activez d’abord une boutique sur ce projet." });
+        if (error instanceof Error && error.message === "VISUAL_PROJECT_SECRET_DETECTED") throw new TRPCError({ code: "BAD_REQUEST", message: "Aucune clé API ou donnée sensible de paiement ne peut être publiée dans un projet visuel." });
         throw error;
       }
     }),

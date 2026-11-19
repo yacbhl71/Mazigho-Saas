@@ -117,6 +117,11 @@ describe("MAZIGHO Studio platform guard", () => {
     await expect(caller.admin.studio.getOwnerBuilderConfiguration({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.saveOwnerBuilderConfiguration({ storeId: 1, brandName: "Boutique cliente", brandMessage: "Une boutique de démonstration.", niche: "Décoration artisanale", model: "commerce", pages: ["about", "faq"], paletteId: "terracotta", typographyId: "editorial" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.getVisualBuilderProject({ storeId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.listIndependentVisualProjects()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.getIndependentVisualProject({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.saveIndependentVisualProject({ title: "Vitrine", category: "vitrine", projectMode: "independent", mode: "blank", project: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.attachIndependentVisualProjectToStore({ id: 1, storeId: 1, projectMode: "hybrid", commerceEnabled: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.admin.studio.updateVisualBuilderProjectMode({ storeId: 1, projectMode: "hybrid", commerceEnabled: false })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.saveVisualBuilderProject({ storeId: 1, mode: "blank", project: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.createVisualBuilderVersion({ storeId: 1, mode: "blank", project: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.admin.studio.restoreVisualBuilderVersion({ storeId: 1, versionId: "00000000-0000-0000-0000-000000000000" })).rejects.toMatchObject({ code: "FORBIDDEN" });

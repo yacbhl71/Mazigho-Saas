@@ -126,4 +126,14 @@ describe("deployment schema migrations", () => {
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS `paymentRoute` varchar(32) NOT NULL DEFAULT 'stripe_connect'");
     expect(migration).not.toMatch(/secret|api[_ -]?key|token/i);
   });
+
+  it("registers the functional projectMode column on studioVisualProjects with backward compatibility", () => {
+    const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
+    const migration = worktreeFile("drizzle/0061_studio_visual_project_modes.sql");
+
+    expect(runner).toContain('["0061_studio_visual_project_modes", "drizzle/0061_studio_visual_project_modes.sql"]');
+    expect(migration).toContain("ALTER TABLE `studioVisualProjects`");
+    expect(migration).toContain("ADD COLUMN `projectMode` varchar(24) NOT NULL DEFAULT 'independent'");
+    expect(migration).not.toMatch(/DROP|TRUNCATE|DELETE/i);
+  });
 });
