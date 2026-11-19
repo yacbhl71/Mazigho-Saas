@@ -5288,6 +5288,43 @@ export async function saveStudioVisualBuilderProject(input: { storeId: number; m
   return { success: true, storeId: input.storeId } as const;
 }
 
+export async function listStudioVisualProjects(ownerUserId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  return db.select({ id: schema.studioVisualProjects.id, title: schema.studioVisualProjects.title, mode: schema.studioVisualProjects.mode, updatedAt: schema.studioVisualProjects.updatedAt })
+    .from(schema.studioVisualProjects)
+    .where(eq(schema.studioVisualProjects.ownerUserId, ownerUserId))
+    .orderBy(desc(schema.studioVisualProjects.updatedAt));
+}
+
+export async function getStudioVisualProject(ownerUserId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  const [row] = await db.select().from(schema.studioVisualProjects)
+    .where(and(eq(schema.studioVisualProjects.ownerUserId, ownerUserId), eq(schema.studioVisualProjects.id, id))).limit(1);
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.project) as Record<string, unknown>;
+    return { id: row.id, title: row.title, mode: row.mode, project: parsed, updatedAt: row.updatedAt };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveStudioVisualProject(input: { ownerUserId: number; id?: number; title: string; mode: string; project: Record<string, unknown> }) {
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  const serialized = JSON.stringify(input.project);
+  if (input.id) {
+    const existing = await getStudioVisualProject(input.ownerUserId, input.id);
+    if (!existing) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+    await db.update(schema.studioVisualProjects).set({ title: input.title, mode: input.mode, project: serialized }).where(and(eq(schema.studioVisualProjects.id, input.id), eq(schema.studioVisualProjects.ownerUserId, input.ownerUserId)));
+    return { success: true, id: input.id, title: input.title } as const;
+  }
+  const inserted = await db.insert(schema.studioVisualProjects).values({ ownerUserId: input.ownerUserId, title: input.title, mode: input.mode, project: serialized });
+  return { success: true, id: Number(inserted[0].insertId), title: input.title } as const;
+}
+
 export async function createStudioVisualBuilderVersion(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
   const current = await getStudioVisualBuilderProject(input.storeId);
   const version: StudioVisualBuilderVersion = { id: randomUUID(), mode: input.mode, project: input.project, createdAt: new Date().toISOString() };

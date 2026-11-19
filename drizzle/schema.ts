@@ -20,6 +20,22 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Visual projects designed in Studio before they are attached to a storefront.
+// This table intentionally stores visual data only: no catalogue, orders or keys.
+export const studioVisualProjects = mysqlTable("studioVisualProjects", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  mode: varchar("mode", { length: 24 }).default("blank").notNull(),
+  project: mediumtext("project").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  studioVisualProjectsOwnerUpdatedIdx: index("studio_visual_projects_owner_updated_idx").on(table.ownerUserId, table.updatedAt),
+}));
+export type StudioVisualProject = typeof studioVisualProjects.$inferSelect;
+export type InsertStudioVisualProject = typeof studioVisualProjects.$inferInsert;
+
 // Platform-owned storefront registry. Store status is operational only at this stage;
 // no billing or licence decision is attached to it yet.
 export const stores = mysqlTable("stores", {

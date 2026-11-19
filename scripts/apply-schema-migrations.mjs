@@ -39,6 +39,7 @@ const migrations = [
   ["0056_byok_checkout_quote", "drizzle/0056_byok_checkout_quote.sql"],
   ["0057_payment_journal", "drizzle/0057_payment_journal.sql"],
   ["0058_increase_json_storage_limit", "drizzle/0058_increase_json_storage_limit.sql"],
+  ["0059_studio_visual_projects", "drizzle/0059_studio_visual_projects.sql"],
 ];
 
 const databaseUrl = process.env.DATABASE_URL?.trim();

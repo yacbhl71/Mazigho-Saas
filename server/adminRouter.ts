@@ -2804,6 +2804,14 @@ export const adminRouter = router({
       await db.getStudioManagedStore(input.storeId);
       return db.getStudioVisualBuilderProject(input.storeId);
     }),
+    listIndependentVisualProjects: platformProcedure.query(({ ctx }) => db.listStudioVisualProjects(ctx.user.id)),
+    getIndependentVisualProject: platformProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => db.getStudioVisualProject(ctx.user.id, input.id)),
+    saveIndependentVisualProject: platformProcedure.input(z.object({
+      id: z.number().int().positive().optional(),
+      title: z.string().trim().min(1).max(180),
+      mode: z.enum(["blank", "theme", "clone"]),
+      project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
+    })).mutation(async ({ ctx, input }) => db.saveStudioVisualProject({ ownerUserId: ctx.user.id, ...input })),
     saveVisualBuilderProject: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       mode: z.enum(["blank", "theme", "clone"]),
