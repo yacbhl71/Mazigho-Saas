@@ -172,8 +172,7 @@ export function evaluateVisualProjectCapabilities(
   const canPublishToStore =
     isCommerceActive &&
     input.hasStoreSelected &&
-    input.saveTarget === "store" &&
-    projectMode !== "independent";
+    input.saveTarget === "store";
   const canExportHtml = true;
   const canEnableCommerce = projectMode !== "storefront" && !isCommerceActive;
   const canDisableCommerce = projectMode !== "independent" && isCommerceActive;
