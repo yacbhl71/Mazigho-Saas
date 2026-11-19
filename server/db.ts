@@ -43,6 +43,15 @@ import { buildStorePreparationChecklist } from "./services/storePreparationCheck
 import { buildStoreLaunchCenter } from "./services/storeLaunchCenter";
 import { normalizeStudioNavigationDraft, type StudioNavigationItem } from "./services/storeNavigationDraft";
 import { normalizeStudioCollectionDrafts, type StudioCollectionDraft } from "./services/storeCollectionDraft";
+import {
+  assertNoSecretsInVisualProject,
+  normalizeVisualProjectMode,
+  prepareLibraryProjectStoreAttachment,
+  resolveVisualProjectState,
+  stripPublishedCatalogueMarkers,
+  transitionVisualProjectMode,
+  type VisualProjectMode,
+} from "../shared/visualProjectModes";
 import { normalizeStudioProductDrafts, type StudioProductDraft } from "./services/storeProductDraft";
 import { normalizeStudioProductOperationDrafts, type StudioProductOperationDraft } from "./services/storeProductOperationsDraft";
 import { buildStudioPrivateCartSimulation, type StudioPrivateCartLineInput } from "./services/storePrivateCartSimulation";
@@ -5265,130 +5274,566 @@ export async function getStudioVisualBuilderProject(storeId: number) {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const projectObj =
+      parsed.project && typeof parsed.project === "object"
+        ? (parsed.project as Record<string, unknown>)
+        : null;
+    const state = resolveVisualProjectState(
+      {
+        ...(projectObj ?? {}),
+        ...(parsed.projectMode ? { projectMode: parsed.projectMode } : {}),
+        ...(typeof parsed.commerceEnabled === "boolean"
+          ? { commerceEnabled: parsed.commerceEnabled }
+          : {}),
+      },
+      "store"
+    );
     return {
       storeId,
       mode: typeof parsed.mode === "string" ? parsed.mode : "blank",
-      project: parsed.project && typeof parsed.project === "object" ? parsed.project : null,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      project: projectObj
+        ? {
+            ...projectObj,
+            projectMode: state.projectMode,
+            commerceEnabled: state.commerceEnabled,
+            attachedStoreId: storeId,
+          }
+        : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
-      versions: Array.isArray(parsed.versions) ? parsed.versions.filter((version): version is StudioVisualBuilderVersion => Boolean(version && typeof version === "object" && typeof (version as Record<string, unknown>).id === "string" && typeof (version as Record<string, unknown>).mode === "string" && typeof (version as Record<string, unknown>).createdAt === "string" && (version as Record<string, unknown>).project && typeof (version as Record<string, unknown>).project === "object")).slice(0, 10) : [],
+      versions: Array.isArray(parsed.versions)
+        ? parsed.versions
+            .filter((version): version is StudioVisualBuilderVersion =>
+              Boolean(
+                version &&
+                  typeof version === "object" &&
+                  typeof (version as Record<string, unknown>).id === "string" &&
+                  typeof (version as Record<string, unknown>).mode === "string" &&
+                  typeof (version as Record<string, unknown>).createdAt === "string" &&
+                  (version as Record<string, unknown>).project &&
+                  typeof (version as Record<string, unknown>).project === "object"
+              )
+            )
+            .slice(0, 10)
+        : [],
     };
   } catch {
     return null;
   }
 }
 
-export async function saveStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
+export async function saveStudioVisualBuilderProject(input: {
+  storeId: number;
+  mode: string;
+  projectMode?: VisualProjectMode;
+  commerceEnabled?: boolean;
+  project: Record<string, unknown>;
+}) {
+  assertNoSecretsInVisualProject(input.project);
   const current = await getStudioVisualBuilderProject(input.storeId);
+  const state = resolveVisualProjectState(
+    {
+      ...input.project,
+      ...(input.projectMode ? { projectMode: input.projectMode } : {}),
+      ...(typeof input.commerceEnabled === "boolean"
+        ? { commerceEnabled: input.commerceEnabled }
+        : {}),
+    },
+    "store"
+  );
+  const normalizedProjectMode: VisualProjectMode =
+    state.projectMode === "independent" ? "hybrid" : state.projectMode;
+  const normalizedCommerceEnabled =
+    normalizedProjectMode === "storefront"
+      ? true
+      : state.projectMode === "independent"
+        ? false
+        : state.commerceEnabled;
+
+  const enrichedProject: Record<string, unknown> = {
+    ...input.project,
+    projectMode: normalizedProjectMode,
+    commerceEnabled: normalizedCommerceEnabled,
+    attachedStoreId: input.storeId,
+  };
+
   await setStoreSettingValue(
     input.storeId,
     STUDIO_VISUAL_BUILDER_PROJECT_KEY,
-    JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString(), versions: current?.versions ?? [] }),
-    "Projet GrapesJS privé du constructeur visuel ; sans publication automatique.",
+    JSON.stringify({
+      mode: input.mode,
+      projectMode: normalizedProjectMode,
+      commerceEnabled: normalizedCommerceEnabled,
+      project: enrichedProject,
+      updatedAt: new Date().toISOString(),
+      versions: current?.versions ?? [],
+    }),
+    "Projet GrapesJS privé du constructeur visuel ; sans publication automatique."
   );
-  return { success: true, storeId: input.storeId } as const;
+  return {
+    success: true,
+    storeId: input.storeId,
+    projectMode: normalizedProjectMode,
+    commerceEnabled: normalizedCommerceEnabled,
+  } as const;
+}
+
+export async function updateStudioVisualBuilderProjectMode(input: {
+  storeId: number;
+  projectMode: "storefront" | "hybrid";
+  commerceEnabled: boolean;
+}) {
+  const current = await getStudioVisualBuilderProject(input.storeId);
+  const baseProject =
+    current?.project && typeof current.project === "object"
+      ? (current.project as Record<string, unknown>)
+      : {};
+  const transitioned = transitionVisualProjectMode(baseProject, input.projectMode, {
+    storeId: input.storeId,
+    enableCommerce: input.commerceEnabled,
+    context: "store",
+  });
+  await saveStudioVisualBuilderProject({
+    storeId: input.storeId,
+    mode: current?.mode ?? "blank",
+    projectMode: transitioned.nextMode,
+    commerceEnabled: transitioned.commerceEnabled,
+    project: transitioned.project,
+  });
+  return {
+    success: true,
+    storeId: input.storeId,
+    projectMode: transitioned.nextMode,
+    commerceEnabled: transitioned.commerceEnabled,
+    preservedPageCount: transitioned.preservedPageCount,
+    publicationExecuted: false,
+    paymentKeysModified: false,
+  } as const;
 }
 
 export async function listStudioVisualProjects(ownerUserId: number) {
   const db = await getDb();
   if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
-  return db.select({ id: schema.studioVisualProjects.id, title: schema.studioVisualProjects.title, category: schema.studioVisualProjects.category, mode: schema.studioVisualProjects.mode, updatedAt: schema.studioVisualProjects.updatedAt })
+  const rows = await db
+    .select({
+      id: schema.studioVisualProjects.id,
+      title: schema.studioVisualProjects.title,
+      category: schema.studioVisualProjects.category,
+      projectMode: schema.studioVisualProjects.projectMode,
+      mode: schema.studioVisualProjects.mode,
+      updatedAt: schema.studioVisualProjects.updatedAt,
+    })
     .from(schema.studioVisualProjects)
     .where(eq(schema.studioVisualProjects.ownerUserId, ownerUserId))
     .orderBy(desc(schema.studioVisualProjects.updatedAt));
+  return rows.map((row) => ({
+    ...row,
+    projectMode: normalizeVisualProjectMode(row.projectMode, "independent"),
+  }));
 }
 
 export async function getStudioVisualProject(ownerUserId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
-  const [row] = await db.select().from(schema.studioVisualProjects)
-    .where(and(eq(schema.studioVisualProjects.ownerUserId, ownerUserId), eq(schema.studioVisualProjects.id, id))).limit(1);
+  const [row] = await db
+    .select()
+    .from(schema.studioVisualProjects)
+    .where(
+      and(
+        eq(schema.studioVisualProjects.ownerUserId, ownerUserId),
+        eq(schema.studioVisualProjects.id, id)
+      )
+    )
+    .limit(1);
   if (!row) return null;
   try {
     const parsed = JSON.parse(row.project) as Record<string, unknown>;
-    return { id: row.id, title: row.title, category: row.category, mode: row.mode, project: parsed, updatedAt: row.updatedAt };
+    const state = resolveVisualProjectState(
+      {
+        ...parsed,
+        projectMode: parsed.projectMode ?? row.projectMode,
+      },
+      "library"
+    );
+    return {
+      id: row.id,
+      title: row.title,
+      category: row.category,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      mode: row.mode,
+      project: {
+        ...parsed,
+        projectMode: state.projectMode,
+        commerceEnabled: state.commerceEnabled,
+      },
+      updatedAt: row.updatedAt,
+    };
   } catch {
     return null;
   }
 }
 
-export async function saveStudioVisualProject(input: { ownerUserId: number; id?: number; title: string; category: string; mode: string; project: Record<string, unknown> }) {
+export async function saveStudioVisualProject(input: {
+  ownerUserId: number;
+  id?: number;
+  title: string;
+  category: string;
+  projectMode?: VisualProjectMode;
+  commerceEnabled?: boolean;
+  mode: string;
+  project: Record<string, unknown>;
+}) {
+  assertNoSecretsInVisualProject(input.project);
   const db = await getDb();
   if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
-  const serialized = JSON.stringify(input.project);
+  const state = resolveVisualProjectState(
+    {
+      ...input.project,
+      ...(input.projectMode ? { projectMode: input.projectMode } : {}),
+      ...(typeof input.commerceEnabled === "boolean"
+        ? { commerceEnabled: input.commerceEnabled }
+        : {}),
+    },
+    "library"
+  );
+  const enrichedProject: Record<string, unknown> = {
+    ...input.project,
+    projectMode: state.projectMode,
+    commerceEnabled: state.commerceEnabled,
+  };
+  const serialized = JSON.stringify(enrichedProject);
   if (input.id) {
     const existing = await getStudioVisualProject(input.ownerUserId, input.id);
     if (!existing) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
-    await db.update(schema.studioVisualProjects).set({ title: input.title, category: input.category, mode: input.mode, project: serialized }).where(and(eq(schema.studioVisualProjects.id, input.id), eq(schema.studioVisualProjects.ownerUserId, input.ownerUserId)));
-    return { success: true, id: input.id, title: input.title } as const;
+    await db
+      .update(schema.studioVisualProjects)
+      .set({
+        title: input.title,
+        category: input.category,
+        projectMode: state.projectMode,
+        mode: input.mode,
+        project: serialized,
+      })
+      .where(
+        and(
+          eq(schema.studioVisualProjects.id, input.id),
+          eq(schema.studioVisualProjects.ownerUserId, input.ownerUserId)
+        )
+      );
+    return {
+      success: true,
+      id: input.id,
+      title: input.title,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+    } as const;
   }
-  const inserted = await db.insert(schema.studioVisualProjects).values({ ownerUserId: input.ownerUserId, title: input.title, category: input.category, mode: input.mode, project: serialized });
-  return { success: true, id: Number(inserted[0].insertId), title: input.title } as const;
+  const inserted = await db.insert(schema.studioVisualProjects).values({
+    ownerUserId: input.ownerUserId,
+    title: input.title,
+    category: input.category,
+    projectMode: state.projectMode,
+    mode: input.mode,
+    project: serialized,
+  });
+  return {
+    success: true,
+    id: Number(inserted[0].insertId),
+    title: input.title,
+    projectMode: state.projectMode,
+    commerceEnabled: state.commerceEnabled,
+  } as const;
 }
 
 export async function deleteStudioVisualProject(ownerUserId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
-  const result = await db.delete(schema.studioVisualProjects)
-    .where(and(eq(schema.studioVisualProjects.ownerUserId, ownerUserId), eq(schema.studioVisualProjects.id, id)));
+  const result = await db
+    .delete(schema.studioVisualProjects)
+    .where(
+      and(
+        eq(schema.studioVisualProjects.ownerUserId, ownerUserId),
+        eq(schema.studioVisualProjects.id, id)
+      )
+    );
   return { success: Number(result[0].affectedRows ?? 0) > 0 } as const;
 }
 
 export async function duplicateStudioVisualProject(ownerUserId: number, id: number) {
   const source = await getStudioVisualProject(ownerUserId, id);
   if (!source) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
-  return saveStudioVisualProject({ ownerUserId, title: `${source.title} · copie`, category: source.category, mode: source.mode, project: source.project });
+  return saveStudioVisualProject({
+    ownerUserId,
+    title: `${source.title} · copie`,
+    category: source.category,
+    projectMode: source.projectMode,
+    commerceEnabled: source.commerceEnabled,
+    mode: source.mode,
+    project: source.project,
+  });
 }
 
-export async function createStudioVisualBuilderVersion(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
+export async function attachStudioVisualProjectToStore(input: {
+  ownerUserId: number;
+  id: number;
+  storeId: number;
+  projectMode?: "storefront" | "hybrid";
+  commerceEnabled?: boolean;
+}) {
+  const source = await getStudioVisualProject(input.ownerUserId, input.id);
+  if (!source) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  const attachment = prepareLibraryProjectStoreAttachment(source, input.storeId, {
+    targetMode: input.projectMode ?? "hybrid",
+    enableCommerce: input.commerceEnabled ?? true,
+  });
+  await saveStudioVisualBuilderProject({
+    storeId: input.storeId,
+    mode: source.mode,
+    projectMode: attachment.projectMode,
+    commerceEnabled: attachment.commerceEnabled,
+    project: attachment.targetStoreProject,
+  });
+  return {
+    success: true,
+    storeId: input.storeId,
+    sourceLibraryProjectId: source.id,
+    projectMode: attachment.projectMode,
+    commerceEnabled: attachment.commerceEnabled,
+    sourceLibraryPreserved: true,
+    publicationExecuted: false,
+    paymentKeysModified: false,
+  } as const;
+}
+
+export async function createStudioVisualBuilderVersion(input: {
+  storeId: number;
+  mode: string;
+  project: Record<string, unknown>;
+}) {
+  assertNoSecretsInVisualProject(input.project);
   const current = await getStudioVisualBuilderProject(input.storeId);
-  const version: StudioVisualBuilderVersion = { id: randomUUID(), mode: input.mode, project: input.project, createdAt: new Date().toISOString() };
+  const state = resolveVisualProjectState(input.project, "store");
+  const enrichedProject = {
+    ...input.project,
+    projectMode: state.projectMode,
+    commerceEnabled: state.commerceEnabled,
+    attachedStoreId: input.storeId,
+  };
+  const version: StudioVisualBuilderVersion = {
+    id: randomUUID(),
+    mode: input.mode,
+    project: enrichedProject,
+    createdAt: new Date().toISOString(),
+  };
   const versions = [version, ...(current?.versions ?? [])].slice(0, 10);
-  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY, JSON.stringify({ mode: input.mode, project: input.project, updatedAt: new Date().toISOString(), versions }), "Projet GrapesJS privé avec historique de versions ; aucune publication automatique.");
+  await setStoreSettingValue(
+    input.storeId,
+    STUDIO_VISUAL_BUILDER_PROJECT_KEY,
+    JSON.stringify({
+      mode: input.mode,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      project: enrichedProject,
+      updatedAt: new Date().toISOString(),
+      versions,
+    }),
+    "Projet GrapesJS privé avec historique de versions ; aucune publication automatique."
+  );
   return { success: true, storeId: input.storeId, version } as const;
 }
 
 export async function restoreStudioVisualBuilderVersion(storeId: number, versionId: string) {
   const current = await getStudioVisualBuilderProject(storeId);
-  const version = current?.versions.find(item => item.id === versionId);
+  const version = current?.versions.find((item) => item.id === versionId);
   if (!version) throw new Error("VISUAL_BUILDER_VERSION_NOT_FOUND");
-  await setStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PROJECT_KEY, JSON.stringify({ mode: version.mode, project: version.project, updatedAt: new Date().toISOString(), versions: current?.versions ?? [] }), "Projet GrapesJS restauré depuis une version privée ; aucune publication automatique.");
-  return { success: true, storeId, mode: version.mode, project: version.project, versionId } as const;
+  const state = resolveVisualProjectState(version.project, "store");
+  await setStoreSettingValue(
+    storeId,
+    STUDIO_VISUAL_BUILDER_PROJECT_KEY,
+    JSON.stringify({
+      mode: version.mode,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      project: version.project,
+      updatedAt: new Date().toISOString(),
+      versions: current?.versions ?? [],
+    }),
+    "Projet GrapesJS restauré depuis une version privée ; aucune publication automatique."
+  );
+  return {
+    success: true,
+    storeId,
+    mode: version.mode,
+    projectMode: state.projectMode,
+    commerceEnabled: state.commerceEnabled,
+    project: version.project,
+    versionId,
+  } as const;
 }
 
-type PublishedBuilderPage = { id: string; title: string; slug: string; html: string; css: string; settings: { language: string; description: string; socialCoverUrl: string; faviconUrl: string } };
+type PublishedBuilderPage = {
+  id: string;
+  title: string;
+  slug: string;
+  html: string;
+  css: string;
+  settings: {
+    language: string;
+    description: string;
+    socialCoverUrl: string;
+    faviconUrl: string;
+  };
+};
 
-export async function publishStudioVisualBuilderProject(input: { storeId: number; mode: string; project: Record<string, unknown>; html: string; css: string; publishedPages?: PublishedBuilderPage[]; versionId?: string }) {
-  const html = sanitizePublishedBuilderHtml(input.html).trim();
+export async function publishStudioVisualBuilderProject(input: {
+  storeId: number;
+  mode: string;
+  projectMode?: VisualProjectMode;
+  commerceEnabled?: boolean;
+  project: Record<string, unknown>;
+  html: string;
+  css: string;
+  publishedPages?: PublishedBuilderPage[];
+  versionId?: string;
+}) {
+  assertNoSecretsInVisualProject(input.project);
+  const state = resolveVisualProjectState(
+    {
+      ...input.project,
+      ...(input.projectMode ? { projectMode: input.projectMode } : {}),
+      ...(typeof input.commerceEnabled === "boolean"
+        ? { commerceEnabled: input.commerceEnabled }
+        : {}),
+    },
+    "store"
+  );
+  if (state.projectMode === "independent") {
+    throw new Error("VISUAL_BUILDER_INDEPENDENT_PUBLICATION_FORBIDDEN");
+  }
+  const rawHtml = sanitizePublishedBuilderHtml(input.html).trim();
+  const html = state.commerceEnabled
+    ? rawHtml
+    : stripPublishedCatalogueMarkers(rawHtml).trim();
   const css = sanitizePublishedBuilderCss(input.css).trim();
-  if (!html || html.length > 3_000_000 || css.length > 1_000_000) throw new Error("VISUAL_BUILDER_PUBLICATION_INVALID");
+  if (!html || html.length > 3_000_000 || css.length > 1_000_000) {
+    throw new Error("VISUAL_BUILDER_PUBLICATION_INVALID");
+  }
   const publishedAt = new Date().toISOString();
-  const publishedPages = (input.publishedPages ?? []).filter(page => page.html.trim() && page.slug.startsWith("/"));
-  await setStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY, JSON.stringify({ mode: input.mode, project: input.project, html, css, publishedPages, versionId: input.versionId ?? null, publishedAt }), "Version du constructeur visuel explicitement publiée après validation Studio.");
-  return { success: true, storeId: input.storeId, publishedAt } as const;
+  const publishedPages = (input.publishedPages ?? [])
+    .map((page) => ({
+      ...page,
+      html: state.commerceEnabled
+        ? page.html
+        : stripPublishedCatalogueMarkers(page.html),
+    }))
+    .filter((page) => page.html.trim() && page.slug.startsWith("/"));
+  await setStoreSettingValue(
+    input.storeId,
+    STUDIO_VISUAL_BUILDER_PUBLISHED_KEY,
+    JSON.stringify({
+      mode: input.mode,
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      project: {
+        ...input.project,
+        projectMode: state.projectMode,
+        commerceEnabled: state.commerceEnabled,
+        attachedStoreId: input.storeId,
+      },
+      html,
+      css,
+      publishedPages,
+      versionId: input.versionId ?? null,
+      publishedAt,
+    }),
+    "Version du constructeur visuel explicitement publiée après validation Studio."
+  );
+  return {
+    success: true,
+    storeId: input.storeId,
+    projectMode: state.projectMode,
+    commerceEnabled: state.commerceEnabled,
+    publishedAt,
+  } as const;
 }
 
-export async function getPublishedStudioVisualBuilderProject(storeId: number, requestedPath = "/") {
+export async function getPublishedStudioVisualBuilderProject(
+  storeId: number,
+  requestedPath = "/"
+) {
   const raw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (typeof parsed.html !== "string" || typeof parsed.css !== "string") return null;
     const normalizedPath = requestedPath.split("?")[0].split("#")[0] || "/";
-    const pages = Array.isArray(parsed.publishedPages) ? parsed.publishedPages.filter((page): page is PublishedBuilderPage => Boolean(page && typeof page === "object" && typeof (page as Record<string, unknown>).slug === "string" && typeof (page as Record<string, unknown>).html === "string" && typeof (page as Record<string, unknown>).css === "string")) : [];
+    const pages = Array.isArray(parsed.publishedPages)
+      ? parsed.publishedPages.filter((page): page is PublishedBuilderPage =>
+          Boolean(
+            page &&
+              typeof page === "object" &&
+              typeof (page as Record<string, unknown>).slug === "string" &&
+              typeof (page as Record<string, unknown>).html === "string" &&
+              typeof (page as Record<string, unknown>).css === "string"
+          )
+        )
+      : [];
     if (normalizedPath !== "/" && pages.length === 0) return null;
-    const selectedPage = pages.find(page => page.slug === normalizedPath);
+    const selectedPage = pages.find((page) => page.slug === normalizedPath);
     if (pages.length > 0 && !selectedPage) return null;
-    const page = selectedPage ?? { title: "", html: parsed.html, css: parsed.css, settings: undefined };
-    const fallbackProject = parsed.project && typeof parsed.project === "object" ? parsed.project as Record<string, unknown> : {};
+    const page = selectedPage ?? {
+      title: "",
+      html: parsed.html,
+      css: parsed.css,
+      settings: undefined,
+    };
+    const fallbackProject =
+      parsed.project && typeof parsed.project === "object"
+        ? (parsed.project as Record<string, unknown>)
+        : {};
+    const state = resolveVisualProjectState(
+      {
+        ...fallbackProject,
+        ...(parsed.projectMode ? { projectMode: parsed.projectMode } : {}),
+        ...(typeof parsed.commerceEnabled === "boolean"
+          ? { commerceEnabled: parsed.commerceEnabled }
+          : {}),
+      },
+      "store"
+    );
     const pageProject = selectedPage ? {} : fallbackProject;
-    const metadata = selectedPage ? {
-      title: String(selectedPage.title || "Votre boutique").trim().slice(0, 120),
-      description: String(selectedPage.settings?.description || "").trim().slice(0, 320),
-      language: /^[a-z]{2}(?:-[A-Z]{2})?$/.test(String(selectedPage.settings?.language || "fr")) ? String(selectedPage.settings?.language || "fr") : "fr",
-      socialCoverUrl: publishedBuilderUrl(selectedPage.settings?.socialCoverUrl),
-      faviconUrl: publishedBuilderUrl(selectedPage.settings?.faviconUrl),
-    } : getPublishedBuilderMetadata(pageProject);
-    return { storeId, html: await resolvePublishedCatalogueMarkers(page.html, storeId), css: page.css, mode: typeof parsed.mode === "string" ? parsed.mode : "blank", publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null, metadata };
+    const metadata = selectedPage
+      ? {
+          title: String(selectedPage.title || "Votre boutique")
+            .trim()
+            .slice(0, 120),
+          description: String(selectedPage.settings?.description || "")
+            .trim()
+            .slice(0, 320),
+          language: /^[a-z]{2}(?:-[A-Z]{2})?$/.test(
+            String(selectedPage.settings?.language || "fr")
+          )
+            ? String(selectedPage.settings?.language)
+            : "fr",
+          socialCoverUrl: publishedBuilderUrl(selectedPage.settings?.socialCoverUrl),
+          faviconUrl: publishedBuilderUrl(selectedPage.settings?.faviconUrl),
+        }
+      : getPublishedBuilderMetadata(pageProject);
+    const resolvedHtml = state.commerceEnabled
+      ? await resolvePublishedCatalogueMarkers(page.html, storeId)
+      : stripPublishedCatalogueMarkers(page.html);
+    return {
+      storeId,
+      html: resolvedHtml,
+      css: page.css,
+      mode: typeof parsed.mode === "string" ? parsed.mode : "blank",
+      projectMode: state.projectMode,
+      commerceEnabled: state.commerceEnabled,
+      publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : null,
+      metadata,
+    };
   } catch {
     return null;
   }
