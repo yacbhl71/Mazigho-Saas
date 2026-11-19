@@ -254,7 +254,7 @@ export const COMMERCE_BUILDER_BLOCK_IDS = new Set<string>([
 ]);
 
 export function isCommerceBuilderBlock(block: { id: string; category?: string }): boolean {
-  return COMMERCE_BUILDER_BLOCK_IDS.has(block.id) || block.category === "Catalogue";
+  return COMMERCE_BUILDER_BLOCK_IDS.has(block.id) || Boolean(block.category?.includes("Catalogue"));
 }
 
 export function filterBuilderBlocksForProjectMode<
