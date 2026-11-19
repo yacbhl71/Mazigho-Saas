@@ -13,4 +13,3 @@ export function isDynamicCatalogueAttributes(attributes: Record<string, unknown>
 }
 
 export * from "@shared/visualProjectModes";
-

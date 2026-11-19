@@ -459,7 +459,7 @@ export function prepareLibraryProjectStoreAttachment(
 }
 
 const FORBIDDEN_SECRET_KEY_NAME_PATTERN =
-  /^(?:stripeSecretKey|stripeWebhookSecret|paypalClientSecret|paypalWebhookId|apiSecret|privateKey|secretKey|clientSecret|accessToken|refreshToken|encryptionKey|sentryAuthToken)$/i;
+  /^(?:stripe(?:SecretKey|[_-]secret[_-]key)|stripe(?:WebhookSecret|[_-]webhook[_-]secret)|paypal(?:ClientSecret|[_-]client[_-]secret|WebhookId|[_-]webhook[_-]id)|api(?:Secret|[_-]secret)|private(?:Key|[_-]key)|secret(?:Key|[_-]key)|client(?:Secret|[_-]secret)|access(?:Token|[_-]token)|refresh(?:Token|[_-]token)|encryption(?:Key|[_-]key)|sentry(?:AuthToken|[_-]auth[_-]token))$/i;
 
 const FORBIDDEN_SECRET_VALUE_PATTERNS: ReadonlyArray<RegExp> = [
   new RegExp(["sk", "(?:live|test)", "[A-Za-z0-9]{16,}"].join("_")),

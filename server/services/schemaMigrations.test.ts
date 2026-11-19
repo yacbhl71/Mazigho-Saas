@@ -137,4 +137,3 @@ describe("deployment schema migrations", () => {
     expect(migration).not.toMatch(/DROP|TRUNCATE|DELETE/i);
   });
 });
-

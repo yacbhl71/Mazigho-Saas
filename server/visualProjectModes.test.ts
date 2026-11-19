@@ -383,6 +383,11 @@ describe("Visual Builder Project Modes & Capabilities (20 mandatory scenarios)",
         html: `<div>${syntheticStripeKey}</div>`,
       })
     ).toThrow(/VISUAL_PROJECT_SECRET_DETECTED/);
+    expect(() =>
+      assertNoSecretsInVisualProject({
+        settings: { paypal_client_secret: "temporary-secret-value" },
+      })
+    ).toThrow(/VISUAL_PROJECT_SECRET_DETECTED/);
   });
 
   it("18. never triggers automatic publication when changing modes or toggling commerce", () => {
