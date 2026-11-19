@@ -27,6 +27,7 @@ export const studioVisualProjects = mysqlTable("studioVisualProjects", {
   ownerUserId: int("ownerUserId").notNull(),
   title: varchar("title", { length: 180 }).notNull(),
   category: varchar("category", { length: 32 }).default("autre").notNull(),
+  projectMode: varchar("projectMode", { length: 24 }).default("independent").notNull(),
   mode: varchar("mode", { length: 24 }).default("blank").notNull(),
   project: mediumtext("project").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

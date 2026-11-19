@@ -11,3 +11,6 @@ export function sanitizeBuilderAlt(value: string) {
 export function isDynamicCatalogueAttributes(attributes: Record<string, unknown> | null | undefined) {
   return attributes?.["data-mazigho-dynamic"] === "catalogue";
 }
+
+export * from "@shared/visualProjectModes";
+
