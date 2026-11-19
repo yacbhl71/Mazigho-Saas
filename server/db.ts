@@ -5333,6 +5333,12 @@ export async function deleteStudioVisualProject(ownerUserId: number, id: number)
   return { success: Number(result[0].affectedRows ?? 0) > 0 } as const;
 }
 
+export async function duplicateStudioVisualProject(ownerUserId: number, id: number) {
+  const source = await getStudioVisualProject(ownerUserId, id);
+  if (!source) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  return saveStudioVisualProject({ ownerUserId, title: `${source.title} · copie`, mode: source.mode, project: source.project });
+}
+
 export async function createStudioVisualBuilderVersion(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
   const current = await getStudioVisualBuilderProject(input.storeId);
   const version: StudioVisualBuilderVersion = { id: randomUUID(), mode: input.mode, project: input.project, createdAt: new Date().toISOString() };
