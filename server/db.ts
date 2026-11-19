@@ -142,7 +142,7 @@ import {
   getDemoAdminStats,
 } from "./db/demoFallback";
 
-const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, storeCmsPages, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents } = schema;
+const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, storeCmsPages, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents, studioProjectMembers, studioFamilyAnnouncements } = schema;
 type StorefrontBannerRow = typeof banners.$inferSelect;
 type ProductImageRow = typeof productImages.$inferSelect;
 
@@ -5473,6 +5473,154 @@ export async function getStudioVisualProject(ownerUserId: number, id: number) {
   } catch {
     return null;
   }
+}
+
+function familyAnnouncementNeedsConsent(visibility: string) {
+  return visibility !== "private";
+}
+
+export async function listStudioProjectMembers(
+  ownerUserId: number,
+  projectId: number,
+) {
+  const project = await getStudioVisualProject(ownerUserId, projectId);
+  if (!project) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  return db
+    .select({
+      id: schema.studioProjectMembers.id,
+      projectId: schema.studioProjectMembers.projectId,
+      userId: schema.studioProjectMembers.userId,
+      role: schema.studioProjectMembers.role,
+      status: schema.studioProjectMembers.status,
+      name: schema.users.name,
+      email: schema.users.email,
+    })
+    .from(schema.studioProjectMembers)
+    .leftJoin(
+      schema.users,
+      eq(schema.users.id, schema.studioProjectMembers.userId),
+    )
+    .where(eq(schema.studioProjectMembers.projectId, projectId))
+    .orderBy(asc(schema.studioProjectMembers.id));
+}
+
+export async function saveStudioProjectMember(input: {
+  ownerUserId: number;
+  projectId: number;
+  userId: number;
+  role:
+    | "family_admin"
+    | "president"
+    | "secretary"
+    | "treasurer"
+    | "event_coordinator"
+    | "inventory_manager"
+    | "moderator"
+    | "member";
+  status?: "invited" | "active" | "blocked";
+}) {
+  const project = await getStudioVisualProject(
+    input.ownerUserId,
+    input.projectId,
+  );
+  if (!project) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  await db
+    .insert(schema.studioProjectMembers)
+    .values({
+      projectId: input.projectId,
+      userId: input.userId,
+      role: input.role,
+      status: input.status ?? "invited",
+    })
+    .onDuplicateKeyUpdate({
+      set: { role: input.role, status: input.status ?? "invited" },
+    });
+  return { success: true as const };
+}
+
+export async function listStudioFamilyAnnouncements(
+  ownerUserId: number,
+  projectId: number,
+) {
+  const project = await getStudioVisualProject(ownerUserId, projectId);
+  if (!project) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  return db
+    .select()
+    .from(schema.studioFamilyAnnouncements)
+    .where(eq(schema.studioFamilyAnnouncements.projectId, projectId))
+    .orderBy(desc(schema.studioFamilyAnnouncements.updatedAt));
+}
+
+export async function saveStudioFamilyAnnouncement(input: {
+  ownerUserId: number;
+  projectId: number;
+  id?: number;
+  eventType: "death" | "memory" | "marriage" | "birth" | "engagement" | "other";
+  title: string;
+  body: string;
+  visibility:
+    "public" | "family_members" | "close_family" | "invited" | "private";
+  consentConfirmed: boolean;
+  eventAt?: Date;
+  publishUntil?: Date;
+  invitedUserIds?: number[];
+}) {
+  const project = await getStudioVisualProject(
+    input.ownerUserId,
+    input.projectId,
+  );
+  if (!project) throw new Error("STUDIO_VISUAL_PROJECT_NOT_FOUND");
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  const consentConfirmed = input.consentConfirmed ? 1 : 0;
+  const status: "draft" | "pending_consent" =
+    familyAnnouncementNeedsConsent(input.visibility) && !input.consentConfirmed
+      ? "pending_consent"
+      : "draft";
+  const values = {
+    projectId: input.projectId,
+    createdByUserId: input.ownerUserId,
+    eventType: input.eventType,
+    title: input.title,
+    body: input.body,
+    visibility: input.visibility,
+    status,
+    consentConfirmed,
+    consentConfirmedByUserId: input.consentConfirmed ? input.ownerUserId : null,
+    eventAt: input.eventAt,
+    publishUntil: input.publishUntil,
+    invitedUserIds: input.invitedUserIds
+      ? JSON.stringify(input.invitedUserIds)
+      : null,
+  };
+  if (input.id) {
+    const result = await db
+      .update(schema.studioFamilyAnnouncements)
+      .set(values)
+      .where(
+        and(
+          eq(schema.studioFamilyAnnouncements.id, input.id),
+          eq(schema.studioFamilyAnnouncements.projectId, input.projectId),
+          eq(
+            schema.studioFamilyAnnouncements.createdByUserId,
+            input.ownerUserId,
+          ),
+        ),
+      );
+    if (Number(result[0].affectedRows ?? 0) === 0)
+      throw new Error("FAMILY_ANNOUNCEMENT_NOT_FOUND");
+    return { success: true as const, id: input.id, status };
+  }
+  const inserted = await db
+    .insert(schema.studioFamilyAnnouncements)
+    .values(values);
+  return { success: true as const, id: Number(inserted[0].insertId), status };
 }
 
 export async function saveStudioVisualProject(input: {

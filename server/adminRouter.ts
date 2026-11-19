@@ -2806,6 +2806,71 @@ export const adminRouter = router({
     }),
     listIndependentVisualProjects: platformProcedure.query(({ ctx }) => db.listStudioVisualProjects(ctx.user.id)),
     getIndependentVisualProject: platformProcedure.input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => db.getStudioVisualProject(ctx.user.id, input.id)),
+    listFamilyProjectMembers: platformProcedure
+      .input(z.object({ projectId: z.number().int().positive() }))
+      .query(({ ctx, input }) =>
+        db.listStudioProjectMembers(ctx.user.id, input.projectId),
+      ),
+    saveFamilyProjectMember: platformProcedure
+      .input(
+        z.object({
+          projectId: z.number().int().positive(),
+          userId: z.number().int().positive(),
+          role: z.enum([
+            "family_admin",
+            "president",
+            "secretary",
+            "treasurer",
+            "event_coordinator",
+            "inventory_manager",
+            "moderator",
+            "member",
+          ]),
+          status: z.enum(["invited", "active", "blocked"]).optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        db.saveStudioProjectMember({ ownerUserId: ctx.user.id, ...input }),
+      ),
+    listFamilyAnnouncements: platformProcedure
+      .input(z.object({ projectId: z.number().int().positive() }))
+      .query(({ ctx, input }) =>
+        db.listStudioFamilyAnnouncements(ctx.user.id, input.projectId),
+      ),
+    saveFamilyAnnouncement: platformProcedure
+      .input(
+        z.object({
+          projectId: z.number().int().positive(),
+          id: z.number().int().positive().optional(),
+          eventType: z.enum([
+            "death",
+            "memory",
+            "marriage",
+            "birth",
+            "engagement",
+            "other",
+          ]),
+          title: z.string().trim().min(1).max(180),
+          body: z.string().trim().min(1).max(2_000_000),
+          visibility: z.enum([
+            "public",
+            "family_members",
+            "close_family",
+            "invited",
+            "private",
+          ]),
+          consentConfirmed: z.boolean().default(false),
+          eventAt: z.coerce.date().optional(),
+          publishUntil: z.coerce.date().optional(),
+          invitedUserIds: z
+            .array(z.number().int().positive())
+            .max(500)
+            .optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        db.saveStudioFamilyAnnouncement({ ownerUserId: ctx.user.id, ...input }),
+      ),
     saveIndependentVisualProject: platformProcedure.input(z.object({
       id: z.number().int().positive().optional(),
       title: z.string().trim().min(1).max(180),

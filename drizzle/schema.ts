@@ -38,6 +38,107 @@ export const studioVisualProjects = mysqlTable("studioVisualProjects", {
 export type StudioVisualProject = typeof studioVisualProjects.$inferSelect;
 export type InsertStudioVisualProject = typeof studioVisualProjects.$inferInsert;
 
+// Rôles métier propres à un projet familial. Ils ne remplacent jamais les rôles
+// techniques MAZIGHO et restent isolés du compte utilisateur global.
+export const studioProjectMembers = mysqlTable(
+  "studioProjectMembers",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    userId: int("userId").notNull(),
+    role: mysqlEnum("role", [
+      "family_admin",
+      "president",
+      "secretary",
+      "treasurer",
+      "event_coordinator",
+      "inventory_manager",
+      "moderator",
+      "member",
+    ])
+      .default("member")
+      .notNull(),
+    status: mysqlEnum("status", ["invited", "active", "blocked"])
+      .default("invited")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    studioProjectMembersProjectIdx: index(
+      "studio_project_members_project_idx",
+    ).on(table.projectId),
+    studioProjectMembersUserIdx: index("studio_project_members_user_idx").on(
+      table.userId,
+    ),
+    studioProjectMembersProjectUserUnique: uniqueIndex(
+      "studio_project_members_project_user_unique",
+    ).on(table.projectId, table.userId),
+  }),
+);
+export type StudioProjectMember = typeof studioProjectMembers.$inferSelect;
+export type InsertStudioProjectMember =
+  typeof studioProjectMembers.$inferInsert;
+
+// Annonces familiales : une seule visibilité active et un consentement explicite.
+export const studioFamilyAnnouncements = mysqlTable(
+  "studioFamilyAnnouncements",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    createdByUserId: int("createdByUserId").notNull(),
+    eventType: mysqlEnum("eventType", [
+      "death",
+      "memory",
+      "marriage",
+      "birth",
+      "engagement",
+      "other",
+    ])
+      .default("other")
+      .notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    body: mediumtext("body").notNull(),
+    visibility: mysqlEnum("visibility", [
+      "public",
+      "family_members",
+      "close_family",
+      "invited",
+      "private",
+    ])
+      .default("private")
+      .notNull(),
+    status: mysqlEnum("status", [
+      "draft",
+      "pending_consent",
+      "pending_review",
+      "published",
+      "withdrawn",
+    ])
+      .default("draft")
+      .notNull(),
+    consentConfirmed: int("consentConfirmed").default(0).notNull(),
+    consentConfirmedByUserId: int("consentConfirmedByUserId"),
+    eventAt: timestamp("eventAt"),
+    publishUntil: timestamp("publishUntil"),
+    invitedUserIds: mediumtext("invitedUserIds"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    studioFamilyAnnouncementsProjectIdx: index(
+      "studio_family_announcements_project_idx",
+    ).on(table.projectId, table.status),
+    studioFamilyAnnouncementsCreatorIdx: index(
+      "studio_family_announcements_creator_idx",
+    ).on(table.createdByUserId),
+  }),
+);
+export type StudioFamilyAnnouncement =
+  typeof studioFamilyAnnouncements.$inferSelect;
+export type InsertStudioFamilyAnnouncement =
+  typeof studioFamilyAnnouncements.$inferInsert;
+
 // Platform-owned storefront registry. Store status is operational only at this stage;
 // no billing or licence decision is attached to it yet.
 export const stores = mysqlTable("stores", {
