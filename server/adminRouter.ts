@@ -2812,6 +2812,7 @@ export const adminRouter = router({
       mode: z.enum(["blank", "theme", "clone"]),
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
     })).mutation(async ({ ctx, input }) => db.saveStudioVisualProject({ ownerUserId: ctx.user.id, ...input })),
+    deleteIndependentVisualProject: platformProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteStudioVisualProject(ctx.user.id, input.id)),
     saveVisualBuilderProject: platformProcedure.input(z.object({
       storeId: z.number().int().positive(),
       mode: z.enum(["blank", "theme", "clone"]),

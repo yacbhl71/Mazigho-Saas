@@ -5325,6 +5325,14 @@ export async function saveStudioVisualProject(input: { ownerUserId: number; id?:
   return { success: true, id: Number(inserted[0].insertId), title: input.title } as const;
 }
 
+export async function deleteStudioVisualProject(ownerUserId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DATABASE_NOT_CONFIGURED");
+  const result = await db.delete(schema.studioVisualProjects)
+    .where(and(eq(schema.studioVisualProjects.ownerUserId, ownerUserId), eq(schema.studioVisualProjects.id, id)));
+  return { success: Number(result[0].affectedRows ?? 0) > 0 } as const;
+}
+
 export async function createStudioVisualBuilderVersion(input: { storeId: number; mode: string; project: Record<string, unknown> }) {
   const current = await getStudioVisualBuilderProject(input.storeId);
   const version: StudioVisualBuilderVersion = { id: randomUUID(), mode: input.mode, project: input.project, createdAt: new Date().toISOString() };
