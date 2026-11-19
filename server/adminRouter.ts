@@ -2809,6 +2809,7 @@ export const adminRouter = router({
     saveIndependentVisualProject: platformProcedure.input(z.object({
       id: z.number().int().positive().optional(),
       title: z.string().trim().min(1).max(180),
+      category: z.enum(["association", "vitrine", "evenement", "boutique", "autre"]),
       mode: z.enum(["blank", "theme", "clone"]),
       project: z.record(z.string(), z.unknown()).refine(value => JSON.stringify(value).length <= 3_000_000, "Projet visuel trop volumineux."),
     })).mutation(async ({ ctx, input }) => db.saveStudioVisualProject({ ownerUserId: ctx.user.id, ...input })),
