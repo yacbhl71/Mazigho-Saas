@@ -67,7 +67,9 @@ import {
   Trash2,
   Undo2,
   Unlock,
+  Search,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface LayerSummaryItem {
   id: string;
@@ -77,6 +79,19 @@ interface LayerSummaryItem {
   hidden: boolean;
 }
 
+const LIBRARY_TAB_META: Record<
+  IndependentBuilderLibraryTab,
+  { icon: LucideIcon; hint: string; activeClass: string; iconClass: string }
+> = {
+  pages: { icon: FilePlus2, hint: "Pages & menus", activeClass: "bg-[#172033] text-white shadow-xs", iconClass: "text-sky-500" },
+  blocs: { icon: LayoutGrid, hint: "Sections visuelles", activeClass: "bg-amber-700 text-white shadow-xs", iconClass: "text-amber-500" },
+  medias: { icon: ImagePlus, hint: "Images du projet", activeClass: "bg-emerald-700 text-white shadow-xs", iconClass: "text-emerald-500" },
+  calques: { icon: Layers, hint: "Structure de la page", activeClass: "bg-violet-700 text-white shadow-xs", iconClass: "text-violet-500" },
+  modules: { icon: Sparkles, hint: "Fonctions prêtes à l’emploi", activeClass: "bg-rose-700 text-white shadow-xs", iconClass: "text-rose-500" },
+  socles: { icon: FolderKanban, hint: "Structures de pages", activeClass: "bg-teal-700 text-white shadow-xs", iconClass: "text-teal-500" },
+  modeles: { icon: Palette, hint: "Sites complets", activeClass: "bg-indigo-700 text-white shadow-xs", iconClass: "text-indigo-500" },
+};
+
 export default function IndependentSiteBuilderPage() {
   const utils = trpc.useUtils();
   const editorRef = useRef<Editor | null>(null);
@@ -85,6 +100,7 @@ export default function IndependentSiteBuilderPage() {
   const [statusFilter, setStatusFilter] = useState<IndependentSiteStatus | "all">("all");
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [activeLibraryTab, setActiveLibraryTab] = useState<IndependentBuilderLibraryTab>("pages");
+  const [librarySearch, setLibrarySearch] = useState("");
   const [viewport, setViewport] = useState<ResponsiveViewportMode>("desktop");
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
@@ -152,6 +168,22 @@ export default function IndependentSiteBuilderPage() {
   const [customDomainInput, setCustomDomainInput] = useState("");
   const [versionLabelInput, setVersionLabelInput] = useState("");
   const [reusableBlockNameInput, setReusableBlockNameInput] = useState("");
+
+  const normalizedLibrarySearch = librarySearch.trim().toLocaleLowerCase();
+  const matchesLibrarySearch = (values: Array<string | undefined>) =>
+    !normalizedLibrarySearch || values.some((value) => value?.toLocaleLowerCase().includes(normalizedLibrarySearch));
+  const filteredBlocks = INDEPENDENT_BUILDER_BLOCKS.filter((block) =>
+    matchesLibrarySearch([block.label, block.category, block.description])
+  );
+  const filteredModules = INDEPENDENT_BUILDER_MODULES.filter((module) =>
+    matchesLibrarySearch([module.label, module.category, module.description])
+  );
+  const filteredSocles = INDEPENDENT_PAGE_SOCLES.filter((socle) =>
+    matchesLibrarySearch([socle.label, socle.description, socle.defaultSlug])
+  );
+  const filteredTemplates = INDEPENDENT_SITE_TEMPLATES.filter((template) =>
+    matchesLibrarySearch([template.name, template.description, template.siteType])
+  );
 
   // Queries & Mutations tRPC
   const projectsQuery = trpc.independentSiteBuilder.listProjects.useQuery(
@@ -905,9 +937,30 @@ export default function IndependentSiteBuilderPage() {
           <div className="space-y-4 lg:col-span-4">
             <Card className="border-[#e2dad0] bg-white shadow-xs">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-[#9b563e]">
-                  Bibliothèques du Constructeur
-                </CardTitle>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-[#9b563e]">
+                      Bibliothèque du constructeur
+                    </CardTitle>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                      Choisissez une famille, recherchez un élément, puis ajoutez-le à la page active.
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 border-[#e2dad0] bg-[#faf8f5] text-[10px] text-slate-600">
+                    {INDEPENDENT_BUILDER_LIBRARY_TABS.length} espaces
+                  </Badge>
+                </div>
+                <label className="relative mt-3 block">
+                  <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="search"
+                    value={librarySearch}
+                    onChange={(event) => setLibrarySearch(event.target.value)}
+                    placeholder="Rechercher un bloc, module ou modèle…"
+                    aria-label="Rechercher dans la bibliothèque du constructeur"
+                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs outline-none transition focus:border-[#9b563e] focus:bg-white focus:ring-2 focus:ring-[#9b563e]/15"
+                  />
+                </label>
                 {/* Sélecteur des 7 onglets obligatoires : Pages | Blocs | Médias | Calques | Modules | Socles | Modèles */}
                 <div
                   role="tablist"
@@ -915,20 +968,31 @@ export default function IndependentSiteBuilderPage() {
                   className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-7 lg:grid-cols-4"
                 >
                   {INDEPENDENT_BUILDER_LIBRARY_TABS.map((tab) => (
+                    (() => {
+                      const meta = LIBRARY_TAB_META[tab.id];
+                      const Icon = meta.icon;
+                      const count = tab.id === "blocs" ? filteredBlocks.length : tab.id === "modules" ? filteredModules.length : tab.id === "socles" ? filteredSocles.length : tab.id === "modeles" ? filteredTemplates.length : undefined;
+                      return (
                     <button
                       key={tab.id}
                       type="button"
                       role="tab"
                       aria-selected={activeLibraryTab === tab.id}
                       onClick={() => setActiveLibraryTab(tab.id)}
-                      className={`rounded-lg px-2.5 py-2 text-xs font-bold transition ${
-                        activeLibraryTab === tab.id
-                          ? "bg-[#172033] text-white shadow-xs"
-                          : "bg-[#faf8f5] text-slate-700 hover:bg-slate-200"
+                      title={tab.description}
+                      className={`group rounded-lg px-2 py-2 text-xs font-bold transition ${
+                        activeLibraryTab === tab.id ? meta.activeClass : "bg-[#faf8f5] text-slate-700 hover:bg-slate-200"
                       }`}
                     >
-                      {tab.label}
+                      <span className="flex items-center justify-center gap-1.5">
+                        <Icon className={`h-3.5 w-3.5 ${activeLibraryTab === tab.id ? "text-[#f5b98f]" : meta.iconClass}`} />
+                        <span className="truncate">{tab.label}</span>
+                        {count !== undefined && <span className={`rounded-full px-1.5 text-[9px] ${activeLibraryTab === tab.id ? "bg-white/15 text-white" : "bg-slate-200 text-slate-600"}`}>{count}</span>}
+                      </span>
+                      <span className={`mt-0.5 block truncate text-[9px] font-medium ${activeLibraryTab === tab.id ? "text-white/70" : "text-slate-400"}`}>{meta.hint}</span>
                     </button>
+                      );
+                    })()
                   ))}
                 </div>
               </CardHeader>
@@ -1189,7 +1253,11 @@ export default function IndependentSiteBuilderPage() {
 
                     {/* Liste des 20+ Blocs éditoriaux par catégorie */}
                     <div className="space-y-2">
-                      {INDEPENDENT_BUILDER_BLOCKS.map((blk) => (
+                      {filteredBlocks.length === 0 ? (
+                        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                          Aucun bloc ne correspond à « {librarySearch} ».
+                        </p>
+                      ) : filteredBlocks.map((blk) => (
                         <div
                           key={blk.id}
                           className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2.5 hover:border-slate-300"
@@ -1599,7 +1667,11 @@ export default function IndependentSiteBuilderPage() {
                     <p className="text-xs text-slate-600">
                       Modules fonctionnels prêts à l’emploi (événements, formulaire, galerie, témoignages, membres, actualités avec consentement, annuaire matériel).
                     </p>
-                    {INDEPENDENT_BUILDER_MODULES.map((mod) => (
+                    {filteredModules.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                        Aucun module ne correspond à « {librarySearch} ».
+                      </p>
+                    ) : filteredModules.map((mod) => (
                       <div
                         key={mod.id}
                         className="rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300"
@@ -1629,7 +1701,11 @@ export default function IndependentSiteBuilderPage() {
                     <p className="text-xs text-slate-600">
                       Structures de page complètes prêtes à personnaliser (Accueil, Association, Famille, Entreprise, Services, Contact, Événements, Équipe, Actualités).
                     </p>
-                    {INDEPENDENT_PAGE_SOCLES.map((socle) => (
+                    {filteredSocles.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                        Aucun socle ne correspond à « {librarySearch} ».
+                      </p>
+                    ) : filteredSocles.map((socle) => (
                       <div
                         key={socle.id}
                         className="rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300"
@@ -1661,7 +1737,11 @@ export default function IndependentSiteBuilderPage() {
                     <p className="text-xs text-slate-600">
                       Sites multi-pages complets avec identité visuelle, couleurs, typographies, sections et navigation.
                     </p>
-                    {INDEPENDENT_SITE_TEMPLATES.map((tpl) => (
+                    {filteredTemplates.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                        Aucun modèle ne correspond à « {librarySearch} ».
+                      </p>
+                    ) : filteredTemplates.map((tpl) => (
                       <div
                         key={tpl.id}
                         className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs"
