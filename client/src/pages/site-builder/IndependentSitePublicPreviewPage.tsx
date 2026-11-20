@@ -102,8 +102,8 @@ export default function IndependentSitePublicPreviewPage() {
 
   return (
     <div className="min-h-screen bg-[#111827] text-slate-100">
-      {/* Barre supérieure de prévisualisation et navigation multi-pages */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#172033]/95 px-4 py-3 backdrop-blur">
+      {/* Les contrôles appartiennent uniquement à l’aperçu privé, jamais au site public. */}
+      {isPreviewRoute && <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#172033]/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {isPreviewRoute && (
@@ -259,17 +259,17 @@ export default function IndependentSitePublicPreviewPage() {
             </div>
           </div>
         )}
-      </header>
+      </header>}
 
       {/* Cadre de rendu responsive */}
-      <main className="mx-auto flex justify-center p-3 md:p-6">
+      <main className={isPreviewRoute ? "mx-auto flex justify-center p-3 md:p-6" : "min-h-screen"}>
         <div
           style={{
-            width: currentPreset.widthCss,
-            maxWidth: `${currentPreset.maxWidthPx}px`,
+            width: isPreviewRoute ? currentPreset.widthCss : "100%",
+            maxWidth: isPreviewRoute ? `${currentPreset.maxWidthPx}px` : "none",
             backgroundColor: site.theme.backgroundColor || "#faf8f5",
           }}
-          className="min-h-[82vh] overflow-x-hidden rounded-2xl border border-slate-700 bg-white text-slate-900 shadow-2xl transition-all duration-200 motion-reduce:transition-none"
+          className={isPreviewRoute ? "min-h-[82vh] overflow-x-hidden rounded-2xl border border-slate-700 bg-white text-slate-900 shadow-2xl transition-all duration-200 motion-reduce:transition-none" : "min-h-screen overflow-x-hidden bg-white text-slate-900"}
         >
           <style>
             {INDEPENDENT_RESPONSIVE_BASE_CSS}
