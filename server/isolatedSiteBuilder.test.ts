@@ -3,23 +3,40 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+  INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
+  INDEPENDENT_MODULE_CATEGORIES,
   INDEPENDENT_PAGE_SOCLES,
+  INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
+  RESPONSIVE_DEVICE_PRESETS,
   RESPONSIVE_VIEWPORTS,
+  VISUAL_CARD_USE_CASE_PRESETS,
   addCardToVisualCardGrid,
+  applyVisualCardUseCasePreset,
   assertNoSecretsInIndependentSite,
   assertZeroEcommerceInIndependentSite,
   buildImageTransformCss,
   buildNavigationFromPages,
+  buildPageSeoPreview,
   createDefaultVisualCardItem,
   duplicateCardInVisualCardGrid,
+  extractImagesFromPageHtml,
+  filterIndependentBlocks,
+  filterIndependentModules,
+  filterIndependentSocles,
+  filterIndependentTemplates,
+  removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
+  setVisualCardGridShape,
+  setVisualCardGridTextPlacement,
+  updateCardInVisualCardGrid,
+  updateImageAltInPageHtml,
   validateIndependentCustomDomain,
   type VisualCardGridConfig,
 } from "../shared/isolatedSiteBuilder";
@@ -27,7 +44,6 @@ import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
   createIndependentSiteProject,
-  createIndependentSiteVersion,
   deleteIndependentSiteMedia,
   duplicateIndependentSiteProject,
   ensureAthVahloulDemoProject,
@@ -47,7 +63,7 @@ import {
 } from "./isolatedSiteBuilderDb";
 
 describe("Constructeur de Sites Internet Indépendant (Produit isolé sans boutique)", () => {
-  it("1. expose les 8 catégories de sites et les 7 bibliothèques séparées (Pages, Blocs, Médias, Calques, Modules, Socles, Modèles)", () => {
+  it("1. expose les 8 catégories de sites, les 7 bibliothèques séparées et les 5 formats responsive (320px à 1440px)", () => {
     expect(INDEPENDENT_SITE_TYPE_OPTIONS.map((t) => t.value)).toEqual([
       "vitrine",
       "association",
@@ -70,13 +86,16 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     ]);
 
     expect(RESPONSIVE_VIEWPORTS.map((v) => v.id)).toEqual(["desktop", "tablet", "mobile"]);
+    expect(RESPONSIVE_DEVICE_PRESETS.map((p) => p.maxWidthPx)).toEqual([1440, 1024, 768, 414, 320]);
+    expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain("prefers-reduced-motion");
+    expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain("@media (max-width: 640px)");
   });
 
-  it("2. garantit l’absence totale de composants e-commerce dans les Blocs, Modules, Socles et Modèles", () => {
+  it("2. garantit l’absence totale de composants e-commerce dans les Blocs, Modules, Socles et les 10 Modèles complets", () => {
     expect(INDEPENDENT_BUILDER_BLOCKS.length).toBeGreaterThanOrEqual(20);
     expect(INDEPENDENT_BUILDER_MODULES.length).toBe(8);
     expect(INDEPENDENT_PAGE_SOCLES.length).toBe(9);
-    expect(INDEPENDENT_SITE_TEMPLATES.length).toBe(3);
+    expect(INDEPENDENT_SITE_TEMPLATES.length).toBe(10);
 
     for (const block of INDEPENDENT_BUILDER_BLOCKS) {
       expect(block.content).not.toContain('data-mazigho-dynamic="catalogue"');
@@ -88,6 +107,7 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     }
 
     for (const tpl of INDEPENDENT_SITE_TEMPLATES) {
+      expect(tpl.pages.length).toBeGreaterThanOrEqual(3);
       expect(() => assertZeroEcommerceInIndependentSite(tpl)).not.toThrow();
     }
 
@@ -97,6 +117,51 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
         storeId: 42,
       })
     ).toThrow(/INDEPENDENT_SITE_ECOMMERCE_DEPENDENCY_FORBIDDEN/);
+  });
+
+  it("2 bis. filtre et recherche dans la bibliothèque (blocs, modules, socles et modèles) par texte, catégorie et type de site", () => {
+    expect(INDEPENDENT_BLOCK_CATEGORIES.length).toBeGreaterThanOrEqual(5);
+    expect(INDEPENDENT_MODULE_CATEGORIES.length).toBeGreaterThanOrEqual(3);
+
+    // Recherche et filtrage des blocs
+    const heroBlocks = filterIndependentBlocks({
+      category: "Hero & Bannières",
+    });
+    expect(heroBlocks.length).toBeGreaterThanOrEqual(2);
+    expect(heroBlocks.every((b) => b.category === "Hero & Bannières")).toBe(true);
+
+    const faqBlocks = filterIndependentBlocks({
+      search: "FAQ",
+    });
+    expect(faqBlocks.some((b) => b.id.includes("faq"))).toBe(true);
+
+    // Recherche et filtrage des modules
+    const eventModules = filterIndependentModules({
+      search: "événements",
+    });
+    expect(eventModules.some((m) => m.id === "module-events-calendar")).toBe(true);
+
+    const contactModules = filterIndependentModules({
+      category: "Interactions & Médias",
+    });
+    expect(contactModules.some((m) => m.id === "module-interactive-form")).toBe(true);
+
+    // Recherche et filtrage des socles
+    const familySocles = filterIndependentSocles({
+      siteType: "familial",
+    });
+    expect(familySocles.some((s) => s.id === "socle-famille")).toBe(true);
+
+    // Recherche et filtrage des 10 modèles complets
+    const assocTemplates = filterIndependentTemplates({
+      siteType: "association",
+    });
+    expect(assocTemplates.length).toBeGreaterThanOrEqual(3);
+
+    const marriageTemplates = filterIndependentTemplates({
+      search: "mariage",
+    });
+    expect(marriageTemplates.some((t) => t.id === "modele-rencontre-evenementiel")).toBe(true);
   });
 
   it("3. applique toutes les transformations d’images (rotation, inclinaison, retournement H/V, zoom, positionnement libre)", () => {
@@ -123,11 +188,14 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(css).toContain("border-radius:24px");
   });
 
-  it("4. gère les cartes visuelles configurables (carrées, rectangulaires, rondes, texte dessus/dessous/intérieur, duplication et bouton « + »)", () => {
+  it("4. gère l’Atelier Cartes Visuelles complet (ajout +, duplication, suppression, modification, formes carrée/rectangulaire/ronde, position du texte, colonnes, espacement et préréglages d’usage)", () => {
+    expect(VISUAL_CARD_USE_CASE_PRESETS.length).toBeGreaterThanOrEqual(8);
+
     let grid: VisualCardGridConfig = {
       sectionEyebrow: "Actions",
       sectionTitle: "Nos cartes",
       columns: 3,
+      gapPx: 24,
       shape: "square",
       textPlacement: "top",
       showButton: true,
@@ -155,16 +223,45 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(grid.cards).toHaveLength(3);
     expect(grid.cards[1].title).toBe("Carte Initiale (copie)");
 
+    // Modification directe d'une carte (titre, sous-titre, description, bouton)
+    grid = updateCardInVisualCardGrid(grid, "c2", {
+      title: "Carte Modifiée",
+      subtitle: "Nouveau Badge",
+      description: "Description personnalisée",
+      buttonLabel: "Voir le détail",
+      buttonHref: "/detail",
+    });
+    expect(grid.cards.find((c) => c.id === "c2")?.title).toBe("Carte Modifiée");
+    expect(grid.cards.find((c) => c.id === "c2")?.buttonHref).toBe("/detail");
+
+    // Changement global de forme (square, rectangular, round) et position du texte (top, bottom, inside)
+    grid = setVisualCardGridShape(grid, "round");
+    expect(grid.shape).toBe("round");
+    expect(grid.cards.every((c) => c.shape === "round")).toBe(true);
+
+    grid = setVisualCardGridTextPlacement(grid, "bottom");
+    expect(grid.textPlacement).toBe("bottom");
+    expect(grid.cards.every((c) => c.textPlacement === "bottom")).toBe(true);
+
+    // Suppression d'une carte (tout en empêchant de tomber à 0 carte)
+    grid = removeCardFromVisualCardGrid(grid, "c2");
+    expect(grid.cards).toHaveLength(2);
+
     const html = renderVisualCardGridHtml(grid);
     expect(html).toContain('data-site-card-grid="true"');
-    expect(html).toContain("+ Cartes extensibles (3)");
-    expect(html).toContain('data-card-shape="square"');
+    expect(html).toContain('data-card-columns="3"');
+    expect(html).toContain("gap:24px");
     expect(html).toContain('data-card-shape="round"');
-    expect(html).toContain('data-card-text="top"');
-    expect(html).toContain('data-card-text="inside"');
+    expect(html).toContain('data-card-text="bottom"');
+
+    // Application d'un préréglage d'usage (ex. membres)
+    const membersGrid = applyVisualCardUseCasePreset("membres");
+    expect(membersGrid.useCase).toBe("membres");
+    expect(membersGrid.shape).toBe("round");
+    expect(membersGrid.cards).toHaveLength(3);
   });
 
-  it("4 bis. neutralise les contenus exécutables avant rendu public", () => {
+  it("4 bis. neutralise les contenus exécutables avant rendu public et gère le SEO et les textes alternatifs d’images", () => {
     const safeHtml = sanitizeIndependentHtml(
       '<section onclick="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">Lien</a></section>'
     );
@@ -173,6 +270,40 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(sanitizeIndependentCss(".x{background:url(javascript:alert(1));x:expression(alert(1))}")).not.toMatch(
       /javascript:|expression\s*\(/i
     );
+
+    // Extraction et mise à jour du texte alternatif (alt) des images d'une page
+    const samplePageHtml =
+      '<section><img src="https://example.com/a.jpg" alt="Ancien Alt 1" /><img src="https://example.com/b.jpg" /></section>';
+    const extracted = extractImagesFromPageHtml(samplePageHtml);
+    expect(extracted).toHaveLength(2);
+    expect(extracted[0].alt).toBe("Ancien Alt 1");
+    expect(extracted[1].alt).toBe("");
+
+    const updatedHtml = updateImageAltInPageHtml(samplePageHtml, 1, "Photo de l’équipe bénévole");
+    const reExtracted = extractImagesFromPageHtml(updatedHtml);
+    expect(reExtracted[1].alt).toBe("Photo de l’équipe bénévole");
+
+    // Aperçu SEO d'une page
+    const preview = buildPageSeoPreview(
+      {
+        id: "p1",
+        title: "Nos Activités",
+        slug: "/activites",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Activités culturelles & ateliers | Association",
+        seoDescription: "Découvrez nos ateliers hebdomadaires et rencontres.",
+        indexable: false,
+        html: updatedHtml,
+        css: "",
+      },
+      "association-atlas"
+    );
+    expect(preview.displayTitle).toBe("Activités culturelles & ateliers | Association");
+    expect(preview.canonicalUrl).toBe("https://sites.mazigho.com/sites/association-atlas/activites");
+    expect(preview.robotsDirective).toBe("noindex, nofollow");
   });
 
   it("5. fournit les 9 Socles de page prêts à personnaliser (Accueil, Association, Famille, Entreprise, Services, Contact, Événements, Équipe, Actualités)", () => {
@@ -189,7 +320,7 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     ]);
   });
 
-  it("6. crée la démonstration complète « Association familiale ATH VAHLOUL » avec 6 pages, menus et sous-menus, sans boutique", async () => {
+  it("6. crée la démonstration complète « Association familiale ATH VAHLOUL » et permet de créer un site depuis chacun des 10 modèles", async () => {
     const ownerId = 701;
     const demo = await ensureAthVahloulDemoProject(ownerId);
 
@@ -206,15 +337,30 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
       "/contact",
     ]);
 
-    // Vérifie la présence des sous-menus hiérarchiques
     const nav = buildNavigationFromPages(demo.pages);
     const familleMenu = nav.find((item) => item.href === "/notre-famille");
     const evenementsMenu = nav.find((item) => item.href === "/evenements");
     expect(familleMenu?.children?.map((c) => c.href)).toContain("/annonces");
     expect(evenementsMenu?.children?.map((c) => c.href)).toContain("/entraide");
+
+    // Création d'un site depuis les nouveaux modèles (ex. Association sportive, Restaurant sans e-commerce, Portfolio)
+    for (const tplId of [
+      "modele-association-sportive",
+      "modele-restaurant-commerce-vitrine",
+      "modele-portfolio-creatif",
+    ]) {
+      const tpl = INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === tplId)!;
+      const created = await createIndependentSiteProject(ownerId, {
+        title: tpl.name,
+        siteType: tpl.siteType,
+        templateId: tpl.id,
+      });
+      expect(created.templateId).toBe(tpl.id);
+      expect(created.pages.length).toBe(tpl.pages.length);
+    }
   });
 
-  it("7. sauvegarde les brouillons, gère les blocs réutilisables inter-pages, duplique un projet et restaure une version historique", async () => {
+  it("7. sauvegarde les brouillons (y compris les champs SEO socialImageUrl et indexable), gère les blocs réutilisables inter-pages, duplique un projet et restaure une version historique", async () => {
     const ownerId = 702;
     const site = await createIndependentSiteProject(ownerId, {
       title: "Association Culturelle Atlas",
@@ -242,6 +388,8 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
         visibility: "public" as const,
         seoTitle: "Contact Atlas",
         seoDescription: "Nous écrire",
+        socialImageUrl: "https://cdn.mazigho.com/sites/atlas-og.webp",
+        indexable: false,
         html: `${INDEPENDENT_PAGE_SOCLES[5].html}${reusableBlock.html}`,
         css: "",
       },
@@ -256,6 +404,8 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     });
 
     expect(savedV2.pages).toHaveLength(2);
+    expect(savedV2.pages[1].socialImageUrl).toBe("https://cdn.mazigho.com/sites/atlas-og.webp");
+    expect(savedV2.pages[1].indexable).toBe(false);
     expect(savedV2.reusableBlocks).toHaveLength(1);
 
     const versions = await listIndependentSiteVersions(ownerId, site.id);

@@ -16,6 +16,7 @@ import {
   buildNavigationFromPages,
   normalizeImageTransforms,
   normalizeIndependentPageSlug,
+  sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   sanitizeBuilderText,
@@ -434,6 +435,10 @@ export async function saveIndependentSiteProject(
         title: sanitizeBuilderText(p.title || `Page ${idx + 1}`, 140),
         slug: normalizeIndependentPageSlug(p.slug),
         menuOrder: typeof p.menuOrder === "number" ? p.menuOrder : idx + 1,
+        seoTitle: sanitizeBuilderText(p.seoTitle || p.title || `Page ${idx + 1}`, 180),
+        seoDescription: sanitizeBuilderText(p.seoDescription || "", 320),
+        socialImageUrl: p.socialImageUrl ? sanitizeBuilderImageSrc(p.socialImageUrl) : undefined,
+        indexable: p.indexable !== false,
         html: sanitizeIndependentHtml(p.html),
         css: sanitizeIndependentCss(p.css),
       }))

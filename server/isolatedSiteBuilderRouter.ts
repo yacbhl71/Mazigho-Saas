@@ -7,6 +7,7 @@ import {
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
+  RESPONSIVE_DEVICE_PRESETS,
   RESPONSIVE_VIEWPORTS,
 } from "../shared/isolatedSiteBuilder";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -56,6 +57,8 @@ const pageSchema = z.object({
   visibility: z.enum(["public", "members", "private"]),
   seoTitle: z.string().max(180),
   seoDescription: z.string().max(320),
+  socialImageUrl: z.string().max(2048).optional(),
+  indexable: z.boolean().optional(),
   html: z.string(),
   css: z.string(),
   gjsProjectData: z.record(z.string(), z.unknown()).optional(),
@@ -114,6 +117,7 @@ export const isolatedSiteBuilderRouter = router({
     siteTypes: INDEPENDENT_SITE_TYPE_OPTIONS,
     libraryTabs: INDEPENDENT_BUILDER_LIBRARY_TABS,
     viewports: RESPONSIVE_VIEWPORTS,
+    devicePresets: RESPONSIVE_DEVICE_PRESETS,
     blocks: INDEPENDENT_BUILDER_BLOCKS,
     modules: INDEPENDENT_BUILDER_MODULES,
     socles: INDEPENDENT_PAGE_SOCLES,

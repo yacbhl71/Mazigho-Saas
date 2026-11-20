@@ -103,6 +103,111 @@ export const RESPONSIVE_VIEWPORTS: ReadonlyArray<{
   { id: "mobile", label: "Mobile", widthCss: "375px", maxWidthPx: 375 },
 ] as const;
 
+export type ResponsiveDevicePresetId =
+  | "narrow-phone"
+  | "wide-phone"
+  | "tablet-portrait"
+  | "tablet-landscape"
+  | "desktop";
+
+export interface ResponsiveDevicePreset {
+  id: ResponsiveDevicePresetId;
+  label: string;
+  shortLabel: string;
+  widthCss: string;
+  maxWidthPx: number;
+  viewportMode: ResponsiveViewportMode;
+  description: string;
+}
+
+export const RESPONSIVE_DEVICE_PRESETS: ReadonlyArray<ResponsiveDevicePreset> = [
+  {
+    id: "desktop",
+    label: "Ordinateur (1440 px)",
+    shortLabel: "Ordinateur",
+    widthCss: "100%",
+    maxWidthPx: 1440,
+    viewportMode: "desktop",
+    description: "Affichage grand écran complet",
+  },
+  {
+    id: "tablet-landscape",
+    label: "Tablette paysage (1024 px)",
+    shortLabel: "Tablette 1024",
+    widthCss: "1024px",
+    maxWidthPx: 1024,
+    viewportMode: "tablet",
+    description: "Tablette horizontale ou petit ordinateur portable",
+  },
+  {
+    id: "tablet-portrait",
+    label: "Tablette portrait (768 px)",
+    shortLabel: "Tablette 768",
+    widthCss: "768px",
+    maxWidthPx: 768,
+    viewportMode: "tablet",
+    description: "Tablette verticale standard",
+  },
+  {
+    id: "wide-phone",
+    label: "Téléphone large (414 px)",
+    shortLabel: "Mobile 414",
+    widthCss: "414px",
+    maxWidthPx: 414,
+    viewportMode: "mobile",
+    description: "Smartphone grand format",
+  },
+  {
+    id: "narrow-phone",
+    label: "Téléphone étroit (320 px)",
+    shortLabel: "Mobile 320",
+    widthCss: "320px",
+    maxWidthPx: 320,
+    viewportMode: "mobile",
+    description: "Écran mobile compact sans débordement horizontal",
+  },
+] as const;
+
+export const INDEPENDENT_RESPONSIVE_BASE_CSS = `
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+img, video, figure { max-width: 100%; }
+[data-site-card-grid-items="true"] { width: 100%; }
+@media (max-width: 900px) {
+  [data-site-block] > div[style*="grid-template-columns"],
+  [data-site-module] > div[style*="grid-template-columns"],
+  [data-site-module] div[style*="grid-template-columns:repeat(3"],
+  [data-site-block] div[style*="grid-template-columns:repeat(4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 640px) {
+  [data-site-block], [data-site-module], [data-site-card-grid] {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  [data-site-block] div[style*="grid-template-columns"],
+  [data-site-module] div[style*="grid-template-columns"],
+  [data-site-card-grid-items="true"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [data-site-block="header"] nav,
+  [data-site-block="header-submenus"] nav,
+  [data-site-block="header-ath-vahloul"] nav {
+    width: 100%;
+    gap: 10px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+`.trim();
+
 // ---------------------------------------------------------------------------
 // 1. Transformations d’images (Rotation, Inclinaison, Retournement, Zoom, Position libre)
 // ---------------------------------------------------------------------------
@@ -202,11 +307,20 @@ export function buildImageTransformCss(
 }
 
 // ---------------------------------------------------------------------------
-// 2. Cartes visuelles configurables (formes, positions texte, duplication, bouton « + »)
+// 2. Cartes visuelles configurables (formes, positions texte, duplication, suppression, édition, bouton « + »)
 // ---------------------------------------------------------------------------
 
 export type VisualCardShape = "square" | "rectangular" | "round";
 export type VisualCardTextPlacement = "top" | "bottom" | "inside";
+export type VisualCardUseCaseId =
+  | "categories"
+  | "evenements"
+  | "membres"
+  | "activites"
+  | "galeries"
+  | "services"
+  | "famille"
+  | "association";
 
 export interface VisualCardItem {
   id: string;
@@ -225,10 +339,12 @@ export interface VisualCardItem {
 export interface VisualCardGridConfig {
   sectionTitle: string;
   sectionEyebrow: string;
-  columns: 2 | 3 | 4;
+  columns: 1 | 2 | 3 | 4;
+  gapPx?: number;
   shape: VisualCardShape;
   textPlacement: VisualCardTextPlacement;
   showButton: boolean;
+  useCase?: VisualCardUseCaseId;
   cards: VisualCardItem[];
 }
 
@@ -243,6 +359,22 @@ export function sanitizeBuilderHref(raw: string): string {
     return trimmed;
   }
   return "#";
+}
+
+export function sanitizeBuilderImageSrc(raw: string, fallback = DEFAULT_CARD_SVG): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return fallback;
+  if (/^(?:javascript:|vbscript:|data:text\/html)/i.test(trimmed)) {
+    return fallback;
+  }
+  if (
+    (trimmed.startsWith("/") && !trimmed.startsWith("//")) ||
+    /^https?:\/\//i.test(trimmed) ||
+    /^data:image\/(?:svg\+xml|png|jpeg|jpg|webp|gif)/i.test(trimmed)
+  ) {
+    return trimmed.replace(/["'<>]/g, "");
+  }
+  return fallback;
 }
 
 export function sanitizeBuilderText(raw: string, maxLen = 280): string {
@@ -274,6 +406,170 @@ export function sanitizeIndependentCss(raw: string): string {
 const DEFAULT_CARD_SVG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23263653'/%3E%3Ccircle cx='320' cy='210' r='92' fill='%23f5b98f' fill-opacity='.65'/%3E%3Cpath d='M0 390 Q160 280 320 390 T640 390 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E";
 
+export const VISUAL_CARD_SAMPLE_IMAGES: ReadonlyArray<{ id: string; label: string; url: string }> = [
+  {
+    id: "bleu-sable",
+    label: "Horizon Bleu Nuit & Sable",
+    url: DEFAULT_CARD_SVG,
+  },
+  {
+    id: "terracotta-soleil",
+    label: "Terracotta & Soleil",
+    url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%239b563e'/%3E%3Ccircle cx='320' cy='190' r='88' fill='%23faf8f5' fill-opacity='.78'/%3E%3Cpath d='M0 360 Q220 260 440 360 T640 350 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E",
+  },
+  {
+    id: "olivier-patrimoine",
+    label: "Patrimoine & Nature",
+    url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%232c4c3e'/%3E%3Ccircle cx='320' cy='195' r='82' fill='%23f5b98f' fill-opacity='.72'/%3E%3Cpath d='M0 375 Q180 290 360 375 T640 370 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E",
+  },
+  {
+    id: "ecru-minimal",
+    label: "Écru & Médaillon",
+    url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23eae2d6'/%3E%3Ccircle cx='320' cy='215' r='96' fill='%23172033' fill-opacity='.85'/%3E%3Ccircle cx='320' cy='215' r='44' fill='%239b563e'/%3E%3C/svg%3E",
+  },
+] as const;
+
+export const VISUAL_CARD_USE_CASE_PRESETS: ReadonlyArray<{
+  id: VisualCardUseCaseId;
+  label: string;
+  description: string;
+  sectionEyebrow: string;
+  sectionTitle: string;
+  shape: VisualCardShape;
+  textPlacement: VisualCardTextPlacement;
+  columns: 1 | 2 | 3 | 4;
+  showButton: boolean;
+  cards: Array<Pick<VisualCardItem, "title" | "subtitle" | "description" | "buttonLabel" | "buttonHref">>;
+}> = [
+  {
+    id: "categories",
+    label: "Catégories & Rubriques",
+    description: "Présentez les grands thèmes ou pôles de votre site.",
+    sectionEyebrow: "Rubriques du site",
+    sectionTitle: "Explorez nos grands thèmes",
+    shape: "rectangular",
+    textPlacement: "bottom",
+    columns: 3,
+    showButton: true,
+    cards: [
+      { title: "Présentation & Histoire", subtitle: "Rubrique 01", description: "Découvrez l’origine, la mission et les valeurs de notre initiative.", buttonLabel: "Découvrir", buttonHref: "/a-propos" },
+      { title: "Actions & Projets", subtitle: "Rubrique 02", description: "Suivez nos chantiers en cours et nos réalisations collectives.", buttonLabel: "Voir les actions", buttonHref: "/activites" },
+      { title: "Ressources & Contact", subtitle: "Rubrique 03", description: "Consultez nos documents utiles ou prenez contact avec l’équipe.", buttonLabel: "Nous joindre", buttonHref: "/contact" },
+    ],
+  },
+  {
+    id: "evenements",
+    label: "Événements & Rencontres",
+    description: "Annoncez vos prochains rassemblements, dates et lieux.",
+    sectionEyebrow: "Agenda & Temps forts",
+    sectionTitle: "Nos prochains événements",
+    shape: "rectangular",
+    textPlacement: "inside",
+    columns: 2,
+    showButton: true,
+    cards: [
+      { title: "Rencontre Annuelle & Partage", subtitle: "Samedi 14 Juin · 10h00", description: "Accueil des participants, table ronde, repas convivial et ateliers.", buttonLabel: "S’inscrire", buttonHref: "/evenements" },
+      { title: "Journée Portes Ouvertes & Exposition", subtitle: "Dimanche 21 Septembre · 14h00", description: "Exposition photographique, échanges avec les intervenants et visite guidée.", buttonLabel: "Voir le programme", buttonHref: "/evenements" },
+    ],
+  },
+  {
+    id: "membres",
+    label: "Membres & Équipe",
+    description: "Trombinoscope avec médaillons ronds pour vos membres ou intervenants.",
+    sectionEyebrow: "Portraits & Rôles",
+    sectionTitle: "Les visages de notre collectif",
+    shape: "round",
+    textPlacement: "bottom",
+    columns: 3,
+    showButton: false,
+    cards: [
+      { title: "Présidence & Coordination", subtitle: "Animation", description: "Lien entre les membres, représentation et suivi des orientations annuelles.", buttonLabel: "Contacter", buttonHref: "/contact" },
+      { title: "Secrétariat & Mémoire", subtitle: "Documentation", description: "Comptes-rendus, archives et information régulière des adhérents.", buttonLabel: "Contacter", buttonHref: "/contact" },
+      { title: "Trésorerie & Intendance", subtitle: "Logistique", description: "Suivi du matériel partagé, organisation des salles et entraide.", buttonLabel: "Contacter", buttonHref: "/contact" },
+    ],
+  },
+  {
+    id: "activites",
+    label: "Activités & Ateliers",
+    description: "Mettez en avant vos ateliers réguliers, créneaux et activités.",
+    sectionEyebrow: "Programme régulier",
+    sectionTitle: "Nos activités tout au long de l’année",
+    shape: "square",
+    textPlacement: "top",
+    columns: 3,
+    showButton: true,
+    cards: [
+      { title: "Ateliers Culturels & Langue", subtitle: "Chaque samedi", description: "Transmission intergénérationnelle, récits, chant et patrimoine vivant.", buttonLabel: "Participer", buttonHref: "/contact" },
+      { title: "Accompagnement Jeunesse", subtitle: "Mercredi & Samedi", description: "Soutien méthodologique, rencontres sportives et mentorat.", buttonLabel: "En savoir plus", buttonHref: "/contact" },
+      { title: "Permanence d’Entraide", subtitle: "Sur rendez-vous", description: "Orientation, prêt d’équipements collectifs et solidarité concrète.", buttonLabel: "Demander", buttonHref: "/contact" },
+    ],
+  },
+  {
+    id: "galeries",
+    label: "Galeries & Albums",
+    description: "Grille visuelle pour vos albums photos et réalisations.",
+    sectionEyebrow: "En images",
+    sectionTitle: "Albums & Souvenirs partagés",
+    shape: "square",
+    textPlacement: "inside",
+    columns: 3,
+    showButton: false,
+    cards: [
+      { title: "Rassemblement de Printemps", subtitle: "Album 2026", description: "Moments de convivialité et retrouvailles entre générations.", buttonLabel: "Voir l’album", buttonHref: "#" },
+      { title: "Archives & Photographies Anciennes", subtitle: "Patrimoine", description: "Mémoire des anciens et histoire de nos villages et familles.", buttonLabel: "Voir l’album", buttonHref: "#" },
+      { title: "Chantiers & Initiatives Solidaires", subtitle: "Terrain", description: "Retour en images sur nos actions collectives de l’année.", buttonLabel: "Voir l’album", buttonHref: "#" },
+    ],
+  },
+  {
+    id: "services",
+    label: "Services & Prestations",
+    description: "Présentez vos offres de service sans obligation e-commerce.",
+    sectionEyebrow: "Savoir-faire",
+    sectionTitle: "Nos prestations sur mesure",
+    shape: "rectangular",
+    textPlacement: "bottom",
+    columns: 3,
+    showButton: true,
+    cards: [
+      { title: "Conseil & Diagnostic", subtitle: "Étape 01", description: "Analyse personnalisée de votre besoin et recommandations claires.", buttonLabel: "Demander un échange", buttonHref: "/contact" },
+      { title: "Conception & Réalisation", subtitle: "Étape 02", description: "Mise en œuvre soignée avec points d’étape réguliers.", buttonLabel: "Voir notre méthode", buttonHref: "/services" },
+      { title: "Suivi & Accompagnement", subtitle: "Étape 03", description: "Présence durable à vos côtés pour faire évoluer votre projet.", buttonLabel: "Prendre rendez-vous", buttonHref: "/contact" },
+    ],
+  },
+  {
+    id: "famille",
+    label: "Rubriques Familiales",
+    description: "Idéal pour les sites familiaux : histoire, annonces, entraide.",
+    sectionEyebrow: "Vie de famille",
+    sectionTitle: "Nos espaces familiaux",
+    shape: "rectangular",
+    textPlacement: "bottom",
+    columns: 3,
+    showButton: true,
+    cards: [
+      { title: "Histoire & Généalogie", subtitle: "Mémoire", description: "L’histoire de nos branches familiales, nos récits et nos archives.", buttonLabel: "Explorer", buttonHref: "/notre-famille" },
+      { title: "Carnet d’Annonces Protégées", subtitle: "Avec consentement", description: "Naissances, mariages, réussites et hommages partagés dans le respect.", buttonLabel: "Consulter", buttonHref: "/annonces" },
+      { title: "Entraide & Matériel Partagé", subtitle: "Solidarité", description: "Réservation de la vaisselle, des tables et équipements collectifs.", buttonLabel: "Voir l’inventaire", buttonHref: "/entraide" },
+    ],
+  },
+  {
+    id: "association",
+    label: "Pages Associatives",
+    description: "Pôles d’engagement, bénévolat et vie d’association.",
+    sectionEyebrow: "Engagement associatif",
+    sectionTitle: "Comment agir avec notre association",
+    shape: "rectangular",
+    textPlacement: "bottom",
+    columns: 3,
+    showButton: true,
+    cards: [
+      { title: "Devenir Membre Actif", subtitle: "Adhésion", description: "Participez aux décisions, aux assemblées et à la vie du collectif.", buttonLabel: "Rejoindre", buttonHref: "/contact" },
+      { title: "Proposer une Initiative", subtitle: "Projets", description: "Soumettez une idée d’atelier, d’événement ou d’action solidaire.", buttonLabel: "Proposer", buttonHref: "/contact" },
+      { title: "Participer aux Rencontres", subtitle: "Agenda", description: "Retrouvez toutes les dates de nos permanences et rassemblements.", buttonLabel: "Voir les dates", buttonHref: "/evenements" },
+    ],
+  },
+] as const;
+
 export function createDefaultVisualCardItem(
   index: number,
   overrides?: Partial<VisualCardItem>
@@ -285,8 +581,8 @@ export function createDefaultVisualCardItem(
     description:
       overrides?.description ||
       "Personnalisez la forme (carrée, rectangulaire, ronde), la position du texte et l’image.",
-    imageUrl: overrides?.imageUrl || DEFAULT_CARD_SVG,
-    imageAlt: overrides?.imageAlt || `Illustration carte ${index}`,
+    imageUrl: sanitizeBuilderImageSrc(overrides?.imageUrl || DEFAULT_CARD_SVG),
+    imageAlt: overrides?.imageAlt || overrides?.title || `Illustration carte ${index}`,
     shape: overrides?.shape || "rectangular",
     textPlacement: overrides?.textPlacement || "bottom",
     showButton: overrides?.showButton ?? true,
@@ -332,32 +628,119 @@ export function duplicateCardInVisualCardGrid(
   };
 }
 
+export function removeCardFromVisualCardGrid(
+  config: VisualCardGridConfig,
+  cardId: string
+): VisualCardGridConfig {
+  if (config.cards.length <= 1) return config;
+  const nextCards = config.cards.filter((c) => c.id !== cardId);
+  if (nextCards.length === 0) return config;
+  return {
+    ...config,
+    cards: nextCards,
+  };
+}
+
+export function updateCardInVisualCardGrid(
+  config: VisualCardGridConfig,
+  cardId: string,
+  patch: Partial<VisualCardItem>
+): VisualCardGridConfig {
+  return {
+    ...config,
+    cards: config.cards.map((card) => {
+      if (card.id !== cardId) return card;
+      return {
+        ...card,
+        ...patch,
+        imageUrl: patch.imageUrl !== undefined ? sanitizeBuilderImageSrc(patch.imageUrl) : card.imageUrl,
+        buttonHref: patch.buttonHref !== undefined ? sanitizeBuilderHref(patch.buttonHref) : card.buttonHref,
+      };
+    }),
+  };
+}
+
+export function setVisualCardGridShape(
+  config: VisualCardGridConfig,
+  shape: VisualCardShape
+): VisualCardGridConfig {
+  return {
+    ...config,
+    shape,
+    cards: config.cards.map((card) => ({ ...card, shape })),
+  };
+}
+
+export function setVisualCardGridTextPlacement(
+  config: VisualCardGridConfig,
+  textPlacement: VisualCardTextPlacement
+): VisualCardGridConfig {
+  return {
+    ...config,
+    textPlacement,
+    cards: config.cards.map((card) => ({ ...card, textPlacement })),
+  };
+}
+
+export function applyVisualCardUseCasePreset(
+  presetId: VisualCardUseCaseId
+): VisualCardGridConfig {
+  const preset =
+    VISUAL_CARD_USE_CASE_PRESETS.find((p) => p.id === presetId) ?? VISUAL_CARD_USE_CASE_PRESETS[0];
+  return {
+    sectionEyebrow: preset.sectionEyebrow,
+    sectionTitle: preset.sectionTitle,
+    columns: preset.columns,
+    gapPx: 20,
+    shape: preset.shape,
+    textPlacement: preset.textPlacement,
+    showButton: preset.showButton,
+    useCase: preset.id,
+    cards: preset.cards.map((c, idx) =>
+      createDefaultVisualCardItem(idx + 1, {
+        id: `card-${preset.id}-${idx + 1}`,
+        title: c.title,
+        subtitle: c.subtitle,
+        description: c.description,
+        buttonLabel: c.buttonLabel,
+        buttonHref: c.buttonHref,
+        shape: preset.shape,
+        textPlacement: preset.textPlacement,
+        showButton: preset.showButton,
+        imageUrl: VISUAL_CARD_SAMPLE_IMAGES[idx % VISUAL_CARD_SAMPLE_IMAGES.length].url,
+        imageAlt: c.title,
+      })
+    ),
+  };
+}
+
 export function renderVisualCardHtml(card: VisualCardItem): string {
   const safeTitle = sanitizeBuilderText(card.title, 120);
   const safeSubtitle = sanitizeBuilderText(card.subtitle, 80);
   const safeDesc = sanitizeBuilderText(card.description, 320);
-  const safeAlt = sanitizeBuilderText(card.imageAlt, 140);
+  const safeAlt = sanitizeBuilderText(card.imageAlt || card.title, 140);
   const safeHref = sanitizeBuilderHref(card.buttonHref);
   const safeBtnLabel = sanitizeBuilderText(card.buttonLabel, 60);
+  const safeImgSrc = sanitizeBuilderImageSrc(card.imageUrl);
 
   const imageHeight =
-    card.shape === "square" ? "240px" : card.shape === "round" ? "220px" : "190px";
-  const imageWidth = card.shape === "round" ? "220px" : "100%";
+    card.shape === "square" ? "240px" : card.shape === "round" ? "200px" : "190px";
+  const imageWidth = card.shape === "round" ? "200px" : "100%";
   const imageRadius =
     card.shape === "round" ? "9999px" : card.shape === "square" ? "16px" : "14px";
   const imageMargin = card.shape === "round" ? "16px auto" : "0";
 
-  const textBlock = `<div data-site-card-text="${card.textPlacement}" style="padding:18px 20px"><p style="margin:0;color:#9b563e;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase">${safeSubtitle}</p><h3 style="margin:8px 0;font-size:20px;color:${card.textPlacement === "inside" ? "#ffffff" : "#172033"}">${safeTitle}</h3><p style="margin:0;color:${card.textPlacement === "inside" ? "#e6ebf2" : "#5b6470"};font-size:14px;line-height:1.6">${safeDesc}</p>${
+  const textBlock = `<div data-site-card-text="${card.textPlacement}" style="padding:18px 20px"><p style="margin:0;color:${card.textPlacement === "inside" ? "#f5b98f" : "#9b563e"};font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase">${safeSubtitle}</p><h3 style="margin:8px 0;font-size:20px;color:${card.textPlacement === "inside" ? "#ffffff" : "#172033"}">${safeTitle}</h3><p style="margin:0;color:${card.textPlacement === "inside" ? "#e6ebf2" : "#5b6470"};font-size:14px;line-height:1.6">${safeDesc}</p>${
     card.showButton
       ? `<a href="${safeHref}" style="display:inline-block;margin-top:14px;padding:9px 15px;border-radius:8px;background:${card.textPlacement === "inside" ? "#f5b98f" : "#172033"};color:${card.textPlacement === "inside" ? "#172033" : "#ffffff"};text-decoration:none;font-size:13px;font-weight:700">${safeBtnLabel}</a>`
       : ""
   }</div>`;
 
   if (card.textPlacement === "inside") {
-    return `<article data-site-visual-card="true" data-card-id="${card.id}" data-card-shape="${card.shape}" data-card-text="inside" style="position:relative;overflow:hidden;border-radius:${imageRadius};min-height:280px;display:flex;align-items:flex-end;background:#172033;color:#fff;box-shadow:0 12px 28px rgba(23,32,51,.12)"><img src="${card.imageUrl}" alt="${safeAlt}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" /><div style="position:relative;z-index:2;width:100%;background:linear-gradient(180deg,transparent 0%,rgba(23,32,51,.88) 100%)">${textBlock}</div></article>`;
+    return `<article data-site-visual-card="true" data-card-id="${card.id}" data-card-shape="${card.shape}" data-card-text="inside" style="position:relative;overflow:hidden;border-radius:${card.shape === "round" ? "28px" : imageRadius};min-height:280px;display:flex;align-items:flex-end;background:#172033;color:#fff;box-shadow:0 12px 28px rgba(23,32,51,.12)"><img src="${safeImgSrc}" alt="${safeAlt}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" /><div style="position:relative;z-index:2;width:100%;background:linear-gradient(180deg,transparent 0%,rgba(23,32,51,.88) 100%)">${textBlock}</div></article>`;
   }
 
-  const imgBlock = `<div style="padding:${card.shape === "round" ? "12px 12px 0" : "0"};text-align:center"><img src="${card.imageUrl}" alt="${safeAlt}" style="display:block;width:${imageWidth};height:${imageHeight};margin:${imageMargin};object-fit:cover;border-radius:${imageRadius}" /></div>`;
+  const imgBlock = `<div style="padding:${card.shape === "round" ? "14px 14px 0" : "0"};text-align:center"><img src="${safeImgSrc}" alt="${safeAlt}" style="display:block;width:${imageWidth};max-width:100%;height:${imageHeight};margin:${imageMargin};object-fit:cover;border-radius:${imageRadius}" /></div>`;
 
   return `<article data-site-visual-card="true" data-card-id="${card.id}" data-card-shape="${card.shape}" data-card-text="${card.textPlacement}" style="background:#ffffff;border:1px solid #e6dfd5;border-radius:18px;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 8px 22px rgba(23,32,51,.06)">${
     card.textPlacement === "top" ? `${textBlock}${imgBlock}` : `${imgBlock}${textBlock}`
@@ -367,9 +750,11 @@ export function renderVisualCardHtml(card: VisualCardItem): string {
 export function renderVisualCardGridHtml(config: VisualCardGridConfig): string {
   const safeEyebrow = sanitizeBuilderText(config.sectionEyebrow, 80);
   const safeTitle = sanitizeBuilderText(config.sectionTitle, 140);
+  const columns = clampNumber(Number(config.columns ?? 3), 1, 4, 3);
+  const gapPx = clampNumber(Number(config.gapPx ?? 20), 8, 48, 20);
   const cardsHtml = config.cards.map((card) => renderVisualCardHtml(card)).join("");
 
-  return `<section data-site-card-grid="true" data-card-shape="${config.shape}" data-card-text="${config.textPlacement}" style="padding:52px 28px;background:#faf8f5"><div style="max-width:1120px;margin:0 auto"><div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px"><div><p style="margin:0;color:#9b563e;font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase">${safeEyebrow}</p><h2 style="margin:8px 0 0;font-size:32px;color:#172033">${safeTitle}</h2></div><span data-site-card-add-hint="true" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #dfd7cc;color:#172033;font-size:12px;font-weight:700">+ Cartes extensibles (${config.cards.length})</span></div><div data-site-card-grid-items="true" style="display:grid;grid-template-columns:repeat(${config.columns},minmax(0,1fr));gap:20px">${cardsHtml}</div></div></section>`;
+  return `<section data-site-card-grid="true" data-card-shape="${config.shape}" data-card-text="${config.textPlacement}" data-card-columns="${columns}" data-card-gap="${gapPx}" style="padding:52px 28px;background:#faf8f5;box-sizing:border-box"><div style="max-width:1120px;margin:0 auto"><div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px"><div><p style="margin:0;color:#9b563e;font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase">${safeEyebrow}</p><h2 style="margin:8px 0 0;font-size:clamp(24px,3.5vw,32px);color:#172033">${safeTitle}</h2></div><span data-site-card-add-hint="true" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #dfd7cc;color:#172033;font-size:12px;font-weight:700">+ Cartes extensibles (${config.cards.length})</span></div><div data-site-card-grid-items="true" style="display:grid;grid-template-columns:repeat(${columns},minmax(0,1fr));gap:${gapPx}px">${cardsHtml}</div></div></section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -911,6 +1296,8 @@ export interface IndependentSitePage {
   visibility: "public" | "members" | "private";
   seoTitle: string;
   seoDescription: string;
+  socialImageUrl?: string;
+  indexable?: boolean;
   html: string;
   css: string;
   gjsProjectData?: Record<string, unknown>;
@@ -945,6 +1332,7 @@ export interface IndependentSiteThemeConfig {
 export interface IndependentSiteTemplate {
   id: string;
   name: string;
+  categoryLabel?: string;
   siteType: IndependentSiteType;
   tagline: string;
   description: string;
@@ -959,6 +1347,7 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
   {
     id: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
     name: "Association familiale ATH VAHLOUL",
+    categoryLabel: "Association familiale",
     siteType: "familial",
     tagline: "Notre famille, notre mémoire, notre entraide.",
     description:
@@ -968,7 +1357,7 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
       accentColor: "#9b563e",
       backgroundColor: "#faf8f5",
       headingFont: "Georgia, serif",
-      bodyFont: "Inter, system-ui, sans-serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
     },
     navigation: [
       { id: "nav-home", label: "Accueil", href: "/", pageId: "page-accueil" },
@@ -1006,7 +1395,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         seoTitle: "Association familiale ATH VAHLOUL | Mémoire, Rencontres & Entraide",
         seoDescription:
           "Site officiel de l’Association familiale ATH VAHLOUL : histoire familiale, calendrier des rencontres, prêt de matériel collectif et solidarité intergénérationnelle.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; background: #faf8f5; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; background: #faf8f5; }",
         html: [
           `<header data-site-block="header-ath-vahloul" style="padding:18px 28px;background:#ffffff;color:#172033;border-bottom:1px solid #e8e2d9"><div style="max-width:1160px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap"><a href="/" style="color:#172033;text-decoration:none;font-weight:800;font-size:20px;letter-spacing:.02em">Association familiale ATH VAHLOUL</a><nav aria-label="Menu principal ATH VAHLOUL" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><a href="/" style="color:#172033;text-decoration:none;font-size:14px;font-weight:700">Accueil</a><a href="/notre-famille" style="color:#172033;text-decoration:none;font-size:14px;font-weight:600">Notre Famille</a><a href="/evenements" style="color:#172033;text-decoration:none;font-size:14px;font-weight:600">Événements</a><a href="/entraide" style="color:#172033;text-decoration:none;font-size:14px;font-weight:600">Entraide & Matériel</a><a href="/annonces" style="color:#172033;text-decoration:none;font-size:14px;font-weight:600">Annonces & Mémoire</a><a href="/contact" style="color:#172033;text-decoration:none;font-size:14px;font-weight:600">Contact</a></nav><a href="/contact" style="display:inline-block;padding:10px 18px;background:#9b563e;color:#ffffff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700">Participer</a></div></header>`,
           `<section data-site-block="hero-ath-vahloul" style="padding:84px 28px;background:linear-gradient(135deg,#172033 0%,#263653 58%,#52657b 100%);color:#ffffff"><div style="max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1.2fr .8fr;gap:38px;align-items:center"><div><p style="margin:0;color:#f5b98f;text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800">Association familiale ATH VAHLOUL</p><h1 style="font-size:clamp(38px,6vw,64px);line-height:1.05;margin:14px 0 18px">Notre famille, notre mémoire, notre entraide.</h1><p style="max-width:640px;margin:0 0 26px;color:#e6ebf2;line-height:1.75;font-size:17px">Un espace indépendant dédié aux membres et amis de la famille ATH VAHLOUL pour transmettre notre histoire, organiser nos rassemblements et mutualiser nos ressources d’entraide.</p><div style="display:flex;gap:12px;flex-wrap:wrap"><a href="/notre-famille" style="padding:13px 22px;background:#ffffff;color:#172033;border-radius:8px;text-decoration:none;font-weight:800">Découvrir la famille</a><a href="/evenements" style="padding:12px 20px;border:1px solid rgba(255,255,255,.7);color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700">Calendrier des rencontres</a></div></div><div style="padding:20px;border-radius:20px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2)"><img src="${DEFAULT_CARD_SVG}" alt="Rassemblement Association familiale ATH VAHLOUL" data-site-transformable-image="true" style="display:block;width:100%;height:250px;object-fit:cover;border-radius:14px" /></div></div></section>`,
@@ -1056,7 +1447,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Notre Famille & Organisation | Association familiale ATH VAHLOUL",
         seoDescription: "Histoire, valeurs et organisation des rôles au sein de l’Association familiale ATH VAHLOUL.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; }",
         html: [
           INDEPENDENT_BUILDER_BLOCKS[1].content,
           INDEPENDENT_BUILDER_BLOCKS[5].content,
@@ -1075,7 +1468,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Calendrier des événements | Association familiale ATH VAHLOUL",
         seoDescription: "Agenda des rencontres, assemblées et fêtes familiales d’ATH VAHLOUL.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; }",
         html: [
           INDEPENDENT_BUILDER_BLOCKS[1].content,
           INDEPENDENT_BUILDER_BLOCKS[4].content,
@@ -1094,7 +1489,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Entraide & Prêt de matériel | Association familiale ATH VAHLOUL",
         seoDescription: "Inventaire et réservation du matériel collectif de l’association familiale ATH VAHLOUL.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; }",
         html: [
           INDEPENDENT_BUILDER_BLOCKS[1].content,
           INDEPENDENT_BUILDER_MODULES[3].html,
@@ -1113,7 +1510,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "members",
         seoTitle: "Carnet d’annonces & Mémoire | Association familiale ATH VAHLOUL",
         seoDescription: "Annonces familiales protégées par consentement explicite et espace mémoire ATH VAHLOUL.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: false,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; }",
         html: [
           INDEPENDENT_BUILDER_BLOCKS[1].content,
           INDEPENDENT_BUILDER_MODULES[2].html,
@@ -1131,7 +1530,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Contact | Association familiale ATH VAHLOUL",
         seoDescription: "Contacter le bureau et les coordinateurs de l’Association familiale ATH VAHLOUL.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #172033; }",
         html: [
           INDEPENDENT_BUILDER_BLOCKS[1].content,
           INDEPENDENT_BUILDER_MODULES[7].html,
@@ -1143,22 +1544,276 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
     ],
   },
   {
+    id: "modele-association-culturelle",
+    name: "Cercle Culturel & Patrimoine Vivant",
+    categoryLabel: "Association culturelle",
+    siteType: "association",
+    tagline: "Transmettre les arts, la langue et la mémoire locale.",
+    description:
+      "Modèle complet pour association culturelle : expositions, ateliers artistiques, calendrier des conférences, galerie photo et adhésion.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Georgia, serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-cult-1", label: "Accueil", href: "/", pageId: "cult-accueil" },
+      { id: "nav-cult-2", label: "Ateliers & Arts", href: "/association", pageId: "cult-ateliers" },
+      { id: "nav-cult-3", label: "Agenda Culturel", href: "/evenements", pageId: "cult-agenda" },
+      { id: "nav-cult-4", label: "Adhérer & Contact", href: "/contact", pageId: "cult-contact" },
+    ],
+    pages: [
+      {
+        id: "cult-accueil",
+        title: "Accueil Culture & Patrimoine",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Cercle Culturel & Patrimoine Vivant | Accueil",
+        seoDescription: "Découvrez nos ateliers culturels, expositions et rencontres patrimoniales.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "cult-ateliers",
+        title: "Nos Ateliers & Pôles Artistiques",
+        slug: "/association",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Ateliers Artistiques & Transmission | Cercle Culturel",
+        seoDescription: "Ateliers hebdomadaires de musique, littérature, calligraphie et histoire locale.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[1].html,
+      },
+      {
+        id: "cult-agenda",
+        title: "Agenda des Expositions & Rencontres",
+        slug: "/evenements",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Agenda Culturel & Conférences",
+        seoDescription: "Calendrier des expositions, concerts acoustiques et tables rondes.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[6].html,
+      },
+      {
+        id: "cult-contact",
+        title: "Nous Rejoindre & Contact",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "Adhésion & Contact | Cercle Culturel",
+        seoDescription: "Rejoignez l’association culturelle ou inscrivez-vous à un atelier.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-association-sportive",
+    name: "Club Sportif & Jeunesse Solidaire",
+    categoryLabel: "Association sportive",
+    siteType: "association",
+    tagline: "Esprit d’équipe, dépassement de soi et convivialité.",
+    description:
+      "Site complet pour club sportif ou association de loisirs : créneaux d’entraînement, encadrants, calendrier des matchs/sorties et inscriptions.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#1d4ed8",
+      backgroundColor: "#f8fafc",
+      headingFont: "Plus Jakarta Sans, system-ui, sans-serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-sp-1", label: "Accueil", href: "/", pageId: "sp-accueil" },
+      { id: "nav-sp-2", label: "Équipes & Entraînements", href: "/equipe", pageId: "sp-equipe" },
+      { id: "nav-sp-3", label: "Calendrier Sportif", href: "/evenements", pageId: "sp-calendrier" },
+      { id: "nav-sp-4", label: "Inscriptions", href: "/contact", pageId: "sp-contact" },
+    ],
+    pages: [
+      {
+        id: "sp-accueil",
+        title: "Accueil du Club",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Club Sportif & Jeunesse | Accueil",
+        seoDescription: "Horaires d’entraînement, sections jeunes et adultes, vie du club sportif.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "sp-equipe",
+        title: "Éducateurs & Sections",
+        slug: "/equipe",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Encadrement & Sections Sportives",
+        seoDescription: "Présentation des entraîneurs bénévoles et des créneaux par catégorie d’âge.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[7].html,
+      },
+      {
+        id: "sp-calendrier",
+        title: "Rencontres & Tournois",
+        slug: "/evenements",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Calendrier des Rencontres & Stages",
+        seoDescription: "Prochaines compétitions amicales, tournois inter-villages et stages vacances.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[6].html,
+      },
+      {
+        id: "sp-contact",
+        title: "Inscriptions & Stade",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "S’inscrire au Club Sportif",
+        seoDescription: "Modalités d’essai gratuit, dossier d’inscription et accès aux installations.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-association-humanitaire",
+    name: "Collectif Humanitaire & Entraide Citoyenne",
+    categoryLabel: "Association humanitaire",
+    siteType: "association",
+    tagline: "Agir concrètement sur le terrain avec transparence.",
+    description:
+      "Site associatif dédié aux projets solidaires et humanitaires : missions sur le terrain, bilans d’impact, appels à bénévoles et points de collecte.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Georgia, serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-hum-1", label: "Accueil", href: "/", pageId: "hum-accueil" },
+      { id: "nav-hum-2", label: "Nos Missions", href: "/association", pageId: "hum-missions" },
+      { id: "nav-hum-3", label: "Actualités Terrain", href: "/actualites", pageId: "hum-actus" },
+      { id: "nav-hum-4", label: "Devenir Bénévole", href: "/contact", pageId: "hum-contact" },
+    ],
+    pages: [
+      {
+        id: "hum-accueil",
+        title: "Accueil & Impact Solidaire",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Collectif Humanitaire & Entraide | Accueil",
+        seoDescription: "Actions d’entraide, soutien éducatif, convois solidaires et bénévolat.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "hum-missions",
+        title: "Missions & Gouvernance",
+        slug: "/association",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Nos Missions Humanitaires & Transparence",
+        seoDescription: "Découvrez nos programmes d’accès à l’éducation, à la santé et à l’eau.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[1].html,
+      },
+      {
+        id: "hum-actus",
+        title: "Journal des Actions Terrain",
+        slug: "/actualites",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Comptes-rendus & Actualités des Missions",
+        seoDescription: "Suivi photographique et bilans détaillés de chaque opération solidaire.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[8].html,
+      },
+      {
+        id: "hum-contact",
+        title: "Agir Avec Nous & Contact",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "Devenir Bénévole | Collectif Humanitaire",
+        seoDescription: "Participez aux collectes de matériel ou rejoignez une équipe de bénévoles.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
     id: "modele-vitrine-services-pro",
     name: "Atelier & Conseil Professionnel",
+    categoryLabel: "Professionnel indépendant",
     siteType: "services",
     tagline: "Clarté, expertise et accompagnement sur mesure.",
     description:
-      "Site vitrine professionnel multi-pages (Accueil, Services, Méthode & Réalisations, Contact) conçu pour les indépendants, cabinets et artisans.",
+      "Site vitrine professionnel multi-pages (Accueil, Services, Méthode & Références, Contact) conçu pour les consultants, cabinets libéraux et indépendants.",
     theme: {
-      primaryColor: "#0f172a",
+      primaryColor: "#172033",
       accentColor: "#0d9488",
       backgroundColor: "#f8fafc",
-      headingFont: "Inter, system-ui, sans-serif",
-      bodyFont: "Inter, system-ui, sans-serif",
+      headingFont: "Plus Jakarta Sans, system-ui, sans-serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
     },
     navigation: [
       { id: "nav-pro-home", label: "Accueil", href: "/", pageId: "pro-accueil" },
       { id: "nav-pro-services", label: "Nos Services", href: "/services", pageId: "pro-services" },
+      { id: "nav-pro-entreprise", label: "Le Cabinet", href: "/entreprise", pageId: "pro-cabinet" },
       { id: "nav-pro-contact", label: "Contact", href: "/contact", pageId: "pro-contact" },
     ],
     pages: [
@@ -1172,7 +1827,9 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Atelier & Conseil Professionnel | Accueil",
         seoDescription: "Présentation de nos services professionnels et accompagnement sur mesure.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[0].html,
       },
       {
@@ -1185,8 +1842,25 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         visibility: "public",
         seoTitle: "Nos Prestations & Méthode",
         seoDescription: "Découvrez nos prestations détaillées et notre méthode en 3 étapes.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[4].html,
+      },
+      {
+        id: "pro-cabinet",
+        title: "Approche & Engagements",
+        slug: "/entreprise",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Notre Cabinet & Valeurs",
+        seoDescription: "Parcours, déontologie et témoignages de nos clients accompagnés.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[3].html,
       },
       {
         id: "pro-contact",
@@ -1194,34 +1868,205 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         slug: "/contact",
         parentPageId: null,
         showInMenu: true,
-        menuOrder: 3,
+        menuOrder: 4,
         visibility: "public",
         seoTitle: "Contactez notre équipe",
         seoDescription: "Prenez rendez-vous ou posez vos questions via notre formulaire.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-petite-entreprise-locale",
+    name: "Artisan & Petite Entreprise Locale",
+    categoryLabel: "Petite entreprise locale",
+    siteType: "professionnel",
+    tagline: "Un savoir-faire de proximité, durable et reconnu.",
+    description:
+      "Site vitrine complet pour artisan, PME locale ou atelier : présentation du métier, réalisations en images, équipe et demande de devis gratuit.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Plus Jakarta Sans, system-ui, sans-serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-pme-1", label: "Accueil", href: "/", pageId: "pme-accueil" },
+      { id: "nav-pme-2", label: "Savoir-faire", href: "/entreprise", pageId: "pme-entreprise" },
+      { id: "nav-pme-3", label: "Prestations", href: "/services", pageId: "pme-services" },
+      { id: "nav-pme-4", label: "Devis & Contact", href: "/contact", pageId: "pme-contact" },
+    ],
+    pages: [
+      {
+        id: "pme-accueil",
+        title: "Accueil Entreprise",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Artisan & Petite Entreprise Locale | Accueil",
+        seoDescription: "Entreprise locale à votre écoute pour vos projets de création, rénovation et entretien.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "pme-entreprise",
+        title: "Notre Atelier & Équipe",
+        slug: "/entreprise",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Notre Histoire & Garanties Qualité",
+        seoDescription: "Découvrez notre équipe d’artisans qualifiés et nos engagements de proximité.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[3].html,
+      },
+      {
+        id: "pme-services",
+        title: "Prestations & Réalisations",
+        slug: "/services",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Nos Prestations & Chantiers Réalisés",
+        seoDescription: "Galerie de réalisations, étapes d’intervention et questions fréquentes.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[4].html,
+      },
+      {
+        id: "pme-contact",
+        title: "Demande de Devis & Accès",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "Demander un Devis Gratuit | Contact",
+        seoDescription: "Horaires d’ouverture de l’atelier, zone d’intervention et formulaire de contact.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-portfolio-creatif",
+    name: "Portfolio Créatif & Galerie d’Auteur",
+    categoryLabel: "Portfolio",
+    siteType: "personnel",
+    tagline: "Créations visuelles, projets sélectionnés et démarche artistique.",
+    description:
+      "Portfolio épuré multi-pages pour photographe, architecte, designer ou artisan d’art : sélection d’œuvres, démarche, biographie et contact.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Georgia, serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-pf-1", label: "Accueil", href: "/", pageId: "pf-accueil" },
+      { id: "nav-pf-2", label: "Réalisations", href: "/services", pageId: "pf-projets" },
+      { id: "nav-pf-3", label: "Démarche", href: "/equipe", pageId: "pf-demarche" },
+      { id: "nav-pf-4", label: "Contact", href: "/contact", pageId: "pf-contact" },
+    ],
+    pages: [
+      {
+        id: "pf-accueil",
+        title: "Portfolio — Accueil",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Portfolio Créatif & Réalisations | Accueil",
+        seoDescription: "Découvrez une sélection de projets visuels, expositions et collaborations.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "pf-projets",
+        title: "Sélection de Projets",
+        slug: "/services",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Galerie des Projets & Séries",
+        seoDescription: "Présentation détaillée des œuvres, commandes et séries photographiques.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[4].html,
+      },
+      {
+        id: "pf-demarche",
+        title: "Biographie & Démarche",
+        slug: "/equipe",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "À propos & Parcours Artistique",
+        seoDescription: "Formation, expositions passées et philosophie de création.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[7].html,
+      },
+      {
+        id: "pf-contact",
+        title: "Contact & Collaborations",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "Proposer un Projet ou une Exposition",
+        seoDescription: "Formulaire de prise de contact directe avec l’atelier.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[5].html,
       },
     ],
   },
   {
     id: "modele-rencontre-evenementiel",
-    name: "Forum & Rencontre Culturelle",
+    name: "Forum, Événement & Célébration (Mariage / Rencontre)",
+    categoryLabel: "Événement ou mariage",
     siteType: "evenementiel",
-    tagline: "Un événement fédérateur ouvert à tous.",
+    tagline: "Un événement fédérateur à célébrer ensemble.",
     description:
-      "Site événementiel et institutionnel multi-pages avec programme détaillé, portraits des intervenants, galerie et formulaire d’inscription.",
+      "Site événementiel multi-pages idéal pour un mariage, une fête annuelle, un colloque ou un festival : programme horaire, invités/intervenants, accès et confirmation de présence (RSVP).",
     theme: {
-      primaryColor: "#1e1b4b",
-      accentColor: "#d97706",
-      backgroundColor: "#fffbeb",
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
       headingFont: "Georgia, serif",
-      bodyFont: "Inter, system-ui, sans-serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
     },
     navigation: [
       { id: "nav-evt-home", label: "Accueil", href: "/", pageId: "evt-accueil" },
       { id: "nav-evt-prog", label: "Programme", href: "/evenements", pageId: "evt-programme" },
-      { id: "nav-evt-equipe", label: "Intervenants", href: "/equipe", pageId: "evt-intervenants" },
-      { id: "nav-evt-contact", label: "Inscription", href: "/contact", pageId: "evt-contact" },
+      { id: "nav-evt-equipe", label: "Invités & Équipe", href: "/equipe", pageId: "evt-intervenants" },
+      { id: "nav-evt-contact", label: "Confirmer ma présence", href: "/contact", pageId: "evt-contact" },
     ],
     pages: [
       {
@@ -1232,9 +2077,11 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         showInMenu: true,
         menuOrder: 1,
         visibility: "public",
-        seoTitle: "Forum & Rencontre Culturelle | Accueil",
-        seoDescription: "Programme, dates et inscriptions à notre grand forum annuel.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        seoTitle: "Forum, Événement & Célébration | Accueil",
+        seoDescription: "Programme, dates, lieu de réception et confirmation de présence.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[6].html,
       },
       {
@@ -1245,35 +2092,193 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
         showInMenu: true,
         menuOrder: 2,
         visibility: "public",
-        seoTitle: "Programme des conférences et ateliers",
-        seoDescription: "Horaires et salles des tables rondes et ateliers.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        seoTitle: "Programme des temps forts et horaires",
+        seoDescription: "Déroulé complet de la journée, cérémonies, tables rondes et repas.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[6].html,
       },
       {
         id: "evt-intervenants",
-        title: "Intervenants & Équipe",
+        title: "Invités & Organisation",
         slug: "/equipe",
         parentPageId: null,
         showInMenu: true,
         menuOrder: 3,
         visibility: "public",
-        seoTitle: "Les intervenants invités",
-        seoDescription: "Portraits et biographies des intervenants.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        seoTitle: "Les intervenants et coordinateurs",
+        seoDescription: "Portraits des hôtes, témoins, intervenants et équipe d’accueil.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[7].html,
       },
       {
         id: "evt-contact",
-        title: "Infos pratiques & Inscription",
+        title: "Infos pratiques & Confirmation (RSVP)",
         slug: "/contact",
         parentPageId: null,
         showInMenu: true,
         menuOrder: 4,
         visibility: "public",
-        seoTitle: "Accès & Inscription",
-        seoDescription: "Formulaire de participation et plan d’accès.",
-        css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; }",
+        seoTitle: "Accès, Hébergements & Confirmation de présence",
+        seoDescription: "Formulaire de confirmation de présence et informations d’accès au lieu.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-restaurant-commerce-vitrine",
+    name: "Table & Commerce de Proximité (Vitrine sans boutique)",
+    categoryLabel: "Restaurant ou commerce sans e-commerce",
+    siteType: "vitrine",
+    tagline: "Produits frais, accueil chaleureux et savoir-faire maison.",
+    description:
+      "Site vitrine pour restaurant, salon de thé, boulangerie ou commerce local sans vente en ligne : présentation de la carte de saison, engagements producteurs, horaires et réservation de table.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Georgia, serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-rest-1", label: "Accueil", href: "/", pageId: "rest-accueil" },
+      { id: "nav-rest-2", label: "Carte de Saison", href: "/services", pageId: "rest-carte" },
+      { id: "nav-rest-3", label: "Notre Maison", href: "/entreprise", pageId: "rest-maison" },
+      { id: "nav-rest-4", label: "Horaires & Réservation", href: "/contact", pageId: "rest-contact" },
+    ],
+    pages: [
+      {
+        id: "rest-accueil",
+        title: "Bienvenue à Notre Table",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Table & Commerce de Proximité | Accueil",
+        seoDescription: "Cuisine de saison, spécialités maison et accueil convivial au cœur du quartier.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "rest-carte",
+        title: "Spécialités & Carte de Saison",
+        slug: "/services",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Notre Carte de Saison & Spécialités Maison",
+        seoDescription: "Découvrez nos entrées, plats mijotés, douceurs maison et menus du jour sur place.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[4].html,
+      },
+      {
+        id: "rest-maison",
+        title: "Notre Histoire & Producteurs Locaux",
+        slug: "/entreprise",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Notre Maison & Nos Artisans Partenaires",
+        seoDescription: "Une équipe passionnée travaillant en circuit court avec les producteurs locaux.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[3].html,
+      },
+      {
+        id: "rest-contact",
+        title: "Horaires, Accès & Réservation de Table",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 4,
+        visibility: "public",
+        seoTitle: "Réserver une Table & Horaires d’Ouverture",
+        seoDescription: "Contactez-nous par téléphone ou formulaire pour réserver votre table ou privatiser la salle.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[5].html,
+      },
+    ],
+  },
+  {
+    id: "modele-site-personnel",
+    name: "Espace Personnel & Carnet d’Initiatives",
+    categoryLabel: "Site personnel",
+    siteType: "personnel",
+    tagline: "Partager mes écrits, mes projets et mes engagements.",
+    description:
+      "Site personnel sobre et lisible en 3 pages (Accueil & Présentation, Chroniques & Projets, Contact) pour partager des réflexions, publications ou initiatives citoyennes.",
+    theme: {
+      primaryColor: "#172033",
+      accentColor: "#9b563e",
+      backgroundColor: "#faf8f5",
+      headingFont: "Georgia, serif",
+      bodyFont: "Plus Jakarta Sans, system-ui, sans-serif",
+    },
+    navigation: [
+      { id: "nav-pers-1", label: "Accueil", href: "/", pageId: "pers-accueil" },
+      { id: "nav-pers-2", label: "Publications & Projets", href: "/actualites", pageId: "pers-publications" },
+      { id: "nav-pers-3", label: "Me Contacter", href: "/contact", pageId: "pers-contact" },
+    ],
+    pages: [
+      {
+        id: "pers-accueil",
+        title: "Accueil & Présentation",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public",
+        seoTitle: "Espace Personnel & Carnet d’Initiatives | Accueil",
+        seoDescription: "Présentation personnelle, parcours et engagements.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[0].html,
+      },
+      {
+        id: "pers-publications",
+        title: "Chroniques & Projets",
+        slug: "/actualites",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public",
+        seoTitle: "Articles, Notes de Recherche & Projets",
+        seoDescription: "Recueil de textes, chroniques et projets documentaires.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
+        html: INDEPENDENT_PAGE_SOCLES[8].html,
+      },
+      {
+        id: "pers-contact",
+        title: "Me Contacter",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 3,
+        visibility: "public",
+        seoTitle: "Écrire un message",
+        seoDescription: "Formulaire de contact personnel pour échanger ou collaborer.",
+        socialImageUrl: DEFAULT_CARD_SVG,
+        indexable: true,
+        css: "body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }",
         html: INDEPENDENT_PAGE_SOCLES[5].html,
       },
     ],
@@ -1281,7 +2286,194 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
 ] as const;
 
 // ---------------------------------------------------------------------------
-// 7. Helpers de Création de Projet, Domaines Personnalisés & Gardes de Sécurité
+// 7. Recherche & Filtrage de la Bibliothèque Professionnelle + Outils SEO
+// ---------------------------------------------------------------------------
+
+export const INDEPENDENT_BLOCK_CATEGORIES: ReadonlyArray<IndependentBuilderBlock["category"]> = [
+  "Navigation & Structure",
+  "Hero & Bannières",
+  "Textes & Actions",
+  "Images & Médias",
+  "Cartes & Grilles",
+  "Confiance & Contenu",
+  "Contact & Décoration",
+] as const;
+
+export const INDEPENDENT_MODULE_CATEGORIES: ReadonlyArray<IndependentBuilderModule["category"]> = [
+  "Vie Associative & Familiale",
+  "Interactions & Médias",
+  "Information & Services",
+] as const;
+
+function normalizeSearchQuery(raw?: string | null): string {
+  return (raw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchesNormalizedSearch(query: string, fields: Array<string | undefined | null>): boolean {
+  if (!query) return true;
+  return fields.some((field) => normalizeSearchQuery(field).includes(query));
+}
+
+export function filterIndependentBlocks(options?: {
+  search?: string;
+  category?: IndependentBuilderBlock["category"] | "all";
+}): IndependentBuilderBlock[] {
+  const q = normalizeSearchQuery(options?.search);
+  const cat = options?.category && options.category !== "all" ? options.category : null;
+  return INDEPENDENT_BUILDER_BLOCKS.filter((block) => {
+    if (cat && block.category !== cat) return false;
+    return matchesNormalizedSearch(q, [block.label, block.category, block.description, block.id]);
+  });
+}
+
+export function filterIndependentModules(options?: {
+  search?: string;
+  category?: IndependentBuilderModule["category"] | "all";
+}): IndependentBuilderModule[] {
+  const q = normalizeSearchQuery(options?.search);
+  const cat = options?.category && options.category !== "all" ? options.category : null;
+  return INDEPENDENT_BUILDER_MODULES.filter((mod) => {
+    if (cat && mod.category !== cat) return false;
+    return matchesNormalizedSearch(q, [mod.label, mod.category, mod.description, mod.id]);
+  });
+}
+
+export function filterIndependentSocles(options?: {
+  search?: string;
+  siteType?: IndependentSiteType | "all";
+}): IndependentPageSocle[] {
+  const q = normalizeSearchQuery(options?.search);
+  const typeFilter = options?.siteType && options.siteType !== "all" ? options.siteType : null;
+  return INDEPENDENT_PAGE_SOCLES.filter((socle) => {
+    if (typeFilter && socle.siteType !== typeFilter) return false;
+    return matchesNormalizedSearch(q, [socle.label, socle.description, socle.defaultSlug, socle.siteType]);
+  });
+}
+
+export function filterIndependentTemplates(options?: {
+  search?: string;
+  siteType?: IndependentSiteType | "all";
+}): IndependentSiteTemplate[] {
+  const q = normalizeSearchQuery(options?.search);
+  const typeFilter = options?.siteType && options.siteType !== "all" ? options.siteType : null;
+  return INDEPENDENT_SITE_TEMPLATES.filter((tpl) => {
+    if (typeFilter && tpl.siteType !== typeFilter) return false;
+    return matchesNormalizedSearch(q, [
+      tpl.name,
+      tpl.categoryLabel,
+      tpl.tagline,
+      tpl.description,
+      tpl.siteType,
+    ]);
+  });
+}
+
+export interface PageImageAltSummary {
+  index: number;
+  src: string;
+  alt: string;
+  hasAlt: boolean;
+}
+
+export function extractImagesFromPageHtml(html: string): PageImageAltSummary[] {
+  const results: PageImageAltSummary[] = [];
+  const imgRegex = /<img\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = imgRegex.exec(html || "")) !== null) {
+    const tag = match[0];
+    const srcMatch = tag.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const altMatch = tag.match(/\balt\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const src = (srcMatch?.[1] ?? srcMatch?.[2] ?? "").trim();
+    const alt = (altMatch?.[1] ?? altMatch?.[2] ?? "").trim();
+    results.push({
+      index,
+      src,
+      alt,
+      hasAlt: alt.length > 0,
+    });
+    index += 1;
+  }
+  return results;
+}
+
+export function updateImageAltInPageHtml(html: string, targetIndex: number, nextAlt: string): string {
+  const safeAlt = sanitizeBuilderText(nextAlt, 180).replace(/"/g, "&quot;");
+  let currentIndex = 0;
+  return (html || "").replace(/<img\b[^>]*>/gi, (tag) => {
+    if (currentIndex !== targetIndex) {
+      currentIndex += 1;
+      return tag;
+    }
+    currentIndex += 1;
+    if (/\balt\s*=\s*(?:"[^"]*"|'[^']*')/i.test(tag)) {
+      return tag.replace(/\balt\s*=\s*(?:"[^"]*"|'[^']*')/i, `alt="${safeAlt}"`);
+    }
+    return tag.replace(/^<img\b/i, `<img alt="${safeAlt}"`);
+  });
+}
+
+export function buildPageSeoPreview(
+  page: IndependentSitePage,
+  siteSlug: string,
+  customHostname?: string | null
+): {
+  displayTitle: string;
+  displayDescription: string;
+  canonicalUrl: string;
+  robotsDirective: "index, follow" | "noindex, nofollow";
+  socialImageUrl: string;
+  imagesTotal: number;
+  imagesMissingAlt: number;
+  recommendations: string[];
+} {
+  const cleanTitle = (page.seoTitle || page.title || "Page sans titre").trim();
+  const cleanDesc = (
+    page.seoDescription ||
+    "Ajoutez une description courte (120 à 160 caractères) pour présenter cette page dans les moteurs de recherche."
+  ).trim();
+  const baseHost = customHostname?.trim()
+    ? `https://${customHostname.trim()}`
+    : `https://sites.mazigho.com/sites/${slugifyIndependentSite(siteSlug || "mon-site")}`;
+  const normalizedSlug = normalizeIndependentPageSlug(page.slug);
+  const canonicalUrl = normalizedSlug === "/" ? baseHost : `${baseHost}${normalizedSlug}`;
+  const isIndexable = page.indexable !== false && page.visibility === "public";
+  const images = extractImagesFromPageHtml(page.html);
+  const imagesMissingAlt = images.filter((img) => !img.hasAlt).length;
+
+  const recommendations: string[] = [];
+  if (cleanTitle.length < 15) {
+    recommendations.push("Le titre SEO est court : visez entre 35 et 60 caractères.");
+  } else if (cleanTitle.length > 65) {
+    recommendations.push("Le titre SEO dépasse 65 caractères et risque d’être tronqué.");
+  }
+  if (!page.seoDescription || page.seoDescription.trim().length < 50) {
+    recommendations.push("Complétez la description SEO (idéalement entre 100 et 160 caractères).");
+  }
+  if (imagesMissingAlt > 0) {
+    recommendations.push(
+      `${imagesMissingAlt} image(s) sur cette page n’ont pas encore de texte alternatif (alt).`
+    );
+  }
+
+  return {
+    displayTitle: cleanTitle.slice(0, 70),
+    displayDescription: cleanDesc.slice(0, 170),
+    canonicalUrl,
+    robotsDirective: isIndexable ? "index, follow" : "noindex, nofollow",
+    socialImageUrl: sanitizeBuilderImageSrc(page.socialImageUrl || DEFAULT_CARD_SVG),
+    imagesTotal: images.length,
+    imagesMissingAlt,
+    recommendations,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 8. Helpers de Création de Projet, Domaines Personnalisés & Gardes de Sécurité
 // ---------------------------------------------------------------------------
 
 export function slugifyIndependentSite(raw: string): string {

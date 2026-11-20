@@ -7,39 +7,62 @@ import { trpc } from "@/lib/trpc";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   DEFAULT_IMAGE_TRANSFORMS,
+  INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
+  INDEPENDENT_MODULE_CATEGORIES,
   INDEPENDENT_PAGE_SOCLES,
+  INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
-  RESPONSIVE_VIEWPORTS,
+  RESPONSIVE_DEVICE_PRESETS,
+  VISUAL_CARD_SAMPLE_IMAGES,
+  VISUAL_CARD_USE_CASE_PRESETS,
   addCardToVisualCardGrid,
+  applyVisualCardUseCasePreset,
   buildImageTransformCss,
   buildNavigationFromPages,
+  buildPageSeoPreview,
   createDefaultVisualCardItem,
   duplicateCardInVisualCardGrid,
+  extractImagesFromPageHtml,
+  filterIndependentBlocks,
+  filterIndependentModules,
+  filterIndependentSocles,
+  filterIndependentTemplates,
   normalizeIndependentPageSlug,
+  removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
+  sanitizeIndependentHtml,
+  setVisualCardGridShape,
+  setVisualCardGridTextPlacement,
+  updateCardInVisualCardGrid,
+  updateImageAltInPageHtml,
   type IndependentBuilderLibraryTab,
   type IndependentImageTransforms,
   type IndependentSitePage,
   type IndependentSiteReusableBlock,
   type IndependentSiteStatus,
   type IndependentSiteType,
+  type ResponsiveDevicePresetId,
   type ResponsiveViewportMode,
   type VisualCardGridConfig,
   type VisualCardShape,
   type VisualCardTextPlacement,
+  type VisualCardUseCaseId,
 } from "@shared/isolatedSiteBuilder";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  AlertTriangle,
   Archive,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Eye,
   EyeOff,
@@ -60,6 +83,8 @@ import {
   Redo2,
   RotateCw,
   Save,
+  Search,
+  Settings2,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -67,7 +92,6 @@ import {
   Trash2,
   Undo2,
   Unlock,
-  Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -79,30 +103,116 @@ interface LayerSummaryItem {
   hidden: boolean;
 }
 
+interface PendingConfirmAction {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant?: "danger" | "primary";
+  onConfirm: () => void;
+}
+
+type InspectorTabId = "seo" | "publication" | "versions";
+
 const LIBRARY_TAB_META: Record<
   IndependentBuilderLibraryTab,
-  { icon: LucideIcon; hint: string; activeClass: string; iconClass: string }
+  {
+    icon: LucideIcon;
+    hint: string;
+    roleExplanation: string;
+    activeClass: string;
+    iconClass: string;
+  }
 > = {
-  pages: { icon: FilePlus2, hint: "Pages & menus", activeClass: "bg-[#172033] text-white shadow-xs", iconClass: "text-sky-500" },
-  blocs: { icon: LayoutGrid, hint: "Sections visuelles", activeClass: "bg-amber-700 text-white shadow-xs", iconClass: "text-amber-500" },
-  medias: { icon: ImagePlus, hint: "Images du projet", activeClass: "bg-emerald-700 text-white shadow-xs", iconClass: "text-emerald-500" },
-  calques: { icon: Layers, hint: "Structure de la page", activeClass: "bg-violet-700 text-white shadow-xs", iconClass: "text-violet-500" },
-  modules: { icon: Sparkles, hint: "Fonctions prêtes à l’emploi", activeClass: "bg-rose-700 text-white shadow-xs", iconClass: "text-rose-500" },
-  socles: { icon: FolderKanban, hint: "Structures de pages", activeClass: "bg-teal-700 text-white shadow-xs", iconClass: "text-teal-500" },
-  modeles: { icon: Palette, hint: "Sites complets", activeClass: "bg-indigo-700 text-white shadow-xs", iconClass: "text-indigo-500" },
+  pages: {
+    icon: FilePlus2,
+    hint: "Pages & menus",
+    roleExplanation:
+      "Gérez l’arborescence de votre site : ajoutez des pages principales, créez des sous-menus et organisez la navigation.",
+    activeClass: "bg-[#172033] text-white shadow-xs",
+    iconClass: "text-sky-600",
+  },
+  blocs: {
+    icon: LayoutGrid,
+    hint: "Sections visuelles",
+    roleExplanation:
+      "Élément visuel simple (bannière, texte, cartes avec bouton « + », boutons, colonnes) à insérer où vous le souhaitez dans la page active.",
+    activeClass: "bg-[#9b563e] text-white shadow-xs",
+    iconClass: "text-[#9b563e]",
+  },
+  medias: {
+    icon: ImagePlus,
+    hint: "Images du projet",
+    roleExplanation:
+      "Ajoutez vos photos et logos, ajustez leur rotation, zoom ou inclinaison, puis insérez-les en un clic dans la page.",
+    activeClass: "bg-emerald-800 text-white shadow-xs",
+    iconClass: "text-emerald-600",
+  },
+  calques: {
+    icon: Layers,
+    hint: "Ordre des sections",
+    roleExplanation:
+      "Visualisez toutes les sections de la page active pour les déplacer vers le haut/bas, les masquer, les verrouiller ou les dupliquer.",
+    activeClass: "bg-slate-800 text-white shadow-xs",
+    iconClass: "text-violet-600",
+  },
+  modules: {
+    icon: Sparkles,
+    hint: "Fonctions prêtes",
+    roleExplanation:
+      "Composant fonctionnel complet (agenda d’événements, formulaire de contact, galerie photo, trombinoscope, FAQ, horaires) prêt à l’emploi.",
+    activeClass: "bg-[#7c3f2c] text-white shadow-xs",
+    iconClass: "text-amber-600",
+  },
+  socles: {
+    icon: FolderKanban,
+    hint: "Structures de page",
+    roleExplanation:
+      "Structure complète d’une seule page (ex. page Accueil, page Contact, page Équipe) qui remplace le contenu de la page active.",
+    activeClass: "bg-teal-800 text-white shadow-xs",
+    iconClass: "text-teal-600",
+  },
+  modeles: {
+    icon: Palette,
+    hint: "Sites complets",
+    roleExplanation:
+      "Site multi-pages complet prêt à personnaliser (avec son thème, ses couleurs, son menu et toutes ses pages pré-remplies).",
+    activeClass: "bg-[#172033] text-white shadow-xs",
+    iconClass: "text-indigo-600",
+  },
 };
 
 export default function IndependentSiteBuilderPage() {
   const utils = trpc.useUtils();
   const editorRef = useRef<Editor | null>(null);
 
-  // Filtres de l’espace utilisateur indépendant (Projets Publiés, Brouillons, Archivés)
+  // Affichage repliable de l’espace "Mes sites & projets" pour garder un constructeur aéré
+  const [showProjectsDrawer, setShowProjectsDrawer] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<IndependentSiteStatus | "all">("all");
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+
+  // Navigation dans la bibliothèque (7 espaces) + Recherche & Filtres par catégorie
   const [activeLibraryTab, setActiveLibraryTab] = useState<IndependentBuilderLibraryTab>("pages");
   const [librarySearch, setLibrarySearch] = useState("");
+  const [blockCategoryFilter, setBlockCategoryFilter] = useState<string>("all");
+  const [moduleCategoryFilter, setModuleCategoryFilter] = useState<string>("all");
+  const [socleTypeFilter, setSocleTypeFilter] = useState<IndependentSiteType | "all">("all");
+  const [templateTypeFilter, setTemplateTypeFilter] = useState<IndependentSiteType | "all">("all");
+
+  // Panneau de droite : Réglages & SEO | Publication & Domaine | Versions & Historique
+  const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTabId>("seo");
+
+  // Responsive : 3 modes principaux + 5 tailles d'écran précises
   const [viewport, setViewport] = useState<ResponsiveViewportMode>("desktop");
+  const [devicePresetId, setDevicePresetId] = useState<ResponsiveDevicePresetId>("desktop");
+
+  // Bandeaux d'état, erreurs, confirmations inline & suivi des modifications non enregistrées
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [pendingConfirmAction, setPendingConfirmAction] = useState<PendingConfirmAction | null>(
+    null
+  );
 
   // Formulaire de création d’un nouveau site indépendant
   const [newSiteTitle, setNewSiteTitle] = useState("Association familiale ATH VAHLOUL");
@@ -126,7 +236,7 @@ export default function IndependentSiteBuilderPage() {
   const [newPageParentId, setNewPageParentId] = useState<string>("");
   const [newPageSocleId, setNewPageSocleId] = useState<string>("socle-accueil");
 
-  // Studio de transformations d’images (Point 9 : rotation, inclinaison, retournement, zoom, position libre)
+  // Studio de transformations d’images
   const [imageTransforms, setImageTransforms] = useState<IndependentImageTransforms>({
     ...DEFAULT_IMAGE_TRANSFORMS,
   });
@@ -134,11 +244,13 @@ export default function IndependentSiteBuilderPage() {
   const [newMediaAlt, setNewMediaAlt] = useState("");
   const [newMediaUrl, setNewMediaUrl] = useState("");
 
-  // Studio de cartes visuelles (Point 11 : carrée, rectangulaire, ronde, texte dessus/dessous/intérieur, bouton "+", duplication)
+  // Studio de cartes visuelles (Chantier 3 : carrée, rectangulaire, ronde, texte dessus/dessous/intérieur, bouton "+", édition par carte, aperçu immédiat)
   const [cardGridConfig, setCardGridConfig] = useState<VisualCardGridConfig>(() => ({
     sectionEyebrow: "Rubriques personnalisables",
     sectionTitle: "Cartes visuelles du site",
     columns: 3,
+    gapPx: 20,
+    useCase: "famille",
     shape: "rectangular",
     textPlacement: "bottom",
     showButton: true,
@@ -147,19 +259,27 @@ export default function IndependentSiteBuilderPage() {
         title: "Histoire & Patrimoine",
         subtitle: "Mémoire",
         description: "Récits, archives photographiques et transmission familiale.",
+        imageUrl: VISUAL_CARD_SAMPLE_IMAGES[0].url,
+        imageAlt: "Histoire et patrimoine familial",
       }),
       createDefaultVisualCardItem(2, {
         title: "Rencontres & Événements",
         subtitle: "Agenda",
         description: "Assemblées annuelles, ateliers culturels et fêtes intergénérationnelles.",
+        imageUrl: VISUAL_CARD_SAMPLE_IMAGES[1].url,
+        imageAlt: "Rencontres et événements associatifs",
       }),
       createDefaultVisualCardItem(3, {
         title: "Entraide & Solidarité",
         subtitle: "Collectif",
         description: "Prêt de matériel associatif et soutien mutuel entre membres.",
+        imageUrl: VISUAL_CARD_SAMPLE_IMAGES[2].url,
+        imageAlt: "Entraide et solidarité",
       }),
     ],
   }));
+  const [selectedVisualCardId, setSelectedVisualCardId] = useState<string>("vcard-1");
+  const [showVisualCardLivePreview, setShowVisualCardLivePreview] = useState<boolean>(true);
 
   // Calques de la page active
   const [layers, setLayers] = useState<LayerSummaryItem[]>([]);
@@ -169,21 +289,62 @@ export default function IndependentSiteBuilderPage() {
   const [versionLabelInput, setVersionLabelInput] = useState("");
   const [reusableBlockNameInput, setReusableBlockNameInput] = useState("");
 
-  const normalizedLibrarySearch = librarySearch.trim().toLocaleLowerCase();
-  const matchesLibrarySearch = (values: Array<string | undefined>) =>
-    !normalizedLibrarySearch || values.some((value) => value?.toLocaleLowerCase().includes(normalizedLibrarySearch));
-  const filteredBlocks = INDEPENDENT_BUILDER_BLOCKS.filter((block) =>
-    matchesLibrarySearch([block.label, block.category, block.description])
+  // Avertissement navigateur si l'utilisateur quitte avec des modifications non enregistrées
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Filtrage déterministe des 7 espaces de la bibliothèque
+  const filteredBlocks = useMemo(
+    () =>
+      filterIndependentBlocks({
+        search: librarySearch,
+        category: blockCategoryFilter as any,
+      }),
+    [librarySearch, blockCategoryFilter]
   );
-  const filteredModules = INDEPENDENT_BUILDER_MODULES.filter((module) =>
-    matchesLibrarySearch([module.label, module.category, module.description])
+
+  const filteredModules = useMemo(
+    () =>
+      filterIndependentModules({
+        search: librarySearch,
+        category: moduleCategoryFilter as any,
+      }),
+    [librarySearch, moduleCategoryFilter]
   );
-  const filteredSocles = INDEPENDENT_PAGE_SOCLES.filter((socle) =>
-    matchesLibrarySearch([socle.label, socle.description, socle.defaultSlug])
+
+  const filteredSocles = useMemo(
+    () =>
+      filterIndependentSocles({
+        search: librarySearch,
+        siteType: socleTypeFilter,
+      }),
+    [librarySearch, socleTypeFilter]
   );
-  const filteredTemplates = INDEPENDENT_SITE_TEMPLATES.filter((template) =>
-    matchesLibrarySearch([template.name, template.description, template.siteType])
+
+  const filteredTemplates = useMemo(
+    () =>
+      filterIndependentTemplates({
+        search: librarySearch,
+        siteType: templateTypeFilter,
+      }),
+    [librarySearch, templateTypeFilter]
   );
+
+  // Carte visuelle actuellement sélectionnée dans l'Atelier Cartes Visuelles
+  const activeVisualCard = useMemo(() => {
+    return (
+      cardGridConfig.cards.find((c) => c.id === selectedVisualCardId) ??
+      cardGridConfig.cards[0] ??
+      null
+    );
+  }, [cardGridConfig.cards, selectedVisualCardId]);
 
   // Queries & Mutations tRPC
   const projectsQuery = trpc.independentSiteBuilder.listProjects.useQuery(
@@ -216,7 +377,13 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       setSelectedSiteId(created.id);
       loadProjectIntoWorkspace(created);
-      setStatusBanner(`Projet « ${created.title} » créé dans votre espace indépendant.`);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setErrorBanner(null);
+      setStatusBanner(`Site « ${created.title} » créé et enregistré dans votre espace.`);
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de créer le site.");
     },
   });
 
@@ -225,9 +392,14 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       setSelectedSiteId(demo.id);
       loadProjectIntoWorkspace(demo);
+      setHasUnsavedChanges(false);
+      setErrorBanner(null);
       setStatusBanner(
-        "Démonstration « Association familiale ATH VAHLOUL » chargée avec ses 6 pages associatives et familiales (100 % sans boutique)."
+        "Modèle complet « Association familiale ATH VAHLOUL » chargé avec ses 6 pages associatives et familiales (100 % sans boutique)."
       );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de charger le modèle de démonstration.");
     },
   });
 
@@ -236,7 +408,13 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       await utils.independentSiteBuilder.listVersions.invalidate({ siteId: saved.id });
       setSiteStatus(saved.status);
-      setStatusBanner(`Brouillon « ${saved.title} » enregistré avec succès.`);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setErrorBanner(null);
+      setStatusBanner(`Modifications enregistrées avec succès pour « ${saved.title} ».`);
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Échec de l’enregistrement du brouillon.");
     },
   });
 
@@ -245,7 +423,12 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       setSelectedSiteId(copy.id);
       loadProjectIntoWorkspace(copy);
-      setStatusBanner(`Projet dupliqué sous le nom « ${copy.title} ».`);
+      setHasUnsavedChanges(false);
+      setErrorBanner(null);
+      setStatusBanner(`Site dupliqué sous le nom « ${copy.title} ».`);
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de dupliquer ce projet.");
     },
   });
 
@@ -254,9 +437,15 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       await utils.independentSiteBuilder.listVersions.invalidate({ siteId: published.id });
       setSiteStatus(published.status);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setErrorBanner(null);
       setStatusBanner(
-        `Site « ${published.title} » publié indépendamment ! Accessible sur /constructeur-sites/apercu/${published.slug}`
+        `Site « ${published.title} » publié ! Il est désormais accessible sur /sites/${published.slug} et en aperçu sur /constructeur-sites/apercu/${published.slug}.`
       );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Échec de la publication du site.");
     },
   });
 
@@ -264,7 +453,19 @@ export default function IndependentSiteBuilderPage() {
     onSuccess: async (updated) => {
       await utils.independentSiteBuilder.listProjects.invalidate();
       setSiteStatus(updated.status);
-      setStatusBanner(`Statut du site mis à jour : ${updated.status}.`);
+      setErrorBanner(null);
+      setStatusBanner(
+        `Statut du site mis à jour : ${
+          updated.status === "published"
+            ? "Publié"
+            : updated.status === "archived"
+              ? "Archivé"
+              : "Brouillon"
+        }.`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de changer le statut du site.");
     },
   });
 
@@ -274,17 +475,26 @@ export default function IndependentSiteBuilderPage() {
         await utils.independentSiteBuilder.listVersions.invalidate({ siteId: selectedSiteId });
       }
       setVersionLabelInput("");
-      setStatusBanner(`Version v${ver.versionNumber} (« ${ver.label} ») enregistrée.`);
+      setErrorBanner(null);
+      setStatusBanner(`Point de sauvegarde v${ver.versionNumber} (« ${ver.label} ») créé.`);
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de créer la version.");
     },
   });
 
   const restoreVersionMutation = trpc.independentSiteBuilder.restoreVersion.useMutation({
     onSuccess: async (restored) => {
       loadProjectIntoWorkspace(restored);
+      setHasUnsavedChanges(false);
       if (selectedSiteId) {
         await utils.independentSiteBuilder.listVersions.invalidate({ siteId: selectedSiteId });
       }
-      setStatusBanner(`Version restaurée pour « ${restored.title} ».`);
+      setErrorBanner(null);
+      setStatusBanner(`Version restaurée avec succès pour « ${restored.title} ».`);
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de restaurer cette version.");
     },
   });
 
@@ -296,7 +506,11 @@ export default function IndependentSiteBuilderPage() {
       setNewMediaLabel("");
       setNewMediaAlt("");
       setNewMediaUrl("");
-      setStatusBanner("Média ajouté à la bibliothèque personnelle du projet.");
+      setErrorBanner(null);
+      setStatusBanner("Image enregistrée dans la médiathèque du projet.");
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible d’ajouter ce média.");
     },
   });
 
@@ -306,7 +520,13 @@ export default function IndependentSiteBuilderPage() {
         await utils.independentSiteBuilder.listDomains.invalidate({ siteId: selectedSiteId });
       }
       setCustomDomainInput("");
-      setStatusBanner(`Domaine personnalisé ${dom.hostname} ajouté. Configurez l’enregistrement DNS TXT indiqué.`);
+      setErrorBanner(null);
+      setStatusBanner(
+        `Domaine ${dom.hostname} rattaché (statut : En attente de DNS TXT). Ajoutez l’enregistrement TXT indiqué chez votre hébergeur DNS.`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Nom de domaine personnalisé invalide.");
     },
   });
 
@@ -315,7 +535,16 @@ export default function IndependentSiteBuilderPage() {
       if (selectedSiteId) {
         await utils.independentSiteBuilder.listDomains.invalidate({ siteId: selectedSiteId });
       }
-      setStatusBanner(`Domaine ${dom.hostname} vérifié. L’activation SSL sera effectuée par l’infrastructure de publication.`);
+      setErrorBanner(null);
+      setStatusBanner(
+        `Preuve DNS TXT validée pour ${dom.hostname}. Le domaine est marqué comme Vérifié.`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(
+        err.message ||
+          "L’enregistrement DNS TXT n’a pas encore été détecté. Vérifiez la propagation DNS avant de réessayer."
+      );
     },
   });
 
@@ -324,7 +553,11 @@ export default function IndependentSiteBuilderPage() {
       if (selectedSiteId) {
         await utils.independentSiteBuilder.listDomains.invalidate({ siteId: selectedSiteId });
       }
+      setErrorBanner(null);
       setStatusBanner("Domaine personnalisé retiré du projet.");
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de retirer ce domaine.");
     },
   });
 
@@ -349,7 +582,7 @@ export default function IndependentSiteBuilderPage() {
     setReusableBlocks(project.reusableBlocks || []);
     if (editorRef.current && nextPages[0]) {
       editorRef.current.setComponents(nextPages[0].html);
-      editorRef.current.setStyle(nextPages[0].css);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${nextPages[0].css}`);
       refreshLayersFromEditor(editorRef.current);
     }
   }
@@ -357,6 +590,7 @@ export default function IndependentSiteBuilderPage() {
   useEffect(() => {
     if (activeProjectQuery.data) {
       loadProjectIntoWorkspace(activeProjectQuery.data);
+      setHasUnsavedChanges(false);
     }
   }, [activeProjectQuery.data?.id]);
 
@@ -366,14 +600,47 @@ export default function IndependentSiteBuilderPage() {
 
   const navigationTree = useMemo(() => buildNavigationFromPages(pages), [pages]);
 
+  const activePageImages = useMemo(
+    () => extractImagesFromPageHtml(activePage?.html || ""),
+    [activePage?.html]
+  );
+
+  const seoPreview = useMemo(() => {
+    if (!activePage) return null;
+    return buildPageSeoPreview(activePage, siteSlug);
+  }, [activePage, siteSlug]);
+
   function syncCurrentEditorToPageState(): IndependentSitePage[] {
     const editor = editorRef.current;
     if (!editor || !activePage) return pages;
     const html = editor.getHtml();
-    const css = editor.getCss() || "";
+    const rawCss = editor.getCss() || "";
+    const css = rawCss.replace(INDEPENDENT_RESPONSIVE_BASE_CSS, "").trim() || activePage.css;
     const next = pages.map((p) => (p.id === activePage.id ? { ...p, html, css } : p));
     setPages(next);
     return next;
+  }
+
+  function updateActivePageFields(patch: Partial<IndependentSitePage>) {
+    if (!activePage) return;
+    setPages((prev) =>
+      prev.map((page) => (page.id === activePage.id ? { ...page, ...patch } : page))
+    );
+    setHasUnsavedChanges(true);
+  }
+
+  function handleUpdateImageAltOnActivePage(imageIndex: number, newAlt: string) {
+    if (!activePage) return;
+    const synced = syncCurrentEditorToPageState();
+    const current = synced.find((p) => p.id === activePage.id) ?? activePage;
+    const updatedHtml = updateImageAltInPageHtml(current.html, imageIndex, newAlt);
+    const next = synced.map((p) => (p.id === activePage.id ? { ...p, html: updatedHtml } : p));
+    setPages(next);
+    setHasUnsavedChanges(true);
+    if (editorRef.current) {
+      editorRef.current.setComponents(updatedHtml);
+    }
+    setStatusBanner(`Texte alternatif de l’image #${imageIndex + 1} mis à jour.`);
   }
 
   function handleSelectPage(pageId: string) {
@@ -382,7 +649,7 @@ export default function IndependentSiteBuilderPage() {
     setActivePageId(pageId);
     if (editorRef.current && target) {
       editorRef.current.setComponents(target.html);
-      editorRef.current.setStyle(target.css);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${target.css}`);
       refreshLayersFromEditor(editorRef.current);
     }
   }
@@ -393,29 +660,53 @@ export default function IndependentSiteBuilderPage() {
       editor.addComponents(html);
       syncCurrentEditorToPageState();
       refreshLayersFromEditor(editor);
-      setStatusBanner(`« ${label} » inséré dans la page « ${activePage?.title || "Accueil"} ».`);
+      setHasUnsavedChanges(true);
+      setStatusBanner(`« ${label} » ajouté dans la page « ${activePage?.title || "Accueil"} ».`);
     } else if (activePage) {
       const next = pages.map((p) =>
         p.id === activePage.id ? { ...p, html: `${p.html}\n${html}` } : p
       );
       setPages(next);
+      setHasUnsavedChanges(true);
       setStatusBanner(`« ${label} » ajouté à la page « ${activePage.title} ».`);
     }
   }
 
-  function applySocleToCurrentPage(socleId: string) {
+  function executeApplySocleToCurrentPage(socleId: string) {
     const socle = INDEPENDENT_PAGE_SOCLES.find((s) => s.id === socleId);
     if (!socle || !activePage) return;
     if (editorRef.current) {
       editorRef.current.setComponents(socle.html);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
       refreshLayersFromEditor(editorRef.current);
     }
-    const next = pages.map((p) => (p.id === activePage.id ? { ...p, html: socle.html } : p));
+    const next = pages.map((p) =>
+      p.id === activePage.id
+        ? {
+            ...p,
+            html: socle.html,
+            seoDescription: p.seoDescription || socle.description,
+          }
+        : p
+    );
     setPages(next);
+    setHasUnsavedChanges(true);
     setStatusBanner(`Socle « ${socle.label} » appliqué à la page « ${activePage.title} ».`);
   }
 
-  function applyTemplateToSite(templateId: string) {
+  function requestApplySocleToCurrentPage(socleId: string) {
+    const socle = INDEPENDENT_PAGE_SOCLES.find((s) => s.id === socleId);
+    if (!socle || !activePage) return;
+    setPendingConfirmAction({
+      title: `Remplacer la structure de la page « ${activePage.title} » ?`,
+      description: `Le socle « ${socle.label} » remplacera le contenu visuel actuel de la page « ${activePage.title} ». Les autres pages du site ne seront pas modifiées.`,
+      confirmLabel: "Appliquer ce socle",
+      variant: "primary",
+      onConfirm: () => executeApplySocleToCurrentPage(socleId),
+    });
+  }
+
+  function executeApplyTemplateToSite(templateId: string) {
     const tpl = INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === templateId);
     if (!tpl) return;
     const clonedPages: IndependentSitePage[] = JSON.parse(JSON.stringify(tpl.pages));
@@ -423,18 +714,34 @@ export default function IndependentSiteBuilderPage() {
     setSiteType(tpl.siteType);
     setPages(clonedPages);
     setActivePageId(clonedPages[0].id);
+    setHasUnsavedChanges(true);
     if (editorRef.current && clonedPages[0]) {
       editorRef.current.setComponents(clonedPages[0].html);
-      editorRef.current.setStyle(clonedPages[0].css);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${clonedPages[0].css}`);
       refreshLayersFromEditor(editorRef.current);
     }
     setStatusBanner(
-      `Modèle complet « ${tpl.name} » (${clonedPages.length} pages avec menus et sous-menus) chargé dans l’éditeur.`
+      `Modèle complet « ${tpl.name} » (${clonedPages.length} pages avec menus et sous-menus) chargé dans l’éditeur. Pensez à cliquer sur « Enregistrer » pour sauvegarder.`
     );
   }
 
+  function requestApplyTemplateToSite(templateId: string) {
+    const tpl = INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+    setPendingConfirmAction({
+      title: `Charger le modèle complet « ${tpl.name} » ?`,
+      description: `Ce modèle remplace les pages actuelles de l’éditeur par les ${tpl.pages.length} pages pré-construites du modèle « ${tpl.name} ».`,
+      confirmLabel: "Charger ce modèle complet",
+      variant: "primary",
+      onConfirm: () => executeApplyTemplateToSite(templateId),
+    });
+  }
+
   function handleAddPage() {
-    if (!newPageTitle.trim()) return;
+    if (!newPageTitle.trim()) {
+      setErrorBanner("Veuillez saisir un titre pour la nouvelle page.");
+      return;
+    }
     const socle =
       INDEPENDENT_PAGE_SOCLES.find((s) => s.id === newPageSocleId) ?? INDEPENDENT_PAGE_SOCLES[0];
     const slug = normalizeIndependentPageSlug(newPageSlug || newPageTitle);
@@ -449,37 +756,52 @@ export default function IndependentSiteBuilderPage() {
       visibility: "public",
       seoTitle: `${newPageTitle.trim()} | ${siteTitle}`,
       seoDescription: socle.description,
+      indexable: true,
       html: socle.html,
       css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
     };
     const next = [...syncCurrentEditorToPageState(), createdPage];
     setPages(next);
     setActivePageId(id);
+    setHasUnsavedChanges(true);
     if (editorRef.current) {
       editorRef.current.setComponents(createdPage.html);
-      editorRef.current.setStyle(createdPage.css);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${createdPage.css}`);
       refreshLayersFromEditor(editorRef.current);
     }
     setNewPageTitle("");
     setNewPageSlug("");
     setNewPageParentId("");
-    setStatusBanner(`Page « ${createdPage.title} » (${createdPage.slug}) créée.`);
+    setErrorBanner(null);
+    setStatusBanner(`Page « ${createdPage.title} » (${createdPage.slug}) ajoutée au site.`);
   }
 
-  function handleDeletePage(pageId: string) {
+  function requestDeletePage(pageId: string) {
     if (pages.length <= 1) {
-      setStatusBanner("Un site doit conserver au moins une page.");
+      setErrorBanner("Un site doit conserver au moins une page.");
       return;
     }
-    const filtered = pages.filter((p) => p.id !== pageId);
-    setPages(filtered);
-    if (activePageId === pageId) {
-      setActivePageId(filtered[0].id);
-      if (editorRef.current) {
-        editorRef.current.setComponents(filtered[0].html);
-        editorRef.current.setStyle(filtered[0].css);
-      }
-    }
+    const target = pages.find((p) => p.id === pageId);
+    if (!target) return;
+    setPendingConfirmAction({
+      title: `Supprimer la page « ${target.title} » ?`,
+      description: `La page « ${target.title} » (${target.slug}) sera retirée de ce site. Vous pourrez annuler tant que vous n’avez pas écrasé votre sauvegarde.`,
+      confirmLabel: "Supprimer la page",
+      variant: "danger",
+      onConfirm: () => {
+        const filtered = pages.filter((p) => p.id !== pageId);
+        setPages(filtered);
+        setHasUnsavedChanges(true);
+        if (activePageId === pageId) {
+          setActivePageId(filtered[0].id);
+          if (editorRef.current) {
+            editorRef.current.setComponents(filtered[0].html);
+            editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${filtered[0].css}`);
+          }
+        }
+        setStatusBanner(`Page « ${target.title} » supprimée.`);
+      },
+    });
   }
 
   function applyImageTransformsToSelectedOrInsert() {
@@ -493,14 +815,17 @@ export default function IndependentSiteBuilderPage() {
           style: css,
         });
         syncCurrentEditorToPageState();
+        setHasUnsavedChanges(true);
         setStatusBanner(
-          `Transformations d’image appliquées (rotation ${imageTransforms.rotationDeg}°, inclinaison ${imageTransforms.skewXDeg}°/${imageTransforms.skewYDeg}°, zoom ${imageTransforms.scalePercent}%, position ${imageTransforms.offsetX}px/${imageTransforms.offsetY}px).`
+          `Réglages appliqués à l’image sélectionnée (rotation ${imageTransforms.rotationDeg}°, zoom ${imageTransforms.scalePercent}%, décalage ${imageTransforms.offsetX}px/${imageTransforms.offsetY}px).`
         );
         return;
       }
     }
-    const html = `<figure data-site-block="transformable-image" style="margin:0;padding:32px;text-align:center"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='420' viewBox='0 0 640 420'%3E%3Crect width='640' height='420' fill='%23172033'/%3E%3Ccircle cx='320' cy='190' r='85' fill='%23f5b98f'/%3E%3C/svg%3E" alt="Image transformée" data-site-transformable-image="true" style="${css}" /></figure>`;
-    insertHtmlIntoCanvas(html, "Image transformée");
+    const sampleUrl = newMediaUrl.trim() || VISUAL_CARD_SAMPLE_IMAGES[0].url;
+    const sampleAlt = newMediaAlt.trim() || newMediaLabel.trim() || "Image illustrée du site";
+    const html = `<figure data-site-block="transformable-image" style="margin:0;padding:32px;text-align:center"><img src="${sampleUrl}" alt="${sampleAlt}" data-site-transformable-image="true" style="${css}" /></figure>`;
+    insertHtmlIntoCanvas(html, sampleAlt);
   }
 
   function saveSelectionAsReusableBlock() {
@@ -509,7 +834,7 @@ export default function IndependentSiteBuilderPage() {
     const html = selected ? selected.toHTML() : activePage?.html || "";
     if (!html.trim()) return;
     const label =
-      reusableBlockNameInput.trim() || `Bloc réutilisable #${reusableBlocks.length + 1}`;
+      reusableBlockNameInput.trim() || `Bloc mémorisé #${reusableBlocks.length + 1}`;
     const item: IndependentSiteReusableBlock = {
       id: `reusable-${Date.now().toString(36)}`,
       name: label,
@@ -519,7 +844,8 @@ export default function IndependentSiteBuilderPage() {
     };
     setReusableBlocks((prev) => [item, ...prev]);
     setReusableBlockNameInput("");
-    setStatusBanner(`Bloc « ${label} » enregistré pour être réutilisé dans toutes vos pages.`);
+    setHasUnsavedChanges(true);
+    setStatusBanner(`Bloc « ${label} » mémorisé pour être réutilisé sur toutes vos pages.`);
   }
 
   function refreshLayersFromEditor(editor: Editor | null) {
@@ -547,7 +873,10 @@ export default function IndependentSiteBuilderPage() {
     setLayers(list);
   }
 
-  function handleLayerAction(index: number, action: "up" | "down" | "lock" | "hide" | "duplicate" | "delete") {
+  function handleLayerAction(
+    index: number,
+    action: "up" | "down" | "lock" | "hide" | "duplicate" | "delete"
+  ) {
     const editor = editorRef.current;
     const wrapper = editor?.getWrapper();
     if (!editor || !wrapper) return;
@@ -579,6 +908,7 @@ export default function IndependentSiteBuilderPage() {
 
     syncCurrentEditorToPageState();
     refreshLayersFromEditor(editor);
+    setHasUnsavedChanges(true);
   }
 
   function handleSaveCurrentProject(versionLabel?: string) {
@@ -604,44 +934,131 @@ export default function IndependentSiteBuilderPage() {
     });
   }
 
-  const currentViewport =
-    RESPONSIVE_VIEWPORTS.find((v) => v.id === viewport) ?? RESPONSIVE_VIEWPORTS[0];
+  function requestPublishCurrentSite() {
+    setPendingConfirmAction({
+      title: `Publier le site « ${siteTitle} » en ligne ?`,
+      description: `La version actuelle de vos ${pages.length} pages sera publiée sur /sites/${siteSlug} et un point de sauvegarde sera créé automatiquement dans l’historique des versions.`,
+      confirmLabel: "Confirmer la publication",
+      variant: "primary",
+      onConfirm: () => {
+        if (!selectedSiteId) {
+          handleSaveCurrentProject("Avant publication");
+          return;
+        }
+        const syncedPages = syncCurrentEditorToPageState();
+        const nav = buildNavigationFromPages(syncedPages);
+        saveProjectMutation.mutate(
+          {
+            siteId: selectedSiteId,
+            title: siteTitle,
+            siteType,
+            navigation: nav,
+            pages: syncedPages,
+            reusableBlocks,
+          },
+          {
+            onSuccess: (saved) => {
+              publishSiteMutation.mutate({ siteId: saved.id });
+            },
+          }
+        );
+      },
+    });
+  }
+
+  function handleSelectViewportMode(mode: ResponsiveViewportMode) {
+    setViewport(mode);
+    if (mode === "desktop") setDevicePresetId("desktop");
+    else if (mode === "tablet") setDevicePresetId("tablet-portrait");
+    else setDevicePresetId("narrow-phone");
+  }
+
+  function handleSelectDevicePreset(presetId: ResponsiveDevicePresetId) {
+    setDevicePresetId(presetId);
+    const found = RESPONSIVE_DEVICE_PRESETS.find((p) => p.id === presetId);
+    if (found) {
+      setViewport(found.viewportMode);
+    }
+  }
+
+  const currentDevicePreset =
+    RESPONSIVE_DEVICE_PRESETS.find((p) => p.id === devicePresetId) ?? RESPONSIVE_DEVICE_PRESETS[0];
+
+  const isBusySaving =
+    saveProjectMutation.isPending ||
+    createProjectMutation.isPending ||
+    publishSiteMutation.isPending;
 
   return (
-    <div className="min-h-screen bg-[#f6f3ee] text-slate-900">
-      {/* En-tête du produit indépendant */}
-      <header className="sticky top-0 z-40 border-b border-[#e2dad0] bg-white/95 px-4 py-3 shadow-xs backdrop-blur md:px-6">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen bg-[#f6f3ee] text-[#172033]">
+      {/* EN-TÊTE PRINCIPAL DU PRODUIT INDÉPENDANT */}
+      <header className="sticky top-0 z-40 border-b border-[#e2dad0] bg-white/95 px-4 py-3 shadow-2xs backdrop-blur md:px-6">
+        <div className="mx-auto flex max-w-[1640px] flex-wrap items-center justify-between gap-3">
+          {/* Identité & Statut clair du site */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#172033] text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#172033] text-white shadow-2xs">
               <Globe className="h-5 w-5 text-[#f5b98f]" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-[#172033]">
+                <h1 className="text-base font-bold tracking-tight text-[#172033] md:text-lg">
                   Constructeur de Sites Internet Indépendant
                 </h1>
-                <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
-                  Produit 100 % indépendant · Sans boutique
+                <Badge className="bg-emerald-100 text-emerald-950 hover:bg-emerald-100">
+                  100 % indépendant · Sans boutique
                 </Badge>
-                <Badge variant="outline" className="border-slate-300 text-slate-700">
-                  Statut : {siteStatus === "published" ? "Publié" : siteStatus === "archived" ? "Archivé" : "Brouillon"}
+                <Badge
+                  variant="outline"
+                  className={
+                    siteStatus === "published"
+                      ? "border-emerald-400 bg-emerald-50 font-semibold text-emerald-900"
+                      : siteStatus === "archived"
+                        ? "border-slate-300 bg-slate-100 text-slate-700"
+                        : "border-amber-400 bg-amber-50 font-semibold text-amber-950"
+                  }
+                >
+                  Statut :{" "}
+                  {siteStatus === "published"
+                    ? "Publié"
+                    : siteStatus === "archived"
+                      ? "Archivé"
+                      : "Brouillon"}
                 </Badge>
+                {hasUnsavedChanges ? (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-400 bg-amber-50/90 text-[11px] font-medium text-amber-900"
+                  >
+                    ● Modifications non enregistrées
+                  </Badge>
+                ) : (
+                  <span className="text-[11px] text-slate-500">
+                    {lastSavedAt ? `Enregistré à ${lastSavedAt}` : "Prêt à éditer"}
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-500">
-                Sites vitrines, associatifs, familiaux, professionnels, personnels, événementiels et institutionnels
+              <p className="text-xs text-slate-600">
+                Projet actif : <strong className="text-[#172033]">{siteTitle}</strong> · Page :{" "}
+                <strong className="text-[#9b563e]">{activePage?.title}</strong> (
+                <code>{activePage?.slug}</code>)
               </p>
             </div>
           </div>
 
-          {/* Barre d’outils Responsive + Undo/Redo + Sauvegarde + Prévisualisation + Publication */}
+          {/* Contrôles Responsive + Undo/Redo + Actions principales (Prévisualiser, Enregistrer, Publier) */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1">
+            <div
+              role="group"
+              aria-label="Modes d'affichage responsive"
+              className="flex items-center rounded-lg border border-[#e2dad0] bg-[#faf8f5] p-1"
+            >
               <button
                 type="button"
-                onClick={() => setViewport("desktop")}
-                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold ${
-                  viewport === "desktop" ? "bg-white text-slate-950 shadow-2xs" : "text-slate-600"
+                onClick={() => handleSelectViewportMode("desktop")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                  viewport === "desktop"
+                    ? "bg-[#172033] text-white shadow-2xs"
+                    : "text-slate-700 hover:bg-slate-200/70"
                 }`}
               >
                 <Laptop className="h-3.5 w-3.5" />
@@ -649,9 +1066,11 @@ export default function IndependentSiteBuilderPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setViewport("tablet")}
-                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold ${
-                  viewport === "tablet" ? "bg-white text-slate-950 shadow-2xs" : "text-slate-600"
+                onClick={() => handleSelectViewportMode("tablet")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                  viewport === "tablet"
+                    ? "bg-[#172033] text-white shadow-2xs"
+                    : "text-slate-700 hover:bg-slate-200/70"
                 }`}
               >
                 <Tablet className="h-3.5 w-3.5" />
@@ -659,9 +1078,11 @@ export default function IndependentSiteBuilderPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setViewport("mobile")}
-                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold ${
-                  viewport === "mobile" ? "bg-white text-slate-950 shadow-2xs" : "text-slate-600"
+                onClick={() => handleSelectViewportMode("mobile")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                  viewport === "mobile"
+                    ? "bg-[#172033] text-white shadow-2xs"
+                    : "text-slate-700 hover:bg-slate-200/70"
                 }`}
               >
                 <Smartphone className="h-3.5 w-3.5" />
@@ -669,366 +1090,614 @@ export default function IndependentSiteBuilderPage() {
               </button>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => editorRef.current?.UndoManager.undo()}
-              title="Annuler (Undo)"
+            <select
+              aria-label="Format d'écran précis"
+              value={devicePresetId}
+              onChange={(e) =>
+                handleSelectDevicePreset(e.target.value as ResponsiveDevicePresetId)
+              }
+              className="h-8 rounded-lg border border-[#e2dad0] bg-white px-2.5 text-xs font-medium text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => editorRef.current?.UndoManager.redo()}
-              title="Rétablir (Redo)"
-            >
-              <Redo2 className="h-4 w-4" />
-            </Button>
+              {RESPONSIVE_DEVICE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label} ({preset.shortLabel})
+                </option>
+              ))}
+            </select>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => ensureAthVahloulMutation.mutate()}
-              disabled={ensureAthVahloulMutation.isPending}
-              className="border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => editorRef.current?.UndoManager.undo()}
+                title="Annuler la dernière modification"
+                aria-label="Annuler la dernière modification"
+                className="h-8 w-8 border-[#e2dad0] p-0 focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => editorRef.current?.UndoManager.redo()}
+                title="Rétablir la modification"
+                aria-label="Rétablir la modification"
+                className="h-8 w-8 border-[#e2dad0] p-0 focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <Link
+              href={`/constructeur-sites/apercu/${siteSlug || "association-familiale-ath-vahloul"}`}
             >
-              <Sparkles className="mr-1.5 h-4 w-4 text-amber-700" />
-              Démo : Association familiale ATH VAHLOUL
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-[#e2dad0] bg-white text-xs font-semibold text-[#172033] hover:bg-[#faf8f5] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              >
+                <Eye className="mr-1.5 h-3.5 w-3.5 text-[#9b563e]" />
+                Prévisualiser
+              </Button>
+            </Link>
 
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => handleSaveCurrentProject()}
-              disabled={saveProjectMutation.isPending || createProjectMutation.isPending}
+              disabled={isBusySaving}
+              className="h-8 border-[#9b563e] bg-[#faf8f5] text-xs font-semibold text-[#9b563e] hover:bg-[#f3ece2] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
-              <Save className="mr-1.5 h-4 w-4" />
-              Sauvegarder le brouillon
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}
             </Button>
-
-            <Link href={`/constructeur-sites/apercu/${siteSlug || "association-familiale-ath-vahloul"}`}>
-              <Button type="button" variant="outline" size="sm">
-                <Eye className="mr-1.5 h-4 w-4" />
-                Aperçu public
-              </Button>
-            </Link>
 
             <Button
               type="button"
               size="sm"
-              className="bg-[#172033] text-white hover:bg-[#263653]"
-              onClick={() => {
-                if (!selectedSiteId) {
-                  handleSaveCurrentProject("Avant publication");
-                  return;
-                }
-                publishSiteMutation.mutate({ siteId: selectedSiteId });
-              }}
-              disabled={publishSiteMutation.isPending}
+              className="h-8 bg-[#172033] text-xs font-semibold text-white hover:bg-[#24324f] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              onClick={requestPublishCurrentSite}
+              disabled={isBusySaving}
             >
-              <CheckCircle2 className="mr-1.5 h-4 w-4 text-[#f5b98f]" />
-              Publier le site
+              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
+              {publishSiteMutation.isPending ? "Publication…" : "Publier"}
             </Button>
           </div>
         </div>
 
+        {/* BARRE DES 9 ACTIONS RAPIDES IMMÉDIATEMENT IDENTIFIABLES (Chantier 1) */}
+        <div className="mx-auto mt-2.5 flex max-w-[1640px] flex-wrap items-center justify-between gap-2 border-t border-[#efe9e0] pt-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] font-bold uppercase tracking-wider text-[#9b563e]">
+              Actions rapides :
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowProjectsDrawer((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#e2dad0] bg-[#faf8f5] px-2.5 py-1 text-xs font-semibold text-[#172033] transition hover:border-[#9b563e] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+            >
+              <Plus className="h-3.5 w-3.5 text-[#9b563e]" />
+              Créer un site
+              {showProjectsDrawer ? (
+                <ChevronUp className="h-3 w-3 text-slate-500" />
+              ) : (
+                <ChevronDown className="h-3 w-3 text-slate-500" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLibraryTab("modeles")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                activeLibraryTab === "modeles"
+                  ? "border-[#172033] bg-[#172033] text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:border-[#9b563e]"
+              }`}
+            >
+              <Palette className="h-3.5 w-3.5 text-[#9b563e]" />
+              Choisir un modèle ({INDEPENDENT_SITE_TEMPLATES.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLibraryTab("pages")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                activeLibraryTab === "pages"
+                  ? "border-[#172033] bg-[#172033] text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:border-[#9b563e]"
+              }`}
+            >
+              <FilePlus2 className="h-3.5 w-3.5 text-sky-600" />
+              Ajouter une page
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLibraryTab("blocs")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                activeLibraryTab === "blocs"
+                  ? "border-[#9b563e] bg-[#9b563e] text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:border-[#9b563e]"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5 text-[#9b563e]" />
+              Ajouter un bloc
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLibraryTab("modules")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                activeLibraryTab === "modules"
+                  ? "border-[#7c3f2c] bg-[#7c3f2c] text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:border-[#9b563e]"
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+              Ajouter un module
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLibraryTab("medias")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                activeLibraryTab === "medias"
+                  ? "border-emerald-800 bg-emerald-800 text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:border-[#9b563e]"
+              }`}
+            >
+              <ImagePlus className="h-3.5 w-3.5 text-emerald-600" />
+              Ajouter une image
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => ensureAthVahloulMutation.mutate()}
+              disabled={ensureAthVahloulMutation.isPending}
+              className="h-7 border-amber-300 bg-amber-50/90 text-xs font-semibold text-amber-950 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+            >
+              <Sparkles className="mr-1 h-3.5 w-3.5 text-[#9b563e]" />
+              Démo ATH VAHLOUL (6 pages)
+            </Button>
+          </div>
+        </div>
+
+        {/* Bandeau de confirmation / statut */}
         {statusBanner && (
-          <div className="mx-auto mt-2 flex max-w-[1600px] items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950">
-            <span>{statusBanner}</span>
+          <div
+            role="status"
+            className="mx-auto mt-2 flex max-w-[1640px] items-center justify-between rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950"
+          >
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
+              {statusBanner}
+            </span>
             <button
               type="button"
               onClick={() => setStatusBanner(null)}
-              className="ml-4 text-emerald-700 underline"
+              className="ml-4 font-semibold text-emerald-800 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
             >
               Fermer
             </button>
           </div>
         )}
+
+        {/* Bandeau d'erreur explicite */}
+        {errorBanner && (
+          <div
+            role="alert"
+            className="mx-auto mt-2 flex max-w-[1640px] items-center justify-between rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-950"
+          >
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-700" />
+              {errorBanner}
+            </span>
+            <button
+              type="button"
+              onClick={() => setErrorBanner(null)}
+              className="ml-4 font-semibold text-rose-800 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-700"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
+        {/* Dialogue de confirmation inline avant toute action destructive ou publication */}
+        {pendingConfirmAction && (
+          <div
+            role="alertdialog"
+            aria-labelledby="confirm-action-title"
+            aria-describedby="confirm-action-desc"
+            className="mx-auto mt-2.5 flex max-w-[1640px] flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-[#9b563e] bg-[#faf8f5] p-3 shadow-md"
+          >
+            <div>
+              <h2 id="confirm-action-title" className="text-xs font-bold text-[#172033]">
+                {pendingConfirmAction.title}
+              </h2>
+              <p id="confirm-action-desc" className="mt-0.5 text-xs text-slate-600">
+                {pendingConfirmAction.description}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => setPendingConfirmAction(null)}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className={
+                  pendingConfirmAction.variant === "danger"
+                    ? "h-8 bg-rose-700 text-xs text-white hover:bg-rose-800"
+                    : "h-8 bg-[#172033] text-xs text-white hover:bg-[#263653]"
+                }
+                onClick={() => {
+                  const fn = pendingConfirmAction.onConfirm;
+                  setPendingConfirmAction(null);
+                  fn();
+                }}
+              >
+                {pendingConfirmAction.confirmLabel}
+              </Button>
+            </div>
+          </div>
+        )}
       </header>
 
-      <div className="mx-auto max-w-[1600px] space-y-6 p-4 md:p-6">
-        {/* Espace Utilisateur Indépendant : Gestion des projets Publiés / Brouillons / Archivés */}
-        <Card className="border-[#e2dad0] bg-white shadow-xs">
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base text-[#172033]">
-                  <FolderKanban className="h-5 w-5 text-[#9b563e]" />
-                  Mon Espace Projets de Sites Internet
-                </CardTitle>
-                <CardDescription>
-                  Gérez vos sites brouillons, publiés et archivés, dupliquez un projet ou configurez un domaine personnalisé.
-                </CardDescription>
+      <div className="mx-auto max-w-[1640px] space-y-5 p-4 md:p-5">
+        {/* TIROIR REPLIABLE : ESPACE PROJETS & CRÉATION D'UN NOUVEAU SITE */}
+        {showProjectsDrawer && (
+          <Card className="border-[#e2dad0] bg-white shadow-xs">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base text-[#172033]">
+                    <FolderKanban className="h-5 w-5 text-[#9b563e]" />
+                    Créer un nouveau site ou changer de projet
+                  </CardTitle>
+                  <CardDescription>
+                    Créez un site indépendant à partir d’un modèle, ouvrez un brouillon existant ou dupliquez un site.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(["all", "draft", "published", "archived"] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStatusFilter(st)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        statusFilter === st
+                          ? "bg-[#172033] text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {st === "all"
+                        ? "Tous mes sites"
+                        : st === "draft"
+                          ? "Brouillons"
+                          : st === "published"
+                            ? "Publiés"
+                            : "Archivés"}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(["all", "draft", "published", "archived"] as const).map((st) => (
-                  <button
-                    key={st}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3.5 md:grid-cols-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#172033]">
+                    Nom du site internet
+                  </label>
+                  <input
+                    type="text"
+                    value={newSiteTitle}
+                    onChange={(e) => setNewSiteTitle(e.target.value)}
+                    placeholder="Ex. Association familiale ATH VAHLOUL"
+                    className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#172033]">
+                    Catégorie de site
+                  </label>
+                  <select
+                    value={newSiteType}
+                    onChange={(e) => setNewSiteType(e.target.value as IndependentSiteType)}
+                    className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                  >
+                    {INDEPENDENT_SITE_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#172033]">
+                    Modèle complet de départ (10 modèles)
+                  </label>
+                  <select
+                    value={newSiteTemplateId}
+                    onChange={(e) => setNewSiteTemplateId(e.target.value)}
+                    className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                  >
+                    {INDEPENDENT_SITE_TEMPLATES.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.name} ({tpl.pages.length} pages)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button
                     type="button"
-                    onClick={() => setStatusFilter(st)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                      statusFilter === st
-                        ? "bg-[#172033] text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
+                    className="h-9 flex-1 bg-[#9b563e] text-white hover:bg-[#824631]"
+                    onClick={() =>
+                      createProjectMutation.mutate({
+                        title: newSiteTitle,
+                        siteType: newSiteType,
+                        templateId: newSiteTemplateId,
+                      })
+                    }
+                    disabled={createProjectMutation.isPending}
                   >
-                    {st === "all"
-                      ? "Tous mes sites"
-                      : st === "draft"
-                        ? "Brouillons"
-                        : st === "published"
-                          ? "Publiés"
-                          : "Archivés"}
-                  </button>
-                ))}
+                    <Plus className="mr-1.5 h-4 w-4" />
+                    Créer ce site
+                  </Button>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Création rapide d'un nouveau site indépendant */}
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-[#faf8f5] p-3 md:grid-cols-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700">Nom du site internet</label>
-                <input
-                  type="text"
-                  value={newSiteTitle}
-                  onChange={(e) => setNewSiteTitle(e.target.value)}
-                  placeholder="Ex. Association familiale ATH VAHLOUL"
-                  className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700">Catégorie de site</label>
-                <select
-                  value={newSiteType}
-                  onChange={(e) => setNewSiteType(e.target.value as IndependentSiteType)}
-                  className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
-                >
-                  {INDEPENDENT_SITE_TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700">Modèle de départ</label>
-                <select
-                  value={newSiteTemplateId}
-                  onChange={(e) => setNewSiteTemplateId(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
-                >
-                  {INDEPENDENT_SITE_TEMPLATES.map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      {tpl.name} ({tpl.pages.length} pages)
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end gap-2">
-                <Button
-                  type="button"
-                  className="h-9 flex-1 bg-[#9b563e] text-white hover:bg-[#824631]"
-                  onClick={() =>
-                    createProjectMutation.mutate({
-                      title: newSiteTitle,
-                      siteType: newSiteType,
-                      templateId: newSiteTemplateId,
-                    })
-                  }
-                  disabled={createProjectMutation.isPending}
-                >
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Créer ce site
-                </Button>
-              </div>
-            </div>
 
-            {/* Liste des projets de l’utilisateur */}
-            {projectsQuery.data && projectsQuery.data.length > 0 && (
-              <div className="grid gap-3 md:grid-cols-3">
-                {projectsQuery.data.map((proj) => (
-                  <div
-                    key={proj.id}
-                    className={`flex flex-col justify-between rounded-xl border p-3 transition ${
-                      selectedSiteId === proj.id
-                        ? "border-[#172033] bg-slate-50 ring-2 ring-[#172033]/10"
-                        : "border-slate-200 bg-white"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-sm text-[#172033]">{proj.title}</span>
-                        <Badge
-                          variant="outline"
-                          className={
-                            proj.status === "published"
-                              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              {projectsQuery.data && projectsQuery.data.length > 0 && (
+                <div className="grid gap-3 md:grid-cols-3">
+                  {projectsQuery.data.map((proj) => (
+                    <div
+                      key={proj.id}
+                      className={`flex flex-col justify-between rounded-xl border p-3 transition ${
+                        selectedSiteId === proj.id
+                          ? "border-[#172033] bg-[#faf8f5] ring-2 ring-[#172033]/10"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-[#172033]">{proj.title}</span>
+                          <Badge
+                            variant="outline"
+                            className={
+                              proj.status === "published"
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                : proj.status === "archived"
+                                  ? "border-slate-300 bg-slate-100 text-slate-600"
+                                  : "border-amber-300 bg-amber-50 text-amber-900"
+                            }
+                          >
+                            {proj.status === "published"
+                              ? "Publié"
                               : proj.status === "archived"
-                                ? "border-slate-300 bg-slate-100 text-slate-600"
-                                : "border-amber-300 bg-amber-50 text-amber-900"
+                                ? "Archivé"
+                                : "Brouillon"}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Type : {proj.siteType} · {proj.pages.length} pages ·{" "}
+                          <code>/{proj.slug}</code>
+                        </p>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={selectedSiteId === proj.id ? "default" : "outline"}
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setSelectedSiteId(proj.id);
+                            loadProjectIntoWorkspace(proj);
+                            setHasUnsavedChanges(false);
+                          }}
+                        >
+                          Ouvrir
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => duplicateProjectMutation.mutate({ siteId: proj.id })}
+                        >
+                          <Copy className="mr-1 h-3 w-3" />
+                          Dupliquer
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() =>
+                            updateStatusMutation.mutate({
+                              siteId: proj.id,
+                              status: proj.status === "archived" ? "draft" : "archived",
+                            })
                           }
                         >
-                          {proj.status === "published"
-                            ? "Publié"
-                            : proj.status === "archived"
-                              ? "Archivé"
-                              : "Brouillon"}
-                        </Badge>
+                          <Archive className="mr-1 h-3 w-3" />
+                          {proj.status === "archived" ? "Désarchiver" : "Archiver"}
+                        </Button>
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Type : {proj.siteType} · {proj.pages.length} pages · Slug : <code>/{proj.slug}</code>
-                      </p>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={selectedSiteId === proj.id ? "default" : "outline"}
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setSelectedSiteId(proj.id);
-                          loadProjectIntoWorkspace(proj);
-                        }}
-                      >
-                        Ouvrir
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => duplicateProjectMutation.mutate({ siteId: proj.id })}
-                      >
-                        <Copy className="mr-1 h-3 w-3" />
-                        Dupliquer
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() =>
-                          updateStatusMutation.mutate({
-                            siteId: proj.id,
-                            status: proj.status === "archived" ? "draft" : "archived",
-                          })
-                        }
-                      >
-                        <Archive className="mr-1 h-3 w-3" />
-                        {proj.status === "archived" ? "Désarchiver" : "Archiver"}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Zone principale du Constructeur : Bibliothèques séparées à gauche (Pages, Blocs, Médias, Calques, Modules, Socles, Modèles) + Canevas GrapesJS au centre/droite */}
-        <div className="grid gap-6 lg:grid-cols-12">
-          {/* Panneau latéral gauche : les 7 bibliothèques clairement séparées */}
-          <div className="space-y-4 lg:col-span-4">
+        {/* ARCHITECTURE EN 3 ZONES CLAIREMENT SÉPARÉES : 1. BIBLIOTHÈQUE (Gauche) | 2. CANVAS (Centre) | 3. RÉGLAGES, SEO & PUBLICATION (Droite/Bas) */}
+        <div className="grid gap-5 xl:grid-cols-12">
+          {/* ZONE 1 — BIBLIOTHÈQUE PROFESSIONNELLE À 7 ESPACES (Chantier 2) */}
+          <aside className="space-y-4 xl:col-span-4">
             <Card className="border-[#e2dad0] bg-white shadow-xs">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
                   <div>
-                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-[#9b563e]">
-                      Bibliothèque du constructeur
+                    <CardTitle className="text-xs font-bold uppercase tracking-wider text-[#9b563e]">
+                      1. Bibliothèque du site
                     </CardTitle>
-                    <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                      Choisissez une famille, recherchez un élément, puis ajoutez-le à la page active.
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      7 espaces organisés par usage pour construire vos pages sans compétence technique.
                     </p>
                   </div>
-                  <Badge variant="outline" className="shrink-0 border-[#e2dad0] bg-[#faf8f5] text-[10px] text-slate-600">
-                    {INDEPENDENT_BUILDER_LIBRARY_TABS.length} espaces
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-[#e2dad0] bg-[#faf8f5] text-[10px] font-semibold text-[#172033]"
+                  >
+                    7 espaces
                   </Badge>
                 </div>
-                <label className="relative mt-3 block">
+
+                {/* Barre de recherche universelle de la bibliothèque */}
+                <label className="relative mt-2.5 block">
                   <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="search"
                     value={librarySearch}
                     onChange={(event) => setLibrarySearch(event.target.value)}
-                    placeholder="Rechercher un bloc, module ou modèle…"
+                    placeholder="Rechercher un bloc, module, socle ou modèle…"
                     aria-label="Rechercher dans la bibliothèque du constructeur"
-                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs outline-none transition focus:border-[#9b563e] focus:bg-white focus:ring-2 focus:ring-[#9b563e]/15"
+                    className="h-8 w-full rounded-lg border border-slate-200 bg-[#faf8f5] pl-8 pr-3 text-xs outline-none transition focus:border-[#9b563e] focus:bg-white focus:ring-2 focus:ring-[#9b563e]/20"
                   />
                 </label>
-                {/* Sélecteur des 7 onglets obligatoires : Pages | Blocs | Médias | Calques | Modules | Socles | Modèles */}
+
+                {/* Sélecteur des 7 onglets avec icône, compteur et sous-titre métier */}
                 <div
                   role="tablist"
-                  aria-label="Bibliothèques séparées du constructeur"
-                  className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-7 lg:grid-cols-4"
+                  aria-label="Espaces de la bibliothèque du constructeur"
+                  className="mt-2.5 grid grid-cols-4 gap-1.5 sm:grid-cols-7 xl:grid-cols-4"
                 >
-                  {INDEPENDENT_BUILDER_LIBRARY_TABS.map((tab) => (
-                    (() => {
-                      const meta = LIBRARY_TAB_META[tab.id];
-                      const Icon = meta.icon;
-                      const count = tab.id === "blocs" ? filteredBlocks.length : tab.id === "modules" ? filteredModules.length : tab.id === "socles" ? filteredSocles.length : tab.id === "modeles" ? filteredTemplates.length : undefined;
-                      return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={activeLibraryTab === tab.id}
-                      onClick={() => setActiveLibraryTab(tab.id)}
-                      title={tab.description}
-                      className={`group rounded-lg px-2 py-2 text-xs font-bold transition ${
-                        activeLibraryTab === tab.id ? meta.activeClass : "bg-[#faf8f5] text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      <span className="flex items-center justify-center gap-1.5">
-                        <Icon className={`h-3.5 w-3.5 ${activeLibraryTab === tab.id ? "text-[#f5b98f]" : meta.iconClass}`} />
-                        <span className="truncate">{tab.label}</span>
-                        {count !== undefined && <span className={`rounded-full px-1.5 text-[9px] ${activeLibraryTab === tab.id ? "bg-white/15 text-white" : "bg-slate-200 text-slate-600"}`}>{count}</span>}
-                      </span>
-                      <span className={`mt-0.5 block truncate text-[9px] font-medium ${activeLibraryTab === tab.id ? "text-white/70" : "text-slate-400"}`}>{meta.hint}</span>
-                    </button>
-                      );
-                    })()
-                  ))}
+                  {INDEPENDENT_BUILDER_LIBRARY_TABS.map((tab) => {
+                    const meta = LIBRARY_TAB_META[tab.id];
+                    const Icon = meta.icon;
+                    const count =
+                      tab.id === "pages"
+                        ? pages.length
+                        : tab.id === "blocs"
+                          ? filteredBlocks.length
+                          : tab.id === "medias"
+                            ? (mediaQuery.data?.length ?? 0)
+                            : tab.id === "calques"
+                              ? layers.length
+                              : tab.id === "modules"
+                                ? filteredModules.length
+                                : tab.id === "socles"
+                                  ? filteredSocles.length
+                                  : filteredTemplates.length;
+                    const isSelected = activeLibraryTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => setActiveLibraryTab(tab.id)}
+                        title={tab.description}
+                        className={`group rounded-lg px-2 py-2 text-left text-xs font-bold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                          isSelected
+                            ? meta.activeClass
+                            : "border border-[#ece5dc] bg-[#faf8f5] text-[#172033] hover:bg-[#efe9e0]"
+                        }`}
+                      >
+                        <span className="flex items-center justify-between gap-1">
+                          <span className="flex items-center gap-1 truncate">
+                            <Icon
+                              className={`h-3.5 w-3.5 shrink-0 ${
+                                isSelected ? "text-[#f5b98f]" : meta.iconClass
+                              }`}
+                            />
+                            <span className="truncate">{tab.label}</span>
+                          </span>
+                          <span
+                            className={`rounded px-1 text-[10px] font-semibold ${
+                              isSelected
+                                ? "bg-white/20 text-white"
+                                : "bg-white text-slate-600"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </span>
+                        <span
+                          className={`mt-0.5 block truncate text-[10px] font-normal ${
+                            isSelected ? "text-white/80" : "text-slate-500"
+                          }`}
+                        >
+                          {meta.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Explication courte et lisible de l'espace actif (Chantier 2 : distinction Blocs / Modules / Socles / Modèles) */}
+                <div className="mt-2.5 rounded-lg border border-[#e8e1d7] bg-[#faf8f5] px-3 py-2 text-[11px] leading-4 text-slate-700">
+                  <strong className="text-[#172033]">
+                    {
+                      INDEPENDENT_BUILDER_LIBRARY_TABS.find((t) => t.id === activeLibraryTab)
+                        ?.label
+                    }{" "}
+                    :
+                  </strong>{" "}
+                  {LIBRARY_TAB_META[activeLibraryTab].roleExplanation}
                 </div>
               </CardHeader>
 
-              <CardContent className="max-h-[75vh] space-y-4 overflow-y-auto pr-2">
-                {/* 1. ONGLET PAGES & SOUS-MENUS */}
+              <CardContent className="max-h-[74vh] space-y-4 overflow-y-auto pr-2">
+                {/* ESPACE 1 : PAGES & MENUS */}
                 {activeLibraryTab === "pages" && (
                   <div className="space-y-4">
-                    <div className="rounded-xl border border-slate-200 bg-[#faf8f5] p-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
-                        Pages du site ({pages.length})
-                      </h3>
+                    <div className="rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Pages du site ({pages.length})
+                        </h3>
+                        <span className="text-[11px] text-slate-500">
+                          Cliquez pour modifier une page
+                        </span>
+                      </div>
                       <div className="mt-2 space-y-1.5">
                         {pages.map((p) => (
                           <div
                             key={p.id}
-                            className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
+                            className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition ${
                               activePage?.id === p.id
-                                ? "border-[#172033] bg-white font-bold text-[#172033]"
-                                : "border-slate-200 bg-white/70 text-slate-700"
+                                ? "border-[#172033] bg-white font-bold text-[#172033] shadow-2xs"
+                                : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
                             }`}
                           >
                             <button
                               type="button"
                               onClick={() => handleSelectPage(p.id)}
-                              className="flex-1 text-left"
+                              className="flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                             >
                               <span>{p.parentPageId ? `↳ ${p.title}` : p.title}</span>
-                              <span className="ml-2 text-[11px] text-slate-400">({p.slug})</span>
+                              <span className="ml-2 text-[11px] font-normal text-slate-400">
+                                ({p.slug})
+                              </span>
                             </button>
                             {pages.length > 1 && (
                               <button
                                 type="button"
-                                onClick={() => handleDeletePage(p.id)}
-                                className="ml-2 text-rose-600 hover:text-rose-800"
-                                title="Supprimer cette page"
+                                onClick={() => requestDeletePage(p.id)}
+                                className="ml-2 rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+                                title={`Supprimer la page ${p.title}`}
+                                aria-label={`Supprimer la page ${p.title}`}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
@@ -1038,53 +1707,63 @@ export default function IndependentSiteBuilderPage() {
                       </div>
                     </div>
 
-                    {/* Création d'une nouvelle page ou sous-menu */}
-                    <div className="space-y-2.5 rounded-xl border border-slate-200 p-3">
+                    {/* Formulaire d'ajout de page ou sous-menu */}
+                    <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
                       <h4 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
                         <FilePlus2 className="h-4 w-4 text-[#9b563e]" />
-                        Ajouter une page ou un sous-menu
+                        Ajouter une nouvelle page ou un sous-menu
                       </h4>
-                      <input
-                        type="text"
-                        value={newPageTitle}
-                        onChange={(e) => setNewPageTitle(e.target.value)}
-                        placeholder="Titre de la page (ex. Nos Actions)"
-                        className="h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
-                      />
-                      <input
-                        type="text"
-                        value={newPageSlug}
-                        onChange={(e) => setNewPageSlug(e.target.value)}
-                        placeholder="Chemin URL (ex. /nos-actions)"
-                        className="h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
-                      />
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-600">
-                          Position dans le menu (Page principale ou Sous-menu)
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Titre de la page
+                        </label>
+                        <input
+                          type="text"
+                          value={newPageTitle}
+                          onChange={(e) => setNewPageTitle(e.target.value)}
+                          placeholder="Ex. Nos Activités, Tarifs, Galerie…"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Adresse de la page (optionnel, générée automatiquement)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPageSlug}
+                          onChange={(e) => setNewPageSlug(e.target.value)}
+                          placeholder="Ex. /nos-activites"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Emplacement dans le menu
                         </label>
                         <select
                           value={newPageParentId}
                           onChange={(e) => setNewPageParentId(e.target.value)}
-                          className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                         >
-                          <option value="">Page principale (Menu de niveau 1)</option>
+                          <option value="">Page principale (Menu supérieur)</option>
                           {pages
                             .filter((p) => !p.parentPageId)
                             .map((parent) => (
                               <option key={parent.id} value={parent.id}>
-                                Sous-menu de : {parent.title}
+                                Sous-menu rattaché à : {parent.title}
                               </option>
                             ))}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-600">
-                          Socle de départ de la page
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          Structure de départ (Socle)
                         </label>
                         <select
                           value={newPageSocleId}
                           onChange={(e) => setNewPageSocleId(e.target.value)}
-                          className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                         >
                           {INDEPENDENT_PAGE_SOCLES.map((s) => (
                             <option key={s.id} value={s.id}>
@@ -1096,18 +1775,18 @@ export default function IndependentSiteBuilderPage() {
                       <Button
                         type="button"
                         size="sm"
-                        className="w-full bg-[#172033] text-white"
+                        className="w-full bg-[#172033] text-xs text-white hover:bg-[#24324f]"
                         onClick={handleAddPage}
                       >
                         <Plus className="mr-1 h-3.5 w-3.5" />
-                        Ajouter la page au site
+                        Créer et ouvrir cette page
                       </Button>
                     </div>
 
                     {/* Aperçu de l'arborescence Menus & Sous-menus */}
-                    <div className="rounded-xl border border-slate-200 bg-[#faf8f5] p-3">
+                    <div className="rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
                       <h4 className="text-xs font-bold text-[#172033]">
-                        Aperçu des Menus & Sous-menus
+                        Aperçu du menu de navigation
                       </h4>
                       <ul className="mt-2 space-y-1 text-xs text-slate-700">
                         {navigationTree.map((item) => (
@@ -1130,40 +1809,111 @@ export default function IndependentSiteBuilderPage() {
                   </div>
                 )}
 
-                {/* 2. ONGLET BLOCS & CARTES VISUELLES « + » */}
+                {/* ESPACE 2 : BLOCS & ATELIER CARTES VISUELLES COMPLET (Chantiers 2 & 3) */}
                 {activeLibraryTab === "blocs" && (
                   <div className="space-y-4">
-                    {/* Générateur interactif de Cartes Visuelles avec bouton « + » */}
-                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
-                          <LayoutGrid className="h-4 w-4 text-[#9b563e]" />
-                          Atelier Cartes Visuelles (« + »)
-                        </h3>
-                        <Badge variant="outline" className="border-amber-300 bg-white text-[11px]">
+                    {/* ATELIER CARTES VISUELLES COMPLET (Chantier 3) */}
+                    <div className="space-y-3 rounded-xl border border-[#d9c3b0] bg-[#faf5ef] p-3.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <h3 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
+                            <LayoutGrid className="h-4 w-4 text-[#9b563e]" />
+                            Atelier Cartes Visuelles (« + »)
+                          </h3>
+                          <p className="text-[11px] text-slate-600">
+                            Créez des cartes carrées, rectangulaires ou rondes avec aperçu immédiat.
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="border-[#9b563e]/40 bg-white text-[11px] font-bold text-[#9b563e]"
+                        >
                           {cardGridConfig.cards.length} cartes
                         </Badge>
                       </div>
+
+                      {/* Préréglages d'usage métier (Catégories, Événements, Membres, Activités, Galeries, Services, Famille, Association) */}
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#172033]">
+                          Usage des cartes (pré-remplissage rapide)
+                        </label>
+                        <select
+                          aria-label="Usage des cartes visuelles"
+                          value={cardGridConfig.useCase || "famille"}
+                          onChange={(e) => {
+                            const nextConfig = applyVisualCardUseCasePreset(
+                              e.target.value as VisualCardUseCaseId
+                            );
+                            setCardGridConfig(nextConfig);
+                            if (nextConfig.cards[0]) {
+                              setSelectedVisualCardId(nextConfig.cards[0].id);
+                            }
+                          }}
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                        >
+                          {VISUAL_CARD_USE_CASE_PRESETS.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.label} — {preset.sectionEyebrow}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Titre de la section de cartes */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Sur-titre de section
+                          </label>
+                          <input
+                            type="text"
+                            value={cardGridConfig.sectionEyebrow}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) => ({
+                                ...prev,
+                                sectionEyebrow: e.target.value,
+                              }))
+                            }
+                            className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Titre de section
+                          </label>
+                          <input
+                            type="text"
+                            value={cardGridConfig.sectionTitle}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) => ({
+                                ...prev,
+                                sectionTitle: e.target.value,
+                              }))
+                            }
+                            className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Forme (Rectangulaire, Carrée, Ronde) + Position du texte (Dessous, Dessus, Intérieur) */}
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-700">
                             Forme des cartes
                           </label>
                           <select
+                            aria-label="Forme des cartes"
                             value={cardGridConfig.shape}
-                            onChange={(e) => {
-                              const shape = e.target.value as VisualCardShape;
-                              setCardGridConfig((prev) => ({
-                                ...prev,
-                                shape,
-                                cards: prev.cards.map((c) => ({ ...c, shape })),
-                              }));
-                            }}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) =>
+                                setVisualCardGridShape(prev, e.target.value as VisualCardShape)
+                              )
+                            }
                             className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs"
                           >
                             <option value="rectangular">Rectangulaires</option>
-                            <option value="square">Carrées</option>
-                            <option value="round">Rondes (portraits)</option>
+                            <option value="square">Carrées (1:1)</option>
+                            <option value="round">Rondes (portraits / icônes)</option>
                           </select>
                         </div>
                         <div>
@@ -1171,23 +1921,69 @@ export default function IndependentSiteBuilderPage() {
                             Position du texte
                           </label>
                           <select
+                            aria-label="Position du texte des cartes"
                             value={cardGridConfig.textPlacement}
-                            onChange={(e) => {
-                              const textPlacement = e.target.value as VisualCardTextPlacement;
-                              setCardGridConfig((prev) => ({
-                                ...prev,
-                                textPlacement,
-                                cards: prev.cards.map((c) => ({ ...c, textPlacement })),
-                              }));
-                            }}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) =>
+                                setVisualCardGridTextPlacement(
+                                  prev,
+                                  e.target.value as VisualCardTextPlacement
+                                )
+                              )
+                            }
                             className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs"
                           >
-                            <option value="bottom">Texte en dessous</option>
-                            <option value="top">Texte au-dessus</option>
-                            <option value="inside">Texte à l’intérieur</option>
+                            <option value="bottom">Texte en dessous de l’image</option>
+                            <option value="top">Texte au-dessus de l’image</option>
+                            <option value="inside">Texte à l’intérieur de la carte</option>
                           </select>
                         </div>
                       </div>
+
+                      {/* Nombre de colonnes (1 à 4) & Espacement entre cartes (12 à 36 px) */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Colonnes sur ordinateur
+                          </label>
+                          <select
+                            aria-label="Nombre de colonnes de cartes"
+                            value={cardGridConfig.columns}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) => ({
+                                ...prev,
+                                columns: Number(e.target.value) as 1 | 2 | 3 | 4,
+                              }))
+                            }
+                            className="mt-1 h-8 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                          >
+                            <option value={1}>1 colonne</option>
+                            <option value={2}>2 colonnes</option>
+                            <option value={3}>3 colonnes</option>
+                            <option value={4}>4 colonnes</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Espacement ({cardGridConfig.gapPx ?? 20} px)
+                          </label>
+                          <input
+                            type="range"
+                            min={12}
+                            max={36}
+                            step={2}
+                            value={cardGridConfig.gapPx ?? 20}
+                            onChange={(e) =>
+                              setCardGridConfig((prev) => ({
+                                ...prev,
+                                gapPx: Number(e.target.value),
+                              }))
+                            }
+                            className="mt-2.5 w-full"
+                          />
+                        </div>
+                      </div>
+
                       <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
                         <input
                           type="checkbox"
@@ -1201,92 +1997,363 @@ export default function IndependentSiteBuilderPage() {
                             }));
                           }}
                         />
-                        Afficher le bouton d’action sur chaque carte
+                        Afficher un bouton cliquable sur les cartes
                       </label>
 
-                      <div className="flex flex-wrap gap-1.5">
+                      {/* Actions rapides sur la liste des cartes : Bouton + Ajouter une carte */}
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-8 flex-1 border-[#9b563e] bg-white text-xs font-bold text-[#9b563e]"
-                          onClick={() =>
-                            setCardGridConfig((prev) => addCardToVisualCardGrid(prev))
-                          }
+                          className="h-8 flex-1 border-[#9b563e] bg-white text-xs font-bold text-[#9b563e] hover:bg-[#faf8f5]"
+                          onClick={() => {
+                            const updated = addCardToVisualCardGrid(cardGridConfig);
+                            setCardGridConfig(updated);
+                            const last = updated.cards[updated.cards.length - 1];
+                            if (last) setSelectedVisualCardId(last.id);
+                          }}
                         >
                           <Plus className="mr-1 h-3.5 w-3.5" />
                           + Ajouter une carte
                         </Button>
-                        <Button
+                        {activeVisualCard && (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 bg-white text-xs"
+                              onClick={() => {
+                                const updated = duplicateCardInVisualCardGrid(
+                                  cardGridConfig,
+                                  activeVisualCard.id
+                                );
+                                setCardGridConfig(updated);
+                              }}
+                              title="Dupliquer la carte sélectionnée"
+                            >
+                              <Copy className="mr-1 h-3.5 w-3.5" />
+                              Dupliquer
+                            </Button>
+                            {cardGridConfig.cards.length > 1 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 border-rose-200 bg-white text-xs text-rose-700 hover:bg-rose-50"
+                                onClick={() => {
+                                  const updated = removeCardFromVisualCardGrid(
+                                    cardGridConfig,
+                                    activeVisualCard.id
+                                  );
+                                  setCardGridConfig(updated);
+                                  if (updated.cards[0]) {
+                                    setSelectedVisualCardId(updated.cards[0].id);
+                                  }
+                                }}
+                                title="Supprimer la carte sélectionnée"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Sélecteur de carte individuelle pour modifier son image, titre, sous-titre, texte et lien */}
+                      <div className="rounded-lg border border-[#e2dad0] bg-white p-2.5">
+                        <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 pb-2">
+                          {cardGridConfig.cards.map((card, idx) => (
+                            <button
+                              key={card.id}
+                              type="button"
+                              onClick={() => setSelectedVisualCardId(card.id)}
+                              className={`rounded px-2 py-1 text-[11px] font-semibold transition ${
+                                activeVisualCard?.id === card.id
+                                  ? "bg-[#172033] text-white"
+                                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                              }`}
+                            >
+                              Carte {idx + 1}
+                            </button>
+                          ))}
+                        </div>
+
+                        {activeVisualCard && (
+                          <div className="mt-2.5 space-y-2 text-xs">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-600">
+                                  Titre de la carte
+                                </label>
+                                <input
+                                  type="text"
+                                  value={activeVisualCard.title}
+                                  onChange={(e) =>
+                                    setCardGridConfig((prev) =>
+                                      updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                        title: e.target.value,
+                                      })
+                                    )
+                                  }
+                                  className="mt-0.5 h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-600">
+                                  Sous-titre / Badge
+                                </label>
+                                <input
+                                  type="text"
+                                  value={activeVisualCard.subtitle}
+                                  onChange={(e) =>
+                                    setCardGridConfig((prev) =>
+                                      updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                        subtitle: e.target.value,
+                                      })
+                                    )
+                                  }
+                                  className="mt-0.5 h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-600">
+                                Texte descriptif
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={activeVisualCard.description}
+                                onChange={(e) =>
+                                  setCardGridConfig((prev) =>
+                                    updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                      description: e.target.value,
+                                    })
+                                  )
+                                }
+                                className="mt-0.5 w-full rounded border border-slate-300 p-1.5 text-xs"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-600">
+                                  Visuel prédéfini
+                                </label>
+                                <select
+                                  value={activeVisualCard.imageUrl}
+                                  onChange={(e) =>
+                                    setCardGridConfig((prev) =>
+                                      updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                        imageUrl: e.target.value,
+                                      })
+                                    )
+                                  }
+                                  className="mt-0.5 h-7 w-full rounded border border-slate-300 bg-white px-1.5 text-[11px]"
+                                >
+                                  {VISUAL_CARD_SAMPLE_IMAGES.map((img) => (
+                                    <option key={img.id} value={img.url}>
+                                      {img.label}
+                                    </option>
+                                  ))}
+                                  {mediaQuery.data?.map((m) => (
+                                    <option key={m.id} value={m.url}>
+                                      Média : {m.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-600">
+                                  Ou URL d’image personnalisée
+                                </label>
+                                <input
+                                  type="text"
+                                  value={activeVisualCard.imageUrl}
+                                  onChange={(e) =>
+                                    setCardGridConfig((prev) =>
+                                      updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                        imageUrl: e.target.value,
+                                      })
+                                    )
+                                  }
+                                  placeholder="https://..."
+                                  className="mt-0.5 h-7 w-full rounded border border-slate-300 px-2 text-[11px]"
+                                />
+                              </div>
+                            </div>
+
+                            {cardGridConfig.showButton && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-slate-600">
+                                    Texte du bouton
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={activeVisualCard.buttonLabel}
+                                    onChange={(e) =>
+                                      setCardGridConfig((prev) =>
+                                        updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                          buttonLabel: e.target.value,
+                                        })
+                                      )
+                                    }
+                                    className="mt-0.5 h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-slate-600">
+                                    Lien (page ou URL)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={activeVisualCard.buttonHref}
+                                    onChange={(e) =>
+                                      setCardGridConfig((prev) =>
+                                        updateCardInVisualCardGrid(prev, activeVisualCard.id, {
+                                          buttonHref: e.target.value,
+                                        })
+                                      )
+                                    }
+                                    placeholder="/contact"
+                                    className="mt-0.5 h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Aperçu visuel immédiat des cartes */}
+                      <div>
+                        <button
                           type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs"
-                          onClick={() => {
-                            const lastCard = cardGridConfig.cards[cardGridConfig.cards.length - 1];
-                            if (lastCard) {
-                              setCardGridConfig((prev) =>
-                                duplicateCardInVisualCardGrid(prev, lastCard.id)
-                              );
-                            }
-                          }}
+                          onClick={() => setShowVisualCardLivePreview((prev) => !prev)}
+                          className="flex w-full items-center justify-between text-[11px] font-semibold text-[#9b563e]"
                         >
-                          <Copy className="mr-1 h-3.5 w-3.5" />
-                          Dupliquer
-                        </Button>
+                          <span>Aperçu visuel immédiat ({cardGridConfig.shape})</span>
+                          <span>{showVisualCardLivePreview ? "Masquer" : "Afficher"}</span>
+                        </button>
+                        {showVisualCardLivePreview && (
+                          <div className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-[#e2dad0] bg-white p-2">
+                            <div className="origin-top scale-90">
+                              <div
+                                dangerouslySetInnerHTML={{
+                                  __html: sanitizeIndependentHtml(
+                                    renderVisualCardGridHtml(cardGridConfig)
+                                  ),
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <Button
                         type="button"
                         size="sm"
-                        className="w-full bg-[#172033] text-xs text-white"
+                        className="w-full bg-[#172033] text-xs font-semibold text-white hover:bg-[#24324f]"
                         onClick={() =>
                           insertHtmlIntoCanvas(
                             renderVisualCardGridHtml(cardGridConfig),
-                            `Grille de ${cardGridConfig.cards.length} cartes visuelles`
+                            `Grille de ${cardGridConfig.cards.length} cartes (${cardGridConfig.sectionTitle})`
                           )
                         }
                       >
-                        Insérer cette grille de cartes dans la page
+                        + Insérer cette grille de cartes dans la page
                       </Button>
                     </div>
 
-                    {/* Liste des 20+ Blocs éditoriaux par catégorie */}
-                    <div className="space-y-2">
-                      {filteredBlocks.length === 0 ? (
-                        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
-                          Aucun bloc ne correspond à « {librarySearch} ».
-                        </p>
-                      ) : filteredBlocks.map((blk) => (
-                        <div
-                          key={blk.id}
-                          className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2.5 hover:border-slate-300"
+                    {/* Filtres de catégories de blocs */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setBlockCategoryFilter("all")}
+                        className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                          blockCategoryFilter === "all"
+                            ? "bg-[#172033] text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        Toutes ({INDEPENDENT_BUILDER_BLOCKS.length})
+                      </button>
+                      {INDEPENDENT_BLOCK_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setBlockCategoryFilter(cat)}
+                          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                            blockCategoryFilter === cat
+                              ? "bg-[#9b563e] text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
                         >
-                          <div>
-                            <span className="block text-[10px] font-bold uppercase tracking-wider text-[#9b563e]">
-                              {blk.category}
-                            </span>
-                            <strong className="text-xs text-[#172033]">{blk.label}</strong>
-                            <p className="text-[11px] text-slate-500">{blk.description}</p>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 shrink-0 text-xs"
-                            onClick={() => insertHtmlIntoCanvas(blk.content, blk.label)}
-                          >
-                            + Insérer
-                          </Button>
-                        </div>
+                          {cat}
+                        </button>
                       ))}
                     </div>
 
-                    {/* Blocs réutilisables enregistrés par l’utilisateur entre plusieurs pages */}
-                    <div className="space-y-2 rounded-xl border border-slate-200 bg-[#faf8f5] p-3">
+                    {/* Liste compacte des blocs éditoriaux */}
+                    <div className="space-y-2">
+                      {filteredBlocks.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-600">
+                          <p>Aucun bloc ne correspond à votre filtre actuel.</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 h-7 text-xs"
+                            onClick={() => {
+                              setLibrarySearch("");
+                              setBlockCategoryFilter("all");
+                            }}
+                          >
+                            Réinitialiser la recherche
+                          </Button>
+                        </div>
+                      ) : (
+                        filteredBlocks.map((blk) => (
+                          <div
+                            key={blk.id}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2.5 transition hover:border-[#9b563e]"
+                          >
+                            <div className="min-w-0">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-[#9b563e]">
+                                {blk.category}
+                              </span>
+                              <strong className="block truncate text-xs text-[#172033]">
+                                {blk.label}
+                              </strong>
+                              <p className="line-clamp-2 text-[11px] text-slate-500">
+                                {blk.description}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 shrink-0 border-[#e2dad0] text-xs font-semibold hover:border-[#9b563e] hover:text-[#9b563e]"
+                              onClick={() => insertHtmlIntoCanvas(blk.content, blk.label)}
+                            >
+                              + Insérer
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Blocs réutilisables multi-pages */}
+                    <div className="space-y-2 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
                       <h4 className="text-xs font-bold text-[#172033]">
-                        Réutiliser un bloc dans plusieurs pages ({reusableBlocks.length})
+                        Mes blocs mémorisés ({reusableBlocks.length})
                       </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Mémorisez une section sélectionnée pour la réinsérer sur d’autres pages.
+                      </p>
                       <div className="flex gap-1.5">
                         <input
                           type="text"
@@ -1299,7 +2366,7 @@ export default function IndependentSiteBuilderPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-8 text-xs"
+                          className="h-8 bg-white text-xs"
                           onClick={saveSelectionAsReusableBlock}
                         >
                           Mémoriser
@@ -1326,18 +2393,20 @@ export default function IndependentSiteBuilderPage() {
                   </div>
                 )}
 
-                {/* 3. ONGLET MÉDIAS & TRANSFORMATIONS D’IMAGES */}
+                {/* ESPACE 3 : MÉDIAS & TRANSFORMATIONS D’IMAGES */}
                 {activeLibraryTab === "medias" && (
                   <div className="space-y-4">
-                    <div className="space-y-3 rounded-xl border border-slate-200 bg-[#faf8f5] p-3">
+                    <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
                       <h3 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
                         <RotateCw className="h-4 w-4 text-[#9b563e]" />
-                        Transformations d’images (Rotation, Inclinaison, Retournement, Zoom, Position)
+                        Ajuster l’image (Rotation, Zoom, Inclinaison, Position)
                       </h3>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <label className="block">
-                          <span className="font-semibold">Rotation ({imageTransforms.rotationDeg}°)</span>
+                          <span className="font-semibold">
+                            Rotation ({imageTransforms.rotationDeg}°)
+                          </span>
                           <input
                             type="range"
                             min={-180}
@@ -1353,7 +2422,9 @@ export default function IndependentSiteBuilderPage() {
                           />
                         </label>
                         <label className="block">
-                          <span className="font-semibold">Zoom / Taille ({imageTransforms.scalePercent}%)</span>
+                          <span className="font-semibold">
+                            Zoom / Taille ({imageTransforms.scalePercent}%)
+                          </span>
                           <input
                             type="range"
                             min={25}
@@ -1369,7 +2440,9 @@ export default function IndependentSiteBuilderPage() {
                           />
                         </label>
                         <label className="block">
-                          <span className="font-semibold">Inclinaison X ({imageTransforms.skewXDeg}°)</span>
+                          <span className="font-semibold">
+                            Inclinaison X ({imageTransforms.skewXDeg}°)
+                          </span>
                           <input
                             type="range"
                             min={-45}
@@ -1385,7 +2458,9 @@ export default function IndependentSiteBuilderPage() {
                           />
                         </label>
                         <label className="block">
-                          <span className="font-semibold">Inclinaison Y ({imageTransforms.skewYDeg}°)</span>
+                          <span className="font-semibold">
+                            Inclinaison Y ({imageTransforms.skewYDeg}°)
+                          </span>
                           <input
                             type="range"
                             min={-45}
@@ -1401,7 +2476,9 @@ export default function IndependentSiteBuilderPage() {
                           />
                         </label>
                         <label className="block">
-                          <span className="font-semibold">Position libre X ({imageTransforms.offsetX}px)</span>
+                          <span className="font-semibold">
+                            Décalage X ({imageTransforms.offsetX}px)
+                          </span>
                           <input
                             type="range"
                             min={-200}
@@ -1417,7 +2494,9 @@ export default function IndependentSiteBuilderPage() {
                           />
                         </label>
                         <label className="block">
-                          <span className="font-semibold">Position libre Y ({imageTransforms.offsetY}px)</span>
+                          <span className="font-semibold">
+                            Décalage Y ({imageTransforms.offsetY}px)
+                          </span>
                           <input
                             type="range"
                             min={-200}
@@ -1434,7 +2513,7 @@ export default function IndependentSiteBuilderPage() {
                         </label>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         <Button
                           type="button"
                           size="sm"
@@ -1448,7 +2527,7 @@ export default function IndependentSiteBuilderPage() {
                           }
                         >
                           <FlipHorizontal className="mr-1 h-3.5 w-3.5" />
-                          Retournement H
+                          Miroir H
                         </Button>
                         <Button
                           type="button"
@@ -1463,7 +2542,7 @@ export default function IndependentSiteBuilderPage() {
                           }
                         >
                           <FlipVertical className="mr-1 h-3.5 w-3.5" />
-                          Retournement V
+                          Miroir V
                         </Button>
                         <Button
                           type="button"
@@ -1487,8 +2566,46 @@ export default function IndependentSiteBuilderPage() {
                       </Button>
                     </div>
 
-                    {/* Bibliothèque personnelle de médias du projet */}
-                    <div className="space-y-2.5 rounded-xl border border-slate-200 p-3">
+                    {/* Illustrations prêtes à insérer */}
+                    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                      <h4 className="text-xs font-bold text-[#172033]">
+                        Illustrations prêtes à l’emploi
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {VISUAL_CARD_SAMPLE_IMAGES.map((img) => (
+                          <div
+                            key={img.id}
+                            className="flex flex-col justify-between rounded-lg border border-slate-200 p-2 text-xs"
+                          >
+                            <img
+                              src={img.url}
+                              alt={img.label}
+                              className="h-16 w-full rounded object-cover"
+                            />
+                            <span className="mt-1.5 truncate font-semibold text-[#172033]">
+                              {img.label}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="mt-1.5 h-6 text-[11px]"
+                              onClick={() =>
+                                insertHtmlIntoCanvas(
+                                  `<figure style="margin:0;padding:24px;text-align:center"><img src="${img.url}" alt="${img.label}" style="${buildImageTransformCss(imageTransforms)}" /></figure>`,
+                                  img.label
+                                )
+                              }
+                            >
+                              + Insérer
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Ajout d'une image externe dans la médiathèque du projet */}
+                    <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
                       <h4 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
                         <ImagePlus className="h-4 w-4 text-[#9b563e]" />
                         Médiathèque personnelle du projet
@@ -1504,41 +2621,60 @@ export default function IndependentSiteBuilderPage() {
                         type="text"
                         value={newMediaAlt}
                         onChange={(e) => setNewMediaAlt(e.target.value)}
-                        placeholder="Texte alternatif (accessibilité)"
+                        placeholder="Texte alternatif (important pour le SEO & l’accessibilité)"
                         className="h-8 w-full rounded border border-slate-300 px-2.5 text-xs"
                       />
                       <input
                         type="url"
                         value={newMediaUrl}
                         onChange={(e) => setNewMediaUrl(e.target.value)}
-                        placeholder="URL de l’image (https://...)"
+                        placeholder="Adresse URL de l’image (https://...)"
                         className="h-8 w-full rounded border border-slate-300 px-2.5 text-xs"
                       />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="w-full bg-[#9b563e] text-xs text-white"
-                        disabled={!selectedSiteId || !newMediaUrl.trim()}
-                        onClick={() => {
-                          if (!selectedSiteId) return;
-                          addMediaMutation.mutate({
-                            siteId: selectedSiteId,
-                            label: newMediaLabel || "Média du projet",
-                            altText: newMediaAlt || newMediaLabel || "Image",
-                            url: newMediaUrl.trim(),
-                            transforms: imageTransforms,
-                          });
-                        }}
-                      >
-                        Enregistrer dans la médiathèque du projet
-                      </Button>
+                      <div className="flex gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 flex-1 text-xs"
+                          disabled={!newMediaUrl.trim()}
+                          onClick={() => {
+                            const label = newMediaLabel.trim() || "Image personnalisée";
+                            const alt = newMediaAlt.trim() || label;
+                            insertHtmlIntoCanvas(
+                              `<figure style="margin:0;padding:24px;text-align:center"><img src="${newMediaUrl.trim()}" alt="${alt}" style="${buildImageTransformCss(imageTransforms)}" /></figure>`,
+                              label
+                            );
+                          }}
+                        >
+                          Insérer directement
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 flex-1 bg-[#9b563e] text-xs text-white"
+                          disabled={!selectedSiteId || !newMediaUrl.trim()}
+                          onClick={() => {
+                            if (!selectedSiteId) return;
+                            addMediaMutation.mutate({
+                              siteId: selectedSiteId,
+                              label: newMediaLabel || "Média du projet",
+                              altText: newMediaAlt || newMediaLabel || "Image",
+                              url: newMediaUrl.trim(),
+                              transforms: imageTransforms,
+                            });
+                          }}
+                        >
+                          Enregistrer
+                        </Button>
+                      </div>
 
-                      {mediaQuery.data && mediaQuery.data.length > 0 && (
+                      {mediaQuery.data && mediaQuery.data.length > 0 ? (
                         <div className="mt-2 space-y-1.5">
                           {mediaQuery.data.map((m) => (
                             <div
                               key={m.id}
-                              className="flex items-center justify-between rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                              className="flex items-center justify-between rounded border border-slate-200 bg-[#faf8f5] px-2.5 py-1.5 text-xs"
                             >
                               <span className="truncate font-medium">{m.label}</span>
                               <Button
@@ -1558,18 +2694,22 @@ export default function IndependentSiteBuilderPage() {
                             </div>
                           ))}
                         </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-500">
+                          Aucune image enregistrée dans la médiathèque de ce projet pour le moment.
+                        </p>
                       )}
                     </div>
                   </div>
                 )}
 
-                {/* 4. ONGLET CALQUES */}
+                {/* ESPACE 4 : CALQUES */}
                 {activeLibraryTab === "calques" && (
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       <h3 className="flex items-center gap-1.5 text-xs font-bold text-[#172033]">
                         <Layers className="h-4 w-4 text-[#9b563e]" />
-                        Calques de la page ({layers.length})
+                        Sections de la page ({layers.length})
                       </h3>
                       <Button
                         type="button"
@@ -1582,9 +2722,18 @@ export default function IndependentSiteBuilderPage() {
                       </Button>
                     </div>
                     {layers.length === 0 ? (
-                      <p className="text-xs text-slate-500">
-                        Cliquez sur « Actualiser » ou insérez un bloc pour inspecter l’arborescence des sections.
-                      </p>
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-600">
+                        <p>Aucune section détectée ou l’éditeur est vide.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          onClick={() => setActiveLibraryTab("blocs")}
+                        >
+                          Ajouter un bloc à la page
+                        </Button>
+                      </div>
                     ) : (
                       layers.map((layer, index) => (
                         <div
@@ -1601,23 +2750,23 @@ export default function IndependentSiteBuilderPage() {
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "up")}
-                              className="rounded p-1 hover:bg-slate-100"
-                              title="Monter"
+                              className="rounded p-1 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                              title="Monter la section"
                             >
                               <ArrowUp className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "down")}
-                              className="rounded p-1 hover:bg-slate-100"
-                              title="Descendre"
+                              className="rounded p-1 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                              title="Descendre la section"
                             >
                               <ArrowDown className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "lock")}
-                              className="rounded p-1 hover:bg-slate-100"
+                              className="rounded p-1 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                               title="Verrouiller / Déverrouiller"
                             >
                               {layer.locked ? (
@@ -1629,7 +2778,7 @@ export default function IndependentSiteBuilderPage() {
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "hide")}
-                              className="rounded p-1 hover:bg-slate-100"
+                              className="rounded p-1 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                               title="Masquer / Afficher"
                             >
                               {layer.hidden ? (
@@ -1641,7 +2790,7 @@ export default function IndependentSiteBuilderPage() {
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "duplicate")}
-                              className="rounded p-1 hover:bg-slate-100"
+                              className="rounded p-1 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                               title="Dupliquer la section"
                             >
                               <Copy className="h-3.5 w-3.5" />
@@ -1649,7 +2798,7 @@ export default function IndependentSiteBuilderPage() {
                             <button
                               type="button"
                               onClick={() => handleLayerAction(index, "delete")}
-                              className="rounded p-1 text-rose-600 hover:bg-rose-50"
+                              className="rounded p-1 text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
                               title="Supprimer la section"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1661,301 +2810,310 @@ export default function IndependentSiteBuilderPage() {
                   </div>
                 )}
 
-                {/* 5. ONGLET MODULES FONCTIONNELS */}
+                {/* ESPACE 5 : MODULES FONCTIONNELS */}
                 {activeLibraryTab === "modules" && (
-                  <div className="space-y-2.5">
-                    <p className="text-xs text-slate-600">
-                      Modules fonctionnels prêts à l’emploi (événements, formulaire, galerie, témoignages, membres, actualités avec consentement, annuaire matériel).
-                    </p>
-                    {filteredModules.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
-                        Aucun module ne correspond à « {librarySearch} ».
-                      </p>
-                    ) : filteredModules.map((mod) => (
-                      <div
-                        key={mod.id}
-                        className="rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300"
-                      >
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#9b563e]">
-                          {mod.category}
-                        </span>
-                        <h4 className="mt-0.5 text-xs font-bold text-[#172033]">{mod.label}</h4>
-                        <p className="mt-1 text-[11px] text-slate-500">{mod.description}</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-2.5 h-7 w-full text-xs"
-                          onClick={() => insertHtmlIntoCanvas(mod.html, mod.label)}
-                        >
-                          + Ajouter ce module à la page
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 6. ONGLET SOCLES DE PAGES */}
-                {activeLibraryTab === "socles" && (
-                  <div className="space-y-2.5">
-                    <p className="text-xs text-slate-600">
-                      Structures de page complètes prêtes à personnaliser (Accueil, Association, Famille, Entreprise, Services, Contact, Événements, Équipe, Actualités).
-                    </p>
-                    {filteredSocles.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
-                        Aucun socle ne correspond à « {librarySearch} ».
-                      </p>
-                    ) : filteredSocles.map((socle) => (
-                      <div
-                        key={socle.id}
-                        className="rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300"
-                      >
-                        <div className="flex items-center justify-between">
-                          <strong className="text-xs text-[#172033]">{socle.label}</strong>
-                          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
-                            {socle.defaultSlug}
-                          </code>
-                        </div>
-                        <p className="mt-1 text-[11px] text-slate-500">{socle.description}</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-2.5 h-7 w-full text-xs"
-                          onClick={() => applySocleToCurrentPage(socle.id)}
-                        >
-                          Appliquer ce socle à la page active
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 7. ONGLET MODÈLES DE SITES COMPLETS */}
-                {activeLibraryTab === "modeles" && (
                   <div className="space-y-3">
-                    <p className="text-xs text-slate-600">
-                      Sites multi-pages complets avec identité visuelle, couleurs, typographies, sections et navigation.
-                    </p>
-                    {filteredTemplates.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
-                        Aucun modèle ne correspond à « {librarySearch} ».
-                      </p>
-                    ) : filteredTemplates.map((tpl) => (
-                      <div
-                        key={tpl.id}
-                        className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs"
+                    {/* Filtres par catégorie de module */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setModuleCategoryFilter("all")}
+                        className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                          moduleCategoryFilter === "all"
+                            ? "bg-[#172033] text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <Badge className="bg-[#172033] text-white">{tpl.siteType}</Badge>
-                          <span className="text-xs font-semibold text-[#9b563e]">
-                            {tpl.pages.length} pages incluses
-                          </span>
-                        </div>
-                        <h4 className="mt-2 text-sm font-bold text-[#172033]">{tpl.name}</h4>
-                        <p className="mt-1 text-xs text-slate-600">{tpl.description}</p>
-                        <Button
+                        Tous ({INDEPENDENT_BUILDER_MODULES.length})
+                      </button>
+                      {INDEPENDENT_MODULE_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
                           type="button"
-                          size="sm"
-                          className="mt-3 w-full bg-[#172033] text-xs text-white hover:bg-[#263653]"
-                          onClick={() => applyTemplateToSite(tpl.id)}
+                          onClick={() => setModuleCategoryFilter(cat)}
+                          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                            moduleCategoryFilter === cat
+                              ? "bg-[#7c3f2c] text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
                         >
-                          <Palette className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
-                          Charger ce modèle complet
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Historique des versions & Domaines personnalisés */}
-            <Card className="border-[#e2dad0] bg-white shadow-xs">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-[#172033]">
-                  <History className="h-4 w-4 text-[#9b563e]" />
-                  Versions, Historique & Domaine Personnalisé
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Création d'un point de sauvegarde / version */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Historique des versions du site
-                  </label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      value={versionLabelInput}
-                      onChange={(e) => setVersionLabelInput(e.target.value)}
-                      placeholder="Nom de la version (ex. Validation bureau)"
-                      className="h-8 flex-1 rounded border border-slate-300 px-2 text-xs"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      disabled={!selectedSiteId || createVersionMutation.isPending}
-                      onClick={() => {
-                        if (!selectedSiteId) return;
-                        createVersionMutation.mutate({
-                          siteId: selectedSiteId,
-                          label: versionLabelInput || undefined,
-                        });
-                      }}
-                    >
-                      Créer version
-                    </Button>
-                  </div>
-                  {versionsQuery.data && versionsQuery.data.length > 0 && (
-                    <div className="max-h-32 space-y-1 overflow-y-auto pt-1">
-                      {versionsQuery.data.map((ver) => (
-                        <div
-                          key={ver.id}
-                          className="flex items-center justify-between rounded border border-slate-200 bg-[#faf8f5] px-2.5 py-1 text-xs"
-                        >
-                          <span>
-                            <strong>v{ver.versionNumber}</strong> — {ver.label}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!selectedSiteId) return;
-                              restoreVersionMutation.mutate({
-                                siteId: selectedSiteId,
-                                versionId: ver.id,
-                              });
-                            }}
-                            className="font-semibold text-[#9b563e] hover:underline"
-                          >
-                            Restaurer
-                          </button>
-                        </div>
+                          {cat}
+                        </button>
                       ))}
                     </div>
-                  )}
-                </div>
 
-                {/* Gestion des domaines personnalisés indépendants */}
-                <div className="space-y-2 border-t border-slate-200 pt-3">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
-                    Domaine personnalisé (indépendant des boutiques)
-                  </label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      value={customDomainInput}
-                      onChange={(e) => setCustomDomainInput(e.target.value)}
-                      placeholder="Ex. association-ath-vahloul.org"
-                      className="h-8 flex-1 rounded border border-slate-300 px-2 text-xs"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      disabled={!selectedSiteId || !customDomainInput.trim()}
-                      onClick={() => {
-                        if (!selectedSiteId) return;
-                        addDomainMutation.mutate({
-                          siteId: selectedSiteId,
-                          hostname: customDomainInput.trim(),
-                        });
-                      }}
-                    >
-                      Rattacher
-                    </Button>
-                  </div>
-                  {domainsQuery.data && domainsQuery.data.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      {domainsQuery.data.map((dom) => (
-                        <div
-                          key={dom.id}
-                          className="rounded-lg border border-slate-200 bg-[#faf8f5] p-2 text-xs"
+                    {filteredModules.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-600">
+                        <p>Aucun module ne correspond à votre recherche.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          onClick={() => {
+                            setLibrarySearch("");
+                            setModuleCategoryFilter("all");
+                          }}
                         >
-                          <div className="flex items-center justify-between">
-                            <strong>{dom.hostname}</strong>
+                          Afficher tous les modules
+                        </Button>
+                      </div>
+                    ) : (
+                      filteredModules.map((mod) => (
+                        <div
+                          key={mod.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-[#9b563e]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#9b563e]">
+                              {mod.category}
+                            </span>
                             <Badge variant="outline" className="text-[10px]">
-                              {dom.verificationStatus === "active" ? "Actif & SSL OK" : "DNS TXT requis"}
+                              Module fonctionnel
                             </Badge>
                           </div>
-                          <p className="mt-1 font-mono text-[10px] text-slate-600">
-                            TXT {dom.dnsRecordName} = {dom.dnsRecordValue}
+                          <h4 className="mt-0.5 text-xs font-bold text-[#172033]">{mod.label}</h4>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                            {mod.description}
                           </p>
-                          <div className="mt-1.5 flex gap-2">
-                            {dom.verificationStatus !== "active" && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!selectedSiteId) return;
-                                  verifyDomainMutation.mutate({
-                                    siteId: selectedSiteId,
-                                    domainId: dom.id,
-                                  });
-                                }}
-                                className="font-semibold text-emerald-700 hover:underline"
-                              >
-                                Vérifier DNS
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!selectedSiteId) return;
-                                removeDomainMutation.mutate({
-                                  siteId: selectedSiteId,
-                                  domainId: dom.id,
-                                });
-                              }}
-                              className="text-rose-600 hover:underline"
-                            >
-                              Supprimer
-                            </button>
-                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2.5 h-7 w-full border-[#e2dad0] text-xs font-semibold hover:border-[#9b563e] hover:text-[#9b563e]"
+                            onClick={() => insertHtmlIntoCanvas(mod.html, mod.label)}
+                          >
+                            + Ajouter ce module à la page
+                          </Button>
                         </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* ESPACE 6 : SOCLES DE PAGES (Chantiers 2 & 4) */}
+                {activeLibraryTab === "socles" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSocleTypeFilter("all")}
+                        className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                          socleTypeFilter === "all"
+                            ? "bg-[#172033] text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        Tous ({INDEPENDENT_PAGE_SOCLES.length})
+                      </button>
+                      {INDEPENDENT_SITE_TYPE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setSocleTypeFilter(opt.value)}
+                          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                            socleTypeFilter === opt.value
+                              ? "bg-teal-800 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
                       ))}
                     </div>
-                  )}
-                </div>
+
+                    {filteredSocles.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-600">
+                        <p>Aucun socle de page ne correspond à ce filtre.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          onClick={() => {
+                            setLibrarySearch("");
+                            setSocleTypeFilter("all");
+                          }}
+                        >
+                          Afficher tous les socles
+                        </Button>
+                      </div>
+                    ) : (
+                      filteredSocles.map((socle) => (
+                        <div
+                          key={socle.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-teal-700"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="text-xs text-[#172033]">{socle.label}</strong>
+                            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">
+                              {socle.defaultSlug}
+                            </code>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                            {socle.description}
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2.5 h-7 w-full text-xs font-semibold"
+                            onClick={() => requestApplySocleToCurrentPage(socle.id)}
+                          >
+                            Remplacer la page active par ce socle
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* ESPACE 7 : 10 MODÈLES DE SITES COMPLETS (Chantiers 2 & 4) */}
+                {activeLibraryTab === "modeles" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setTemplateTypeFilter("all")}
+                        className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                          templateTypeFilter === "all"
+                            ? "bg-[#172033] text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        Tous ({INDEPENDENT_SITE_TEMPLATES.length})
+                      </button>
+                      {INDEPENDENT_SITE_TYPE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setTemplateTypeFilter(opt.value)}
+                          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                            templateTypeFilter === opt.value
+                              ? "bg-[#9b563e] text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {filteredTemplates.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-600">
+                        <p>Aucun modèle ne correspond à ce filtre.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          onClick={() => {
+                            setLibrarySearch("");
+                            setTemplateTypeFilter("all");
+                          }}
+                        >
+                          Afficher les {INDEPENDENT_SITE_TEMPLATES.length} modèles
+                        </Button>
+                      </div>
+                    ) : (
+                      filteredTemplates.map((tpl) => (
+                        <div
+                          key={tpl.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-[#172033]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge className="bg-[#172033] text-white">{tpl.siteType}</Badge>
+                            <span className="text-xs font-semibold text-[#9b563e]">
+                              {tpl.pages.length} pages · Menu inclus
+                            </span>
+                          </div>
+                          <h4 className="mt-2 text-sm font-bold text-[#172033]">{tpl.name}</h4>
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                            {tpl.description}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {tpl.pages.map((p) => (
+                              <span
+                                key={p.id}
+                                className="rounded bg-[#faf8f5] px-1.5 py-0.5 text-[10px] text-slate-600"
+                              >
+                                {p.title}
+                              </span>
+                            ))}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="mt-3 w-full bg-[#172033] text-xs font-semibold text-white hover:bg-[#263653]"
+                            onClick={() => requestApplyTemplateToSite(tpl.id)}
+                          >
+                            <Palette className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
+                            Utiliser ce modèle complet
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
-          </div>
+          </aside>
 
-          {/* Zone centrale/droite : Éditeur Visuel GrapesJS complet */}
-          <div className="lg:col-span-8">
+          {/* ZONE 2 & ZONE 3 — CANVAS CENTRAL GRAPESJS + INSPECTEUR (SEO, PUBLICATION & DOMAINE, VERSIONS) */}
+          <div className="space-y-5 xl:col-span-8">
+            {/* ZONE 2 — CANVAS VISUEL GRAPESJS */}
             <Card className="border-[#e2dad0] bg-white shadow-xs">
               <CardHeader className="border-b border-slate-100 pb-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <CardTitle className="text-base text-[#172033]">
-                      Éditeur Visuel — {siteTitle} ({activePage?.title})
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#9b563e]">
+                        2. Canevas visuel de la page
+                      </span>
+                      <Badge variant="outline" className="border-[#e2dad0] bg-[#faf8f5] text-xs">
+                        {currentDevicePreset.label} ({currentDevicePreset.shortLabel})
+                      </Badge>
+                    </div>
+                    <CardTitle className="mt-0.5 text-base text-[#172033]">
+                      {siteTitle} — Page « {activePage?.title} »
                     </CardTitle>
-                    <CardDescription>
-                      Cliquez sur n’importe quel texte, titre, bouton ou image pour le modifier directement. Mode : {currentViewport.label} ({currentViewport.widthCss}).
+                    <CardDescription className="text-xs">
+                      Double-cliquez sur un texte ou une image dans la page pour le modifier directement, ou utilisez la bibliothèque à gauche.
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="border-slate-300 text-xs">
-                      Page : {activePage?.slug}
-                    </Badge>
+
+                  {/* Navigation directe entre les pages du site au-dessus du canvas */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {pages.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPage(p.id)}
+                        className={`rounded-md px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                          activePage?.id === p.id
+                            ? "bg-[#172033] text-white"
+                            : "bg-[#faf8f5] text-slate-700 hover:bg-[#ece5dc]"
+                        }`}
+                      >
+                        {p.parentPageId ? `↳ ${p.title}` : p.title}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-3">
+
+              <CardContent className="bg-[#efebe4] p-3 md:p-4">
                 <div
-                  className="mx-auto overflow-hidden rounded-xl border border-slate-300 bg-white shadow-inner transition-all"
+                  className="mx-auto overflow-x-hidden rounded-xl border border-slate-300 bg-white shadow-md transition-all motion-reduce:transition-none"
                   style={{
-                    width: currentViewport.widthCss,
-                    maxWidth: "100%",
+                    width: currentDevicePreset.widthCss,
+                    maxWidth: `${currentDevicePreset.maxWidthPx}px`,
                   }}
                 >
                   <GjsEditor
                     grapesjs={grapesjs}
                     options={{
-                      height: "760px",
+                      height: "700px",
                       storageManager: false,
                       noticeOnUnload: false,
                     }}
@@ -1978,12 +3136,616 @@ export default function IndependentSiteBuilderPage() {
                       });
                       if (activePage) {
                         editor.setComponents(activePage.html);
-                        editor.setStyle(activePage.css);
+                        editor.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
                       }
+                      editor.on("component:update", () => {
+                        setHasUnsavedChanges(true);
+                      });
+                      editor.on("component:add", () => {
+                        setHasUnsavedChanges(true);
+                        refreshLayersFromEditor(editor);
+                      });
+                      editor.on("component:remove", () => {
+                        setHasUnsavedChanges(true);
+                        refreshLayersFromEditor(editor);
+                      });
                       refreshLayersFromEditor(editor);
                     }}
                   />
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* ZONE 3 — RÉGLAGES & SEO (Chantier 8), PUBLICATION & DOMAINE (Chantier 7), VERSIONS & HISTORIQUE (Chantier 6) */}
+            <Card className="border-[#e2dad0] bg-white shadow-xs">
+              <CardHeader className="border-b border-slate-100 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#9b563e]">
+                      3. Réglages, Référencement (SEO), Publication & Historique
+                    </span>
+                    <CardTitle className="mt-0.5 text-base text-[#172033]">
+                      Paramètres de la page « {activePage?.title} » et du site « {siteTitle} »
+                    </CardTitle>
+                  </div>
+
+                  {/* Onglets de la zone 3 */}
+                  <div
+                    role="tablist"
+                    aria-label="Réglages, Publication et Versions"
+                    className="flex flex-wrap gap-1.5 rounded-lg border border-[#e2dad0] bg-[#faf8f5] p-1"
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeInspectorTab === "seo"}
+                      onClick={() => setActiveInspectorTab("seo")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        activeInspectorTab === "seo"
+                          ? "bg-[#172033] text-white"
+                          : "text-slate-700 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <Settings2 className="h-3.5 w-3.5 text-[#f5b98f]" />
+                      Réglages & SEO de la page
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeInspectorTab === "publication"}
+                      onClick={() => setActiveInspectorTab("publication")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        activeInspectorTab === "publication"
+                          ? "bg-[#172033] text-white"
+                          : "text-slate-700 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <Globe className="h-3.5 w-3.5 text-[#f5b98f]" />
+                      Publication & Domaine personnalisé
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeInspectorTab === "versions"}
+                      onClick={() => setActiveInspectorTab("versions")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        activeInspectorTab === "versions"
+                          ? "bg-[#172033] text-white"
+                          : "text-slate-700 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <History className="h-3.5 w-3.5 text-[#f5b98f]" />
+                      Versions & Sauvegardes ({versionsQuery.data?.length ?? 0})
+                    </button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-4">
+                {/* ONGLET 3A : RÉGLAGES & SEO DE LA PAGE ACTIVE (Chantier 8) */}
+                {activeInspectorTab === "seo" && activePage && (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                        Informations & Référencement Google (SEO)
+                      </h3>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Nom de la page
+                          </label>
+                          <input
+                            type="text"
+                            value={activePage.title}
+                            onChange={(e) => updateActivePageFields({ title: e.target.value })}
+                            className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Slug / Chemin URL
+                          </label>
+                          <input
+                            type="text"
+                            value={activePage.slug}
+                            onChange={(e) =>
+                              updateActivePageFields({
+                                slug: normalizeIndependentPageSlug(e.target.value),
+                              })
+                            }
+                            className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Titre SEO (affiché dans Google et l’onglet du navigateur)
+                          </label>
+                          <span className="text-[11px] text-slate-500">
+                            {(activePage.seoTitle || "").length} / 60 conseillés
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          value={activePage.seoTitle}
+                          onChange={(e) => updateActivePageFields({ seoTitle: e.target.value })}
+                          placeholder={`${activePage.title} | ${siteTitle}`}
+                          className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Description SEO (résumé sous le lien dans Google)
+                          </label>
+                          <span className="text-[11px] text-slate-500">
+                            {(activePage.seoDescription || "").length} / 160 conseillés
+                          </span>
+                        </div>
+                        <textarea
+                          rows={3}
+                          value={activePage.seoDescription}
+                          onChange={(e) =>
+                            updateActivePageFields({ seoDescription: e.target.value })
+                          }
+                          placeholder="Décrivez en une ou deux phrases claires le sujet de cette page…"
+                          className="mt-1 w-full rounded-md border border-slate-300 p-2 text-xs"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Image de partage social (OpenGraph)
+                          </label>
+                          <input
+                            type="text"
+                            value={activePage.socialImageUrl || ""}
+                            onChange={(e) =>
+                              updateActivePageFields({ socialImageUrl: e.target.value })
+                            }
+                            placeholder="https://... (optionnel)"
+                            className="mt-1 h-8 w-full rounded-md border border-slate-300 px-2.5 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Visibilité de la page
+                          </label>
+                          <select
+                            value={activePage.visibility}
+                            onChange={(e) =>
+                              updateActivePageFields({
+                                visibility: e.target.value as "public" | "members" | "private",
+                              })
+                            }
+                            className="mt-1 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs"
+                          >
+                            <option value="public">Publique (tout le monde)</option>
+                            <option value="members">Membres uniquement</option>
+                            <option value="private">Privée (brouillon masqué)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-4 pt-1">
+                        <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={activePage.indexable !== false}
+                            onChange={(e) =>
+                              updateActivePageFields({ indexable: e.target.checked })
+                            }
+                          />
+                          Autoriser Google à indexer cette page (Indexable)
+                        </label>
+                        <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={activePage.showInMenu}
+                            onChange={(e) =>
+                              updateActivePageFields({ showInMenu: e.target.checked })
+                            }
+                          />
+                          Afficher dans le menu du site
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Aperçu Google & Audit des textes alternatifs d'images */}
+                    <div className="space-y-4">
+                      {seoPreview && (
+                        <div className="rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#172033]">
+                              Aperçu dans les résultats Google
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={
+                                seoPreview.robotsDirective === "index, follow"
+                                  ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-800"
+                                  : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
+                              }
+                            >
+                              {seoPreview.robotsDirective === "index, follow"
+                                ? "Indexable"
+                                : "Non indexée (noindex)"}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 shadow-2xs">
+                            <p className="truncate text-xs text-emerald-700">
+                              {seoPreview.canonicalUrl}
+                            </p>
+                            <p className="mt-0.5 truncate text-sm font-semibold text-[#1a0dab]">
+                              {seoPreview.displayTitle}
+                            </p>
+                            <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                              {seoPreview.displayDescription}
+                            </p>
+                          </div>
+                          {seoPreview.recommendations.length > 0 && (
+                            <ul className="mt-2 space-y-1 text-[11px] text-amber-900">
+                              {seoPreview.recommendations.map((rec, i) => (
+                                <li key={i}>• {rec}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Édition rapide du texte alternatif (alt) des images de la page active */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-[#172033]">
+                            Texte alternatif (alt) des images de la page ({activePageImages.length})
+                          </h4>
+                          <span className="text-[11px] text-slate-500">Accessibilité & SEO</span>
+                        </div>
+                        {activePageImages.length === 0 ? (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Aucune balise image détectée sur cette page pour le moment.
+                          </p>
+                        ) : (
+                          <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+                            {activePageImages.map((img) => (
+                              <div
+                                key={`${img.index}-${img.src.slice(0, 24)}`}
+                                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-[#faf8f5] p-2 text-xs"
+                              >
+                                <img
+                                  src={img.src}
+                                  alt={img.alt || "Aperçu"}
+                                  className="h-9 w-12 shrink-0 rounded border border-slate-200 bg-white object-cover"
+                                />
+                                <div className="flex-1">
+                                  <input
+                                    type="text"
+                                    value={img.alt}
+                                    onChange={(e) =>
+                                      handleUpdateImageAltOnActivePage(img.index, e.target.value)
+                                    }
+                                    placeholder="Décrivez cette image pour les moteurs et lecteurs d’écran…"
+                                    aria-label={`Texte alternatif de l'image ${img.index + 1}`}
+                                    className="h-7 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ONGLET 3B : PUBLICATION & DOMAINE PERSONNALISÉ (Chantier 7) */}
+                {activeInspectorTab === "publication" && (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {/* Étapes 1 & 2 : Aperçu et Publication du site */}
+                    <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Étape 1 & 2 — Vérifier l’aperçu puis publier
+                        </h3>
+                        <Badge
+                          variant="outline"
+                          className={
+                            siteStatus === "published"
+                              ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                              : "border-amber-400 bg-amber-50 text-amber-950"
+                          }
+                        >
+                          {siteStatus === "published" ? "Site en ligne (Publié)" : "En brouillon"}
+                        </Badge>
+                      </div>
+
+                      <p className="text-xs text-slate-600">
+                        Tant que votre site est en <strong>Brouillon</strong>, vos modifications restent privées dans l’éditeur. Lorsque vous cliquez sur <strong>Publier le site</strong>, la version actuelle devient visible publiquement.
+                      </p>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                        <p className="font-semibold text-[#172033]">Adresses du site :</p>
+                        <p className="mt-1 text-slate-600">
+                          • Aperçu multi-écran :{" "}
+                          <code className="text-[#9b563e]">
+                            /constructeur-sites/apercu/{siteSlug}
+                          </code>
+                        </p>
+                        <p className="mt-0.5 text-slate-600">
+                          • Adresse publique :{" "}
+                          <code className="text-emerald-700">/sites/{siteSlug}</code>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Link
+                          href={`/constructeur-sites/apercu/${
+                            siteSlug || "association-familiale-ath-vahloul"
+                          }`}
+                        >
+                          <Button type="button" variant="outline" size="sm" className="text-xs">
+                            <Eye className="mr-1.5 h-3.5 w-3.5" />
+                            1. Ouvrir l’aperçu complet
+                          </Button>
+                        </Link>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="bg-[#172033] text-xs text-white hover:bg-[#24324f]"
+                          onClick={requestPublishCurrentSite}
+                          disabled={isBusySaving}
+                        >
+                          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
+                          2. Publier le site maintenant
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Étape 3 : Domaine personnalisé & Vérification DNS TXT réelle */}
+                    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                          Étape 3 — Domaine personnalisé & DNS TXT
+                        </h3>
+                        <Badge variant="outline" className="text-[10px]">
+                          {domainsQuery.data && domainsQuery.data.length > 0
+                            ? `${domainsQuery.data.length} domaine(s)`
+                            : "Domaine non configuré"}
+                        </Badge>
+                      </div>
+
+                      <p className="text-xs text-slate-600">
+                        Rattachez votre propre nom de domaine (ex.{" "}
+                        <code>association-ath-vahloul.org</code>). Un domaine n’est jamais marqué actif sans preuve réelle de l’enregistrement DNS TXT.
+                      </p>
+
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={customDomainInput}
+                          onChange={(e) => setCustomDomainInput(e.target.value)}
+                          placeholder="Ex. association-ath-vahloul.org"
+                          className="h-8 flex-1 rounded border border-slate-300 px-2.5 text-xs"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
+                          disabled={!selectedSiteId || !customDomainInput.trim()}
+                          onClick={() => {
+                            if (!selectedSiteId) return;
+                            addDomainMutation.mutate({
+                              siteId: selectedSiteId,
+                              hostname: customDomainInput.trim(),
+                            });
+                          }}
+                        >
+                          Rattacher ce domaine
+                        </Button>
+                      </div>
+
+                      {!selectedSiteId && (
+                        <p className="text-[11px] text-amber-800">
+                          Enregistrez d’abord votre site une première fois pour rattacher un nom de domaine personnalisé.
+                        </p>
+                      )}
+
+                      {domainsQuery.data && domainsQuery.data.length > 0 ? (
+                        <div className="space-y-2 pt-1">
+                          {domainsQuery.data.map((dom) => {
+                            const statusLabel =
+                              dom.verificationStatus === "active" && dom.sslStatus === "active"
+                                ? "SSL actif"
+                                : dom.verificationStatus === "verified"
+                                  ? "Vérifié (SSL en attente)"
+                                  : "En attente de DNS TXT";
+                            return (
+                              <div
+                                key={dom.id}
+                                className="rounded-lg border border-slate-200 bg-[#faf8f5] p-3 text-xs"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <strong className="text-[#172033]">{dom.hostname}</strong>
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      dom.verificationStatus === "verified" ||
+                                      dom.verificationStatus === "active"
+                                        ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                                        : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
+                                    }
+                                  >
+                                    {statusLabel}
+                                  </Badge>
+                                </div>
+
+                                <div className="mt-2 rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-700">
+                                  <p className="font-semibold text-[#172033]">
+                                    Instructions DNS simples (chez votre bureau d’enregistrement) :
+                                  </p>
+                                  <p className="mt-1">
+                                    1. Créez un enregistrement de type <strong>TXT</strong>
+                                  </p>
+                                  <p>
+                                    2. Nom / Hôte :{" "}
+                                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
+                                      {dom.dnsRecordName}
+                                    </code>
+                                  </p>
+                                  <p>
+                                    3. Valeur :{" "}
+                                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
+                                      {dom.dnsRecordValue}
+                                    </code>
+                                  </p>
+                                </div>
+
+                                <div className="mt-2 flex items-center gap-3">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 border-emerald-600 bg-white text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                                    disabled={verifyDomainMutation.isPending}
+                                    onClick={() => {
+                                      if (!selectedSiteId) return;
+                                      verifyDomainMutation.mutate({
+                                        siteId: selectedSiteId,
+                                        domainId: dom.id,
+                                      });
+                                    }}
+                                  >
+                                    Vérifier DNS maintenant
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!selectedSiteId) return;
+                                      setPendingConfirmAction({
+                                        title: `Supprimer le domaine ${dom.hostname} ?`,
+                                        description: `Le domaine personnalisé ${dom.hostname} sera détaché de ce site.`,
+                                        confirmLabel: "Supprimer le domaine",
+                                        variant: "danger",
+                                        onConfirm: () =>
+                                          removeDomainMutation.mutate({
+                                            siteId: selectedSiteId,
+                                            domainId: dom.id,
+                                          }),
+                                      });
+                                    }}
+                                    className="text-xs font-semibold text-rose-600 hover:underline"
+                                  >
+                                    Retirer ce domaine
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
+                          Aucun domaine personnalisé rattaché pour le moment (état :{" "}
+                          <strong>Domaine non configuré</strong>). Votre site fonctionne déjà sur son adresse standard <code>/sites/{siteSlug}</code>.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ONGLET 3C : VERSIONS & HISTORIQUE (Chantier 6) */}
+                {activeInspectorTab === "versions" && (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                        Créer un point de sauvegarde nommé
+                      </h3>
+                      <p className="text-xs text-slate-600">
+                        Créez une version numérotée avant d’effectuer des changements importants afin de pouvoir revenir en arrière à tout moment.
+                      </p>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={versionLabelInput}
+                          onChange={(e) => setVersionLabelInput(e.target.value)}
+                          placeholder="Nom de la version (ex. Avant refonte page accueil)"
+                          className="h-8 flex-1 rounded border border-slate-300 bg-white px-2.5 text-xs"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 bg-[#172033] text-xs text-white"
+                          disabled={!selectedSiteId || createVersionMutation.isPending}
+                          onClick={() => {
+                            if (!selectedSiteId) return;
+                            createVersionMutation.mutate({
+                              siteId: selectedSiteId,
+                              label: versionLabelInput || undefined,
+                            });
+                          }}
+                        >
+                          Créer une version
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                        Historique des versions du site ({versionsQuery.data?.length ?? 0})
+                      </h3>
+                      {versionsQuery.data && versionsQuery.data.length > 0 ? (
+                        <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+                          {versionsQuery.data.map((ver) => (
+                            <div
+                              key={ver.id}
+                              className="flex items-center justify-between rounded-lg border border-slate-200 bg-[#faf8f5] px-3 py-2 text-xs"
+                            >
+                              <div>
+                                <strong className="text-[#172033]">v{ver.versionNumber}</strong> —{" "}
+                                <span>{ver.label}</span>
+                                <span className="ml-2 text-[10px] text-slate-500">
+                                  ({new Date(ver.createdAt).toLocaleDateString("fr-FR")})
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs font-semibold text-[#9b563e]"
+                                onClick={() => {
+                                  if (!selectedSiteId) return;
+                                  setPendingConfirmAction({
+                                    title: `Restaurer la version v${ver.versionNumber} (« ${ver.label} ») ?`,
+                                    description:
+                                      "Les pages actuelles seront remplacées par celles enregistrées dans cette version (une nouvelle entrée d’historique sera également créée).",
+                                    confirmLabel: "Restaurer cette version",
+                                    variant: "primary",
+                                    onConfirm: () =>
+                                      restoreVersionMutation.mutate({
+                                        siteId: selectedSiteId,
+                                        versionId: ver.id,
+                                      }),
+                                  });
+                                }}
+                              >
+                                Restaurer
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Enregistrez votre projet pour générer automatiquement la version initiale v1.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
