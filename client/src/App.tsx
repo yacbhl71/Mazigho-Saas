@@ -127,6 +127,8 @@ const LegalNotice = lazy(() => import("./pages/LegalNotice"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
 const ShippingReturns = lazy(() => import("./pages/ShippingReturns"));
+const IndependentSiteBuilderPage = lazy(() => import("./pages/site-builder/IndependentSiteBuilderPage"));
+const IndependentSitePublicPreviewPage = lazy(() => import("./pages/site-builder/IndependentSitePublicPreviewPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function ScrollToTop() {
@@ -398,18 +400,27 @@ function Router() {
   const isStudioHost = currentHostname === "studio.mazigho.com" || currentHostname === "studio.mazigho.ch";
   const isSaasLandingHost = currentHostname === "pro.mazigho.com" || currentHostname === "pro.mazigho.ch";
   const isPrimaryMazighoHost = currentHostname === "mazigho.ch" || currentHostname === "www.mazigho.ch";
-  const isPublicSaasLanding = path === "/mazigho-saas" || path.startsWith("/creation-boutique") || isSaasLandingHost;
+  const isPublicSaasLanding =
+    path === "/mazigho-saas" ||
+    path.startsWith("/creation-boutique") ||
+    path === "/constructeur-sites" ||
+    path.startsWith("/constructeur-sites/") ||
+    path.startsWith("/sites/") ||
+    isSaasLandingHost;
   const isPrivateSetupOwnerPanel = typeof window !== "undefined" && isPrivateSetupOwnerPanelPath(path, window.location.search);
   const STAFF_ROLES = ["admin", "catalog_editor", "order_operator", "support_agent"];
   const isStaff = !!user && STAFF_ROLES.includes((user as any).role);
   const isSupportImpersonating = Boolean((user as any)?.supportImpersonation);
   const isExemptPath =
     path.startsWith("/admin") ||
+    path === "/constructeur-sites" ||
+    path.startsWith("/constructeur-sites/") ||
+    path.startsWith("/sites/") ||
     ["/login", "/register", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/activer-compte"].includes(path);
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const forcePreview = maintenancePreview?.get("preview_maintenance") === "1";
   const forceStoreMaintenancePreview = maintenancePreview?.get("preview_store_maintenance") === "1";
-  const publishedPathEligible = path !== "/" && !path.startsWith("/admin") && !path.startsWith("/api") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+  const publishedPathEligible = path !== "/" && !path.startsWith("/admin") && !path.startsWith("/api") && !path.startsWith("/constructeur-sites") && !path.startsWith("/sites/") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
   const publishedPathQuery = trpc.design.getPublishedBuilder.useQuery({ path }, { enabled: publishedPathEligible, retry: false, refetchOnWindowFocus: false });
 
   // The Studio hostname is an operator-only front door. It keeps the main
@@ -477,6 +488,9 @@ function Router() {
       <Suspense fallback={null}>
         <Switch>
       <Route path={"/"} component={isSaasLandingHost ? MazighoSaasLanding : Home} />
+      <Route path={"/constructeur-sites/apercu/:slug"} component={IndependentSitePublicPreviewPage} />
+      <Route path={"/constructeur-sites"} component={IndependentSiteBuilderPage} />
+      <Route path={"/sites/:slug"} component={IndependentSitePublicPreviewPage} />
       <Route path={"/mazigho-saas"} component={MazighoSaasLanding} />
       <Route path={"/creation-boutique"} component={BoutiqueKeyInHandLanding} />
       <Route path={"/creation-boutique/contact"} component={KeyInHandContactPage} />

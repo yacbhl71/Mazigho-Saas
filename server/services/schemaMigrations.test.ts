@@ -136,4 +136,16 @@ describe("deployment schema migrations", () => {
     expect(migration).toContain("ADD COLUMN `projectMode` varchar(24) NOT NULL DEFAULT 'independent'");
     expect(migration).not.toMatch(/DROP|TRUNCATE|DELETE/i);
   });
+
+  it("registers the isolated independent site builder tables without storeId coupling", () => {
+    const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
+    const migration = worktreeFile("drizzle/0063_independent_site_builder.sql");
+
+    expect(runner).toContain('["0063_independent_site_builder", "drizzle/0063_independent_site_builder.sql"]');
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSites`");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteVersions`");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteMedia`");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteDomains`");
+    expect(migration).not.toMatch(/`storeId`\s+int/i);
+  });
 });

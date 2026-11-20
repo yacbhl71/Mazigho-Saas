@@ -1170,3 +1170,83 @@ export const returnRequestEvents = mysqlTable("returnRequestEvents", {
 
 export type ReturnRequestEvent = typeof returnRequestEvents.$inferSelect;
 export type InsertReturnRequestEvent = typeof returnRequestEvents.$inferInsert;
+
+// ============================================================================
+// CONSTRUCTEUR DE SITES INTERNET INDÉPENDANT (ISOLÉ DE STUDIO MAZIGHO)
+// Aucune colonne storeId : ce produit fonctionne 100 % sans boutique e-commerce.
+// ============================================================================
+
+export const independentSites = mysqlTable("independentSites", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").notNull(),
+  slug: varchar("slug", { length: 96 }).notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  siteType: varchar("siteType", { length: 32 }).default("vitrine").notNull(),
+  status: mysqlEnum("status", ["draft", "published", "archived"]).default("draft").notNull(),
+  templateId: varchar("templateId", { length: 80 }),
+  themeJson: text("themeJson").notNull(),
+  navigationJson: mediumtext("navigationJson").notNull(),
+  pagesJson: mediumtext("pagesJson").notNull(),
+  reusableBlocksJson: mediumtext("reusableBlocksJson").notNull(),
+  publishedSnapshotJson: mediumtext("publishedSnapshotJson"),
+  publishedAt: timestamp("publishedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  slugUnique: uniqueIndex("independent_sites_slug_unique").on(table.slug),
+  ownerStatusIndex: index("independent_sites_owner_status_updated_idx").on(table.ownerUserId, table.status, table.updatedAt),
+}));
+
+export type IndependentSiteRow = typeof independentSites.$inferSelect;
+export type InsertIndependentSiteRow = typeof independentSites.$inferInsert;
+
+export const independentSiteVersions = mysqlTable("independentSiteVersions", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  versionNumber: int("versionNumber").notNull(),
+  label: varchar("label", { length: 160 }).notNull(),
+  snapshotJson: mediumtext("snapshotJson").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  siteOwnerVersionIndex: index("independent_site_versions_site_owner_idx").on(table.siteId, table.ownerUserId, table.versionNumber),
+}));
+
+export type IndependentSiteVersionRow = typeof independentSiteVersions.$inferSelect;
+export type InsertIndependentSiteVersionRow = typeof independentSiteVersions.$inferInsert;
+
+export const independentSiteMedia = mysqlTable("independentSiteMedia", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  label: varchar("label", { length: 160 }).notNull(),
+  altText: varchar("altText", { length: 240 }).notNull(),
+  url: mediumtext("url").notNull(),
+  mimeType: varchar("mimeType", { length: 64 }).default("image/svg+xml").notNull(),
+  transformsJson: text("transformsJson").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  siteOwnerCreatedIndex: index("independent_site_media_site_owner_idx").on(table.siteId, table.ownerUserId, table.createdAt),
+}));
+
+export type IndependentSiteMediaRow = typeof independentSiteMedia.$inferSelect;
+export type InsertIndependentSiteMediaRow = typeof independentSiteMedia.$inferInsert;
+
+export const independentSiteDomains = mysqlTable("independentSiteDomains", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  ownerUserId: int("ownerUserId").notNull(),
+  hostname: varchar("hostname", { length: 253 }).notNull(),
+  verificationStatus: mysqlEnum("verificationStatus", ["pending_dns", "verified", "active", "failed"]).default("pending_dns").notNull(),
+  verificationToken: varchar("verificationToken", { length: 96 }).notNull(),
+  sslStatus: mysqlEnum("sslStatus", ["pending", "active"]).default("pending").notNull(),
+  isPrimary: int("isPrimary").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  hostnameUnique: uniqueIndex("independent_site_domains_hostname_unique").on(table.hostname),
+  siteOwnerIndex: index("independent_site_domains_site_owner_idx").on(table.siteId, table.ownerUserId),
+}));
+
+export type IndependentSiteDomainRow = typeof independentSiteDomains.$inferSelect;
+export type InsertIndependentSiteDomainRow = typeof independentSiteDomains.$inferInsert;

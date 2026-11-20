@@ -40,12 +40,13 @@ import { spinToWinRouter } from "./spinToWinRouter";
 import { visualSearchRouter } from "./visualSearchRouter";
 import { shoppableStoriesRouter } from "./shoppableStoriesRouter";
 import { productCompareRouter } from "./productCompareRouter";
+import { isolatedSiteBuilderRouter } from "./isolatedSiteBuilderRouter";
 import { DEFAULT_STORE_MAINTENANCE_MODE } from "../shared/storeMaintenanceMode";
 import { orderBundleProducts } from "../shared/storeProductBundles";
 import { callPaymentService } from "./paymentServiceProxy";
 
 type PublicProductLocale = "fr" | "de" | "it" | "en" | "es" | "nl" | "ar";
-const publicProductLocales: PublicProductLocale[] = ["fr", "de", "it", "en", "es", "nl", "ar"];
+const publicProductLocales: PublicProductLocale[] = ["fr", "de", "it" , "en", "es", "nl", "ar"];
 
 const storefrontProcedure = publicProcedure.use(async ({ ctx, next }) => {
   if (!ctx.store) {
@@ -98,6 +99,7 @@ export const appRouter = router({
   shop: shopRouter,
   auth: authRouter,
   owner: ownerRouter,
+  independentSiteBuilder: isolatedSiteBuilderRouter,
   // Authenticated prospective owners can submit a preparation request only.
   // This router never provisions a store, assigns a plan or starts billing.
   storeAcquisition: storeAcquisitionRouter,
