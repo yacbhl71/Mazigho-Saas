@@ -367,10 +367,12 @@ export function sanitizeBuilderImageSrc(raw: string, fallback = DEFAULT_CARD_SVG
   if (/^(?:javascript:|vbscript:|data:text\/html)/i.test(trimmed)) {
     return fallback;
   }
+  if (/^data:image\/(?:svg\+xml|png|jpeg|jpg|webp|gif)/i.test(trimmed)) {
+    return trimmed;
+  }
   if (
     (trimmed.startsWith("/") && !trimmed.startsWith("//")) ||
-    /^https?:\/\//i.test(trimmed) ||
-    /^data:image\/(?:svg\+xml|png|jpeg|jpg|webp|gif)/i.test(trimmed)
+    /^https?:\/\//i.test(trimmed)
   ) {
     return trimmed.replace(/["'<>]/g, "");
   }

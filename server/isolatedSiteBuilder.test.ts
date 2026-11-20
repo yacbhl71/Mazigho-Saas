@@ -31,6 +31,7 @@ import {
   filterIndependentTemplates,
   removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
+  sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
@@ -270,6 +271,9 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(sanitizeIndependentCss(".x{background:url(javascript:alert(1));x:expression(alert(1))}")).not.toMatch(
       /javascript:|expression\s*\(/i
     );
+    const svgImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E";
+    expect(sanitizeBuilderImageSrc(svgImage)).toBe(svgImage);
+    expect(sanitizeBuilderImageSrc("data:text/html,<script>alert(1)</script>")).not.toContain("script");
 
     // Extraction et mise à jour du texte alternatif (alt) des images d'une page
     const samplePageHtml =
