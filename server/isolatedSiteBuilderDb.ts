@@ -1,3 +1,4 @@
+import { resolveTxt } from "node:dns/promises";
 import { and, desc, eq } from "drizzle-orm";
 import {
   independentSiteDomains,
@@ -15,6 +16,8 @@ import {
   buildNavigationFromPages,
   normalizeImageTransforms,
   normalizeIndependentPageSlug,
+  sanitizeIndependentCss,
+  sanitizeIndependentHtml,
   sanitizeBuilderText,
   slugifyIndependentSite,
   validateIndependentCustomDomain,
@@ -431,6 +434,8 @@ export async function saveIndependentSiteProject(
         title: sanitizeBuilderText(p.title || `Page ${idx + 1}`, 140),
         slug: normalizeIndependentPageSlug(p.slug),
         menuOrder: typeof p.menuOrder === "number" ? p.menuOrder : idx + 1,
+        html: sanitizeIndependentHtml(p.html),
+        css: sanitizeIndependentCss(p.css),
       }))
     : current.pages;
 
@@ -439,7 +444,12 @@ export async function saveIndependentSiteProject(
   }
 
   const nextNavigation = input.navigation ?? buildNavigationFromPages(nextPages);
-  const nextReusableBlocks = input.reusableBlocks ?? current.reusableBlocks;
+  const nextReusableBlocks = (input.reusableBlocks ?? current.reusableBlocks).map((block) => ({
+    ...block,
+    name: sanitizeBuilderText(block.name, 140),
+    category: sanitizeBuilderText(block.category, 80),
+    html: sanitizeIndependentHtml(block.html),
+  }));
   const now = new Date().toISOString();
 
   const db = await getDb();
@@ -569,7 +579,11 @@ export async function publishIndependentSiteProject(
     siteType: current.siteType,
     theme: current.theme,
     navigation: current.navigation,
-    pages: current.pages,
+    pages: current.pages.map((page) => ({
+      ...page,
+      html: sanitizeIndependentHtml(page.html),
+      css: sanitizeIndependentCss(page.css),
+    })),
     publishedAt: nowIso,
   };
 
@@ -1046,12 +1060,22 @@ export async function verifyIndependentSiteDomain(
     throw new Error("INDEPENDENT_SITE_DOMAIN_NOT_FOUND");
   }
 
+  let txtRecords: string[][];
+  try {
+    txtRecords = await resolveTxt(target.dnsRecordName);
+  } catch {
+    throw new Error("INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED");
+  }
+  if (!txtRecords.some((record) => record.join("") === target.verificationToken)) {
+    throw new Error("INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED");
+  }
+
   const db = await getDb();
   if (!db) {
     const updated: IndependentSiteDomainDto = {
       ...target,
-      verificationStatus: "active",
-      sslStatus: "active",
+      verificationStatus: "verified",
+      sslStatus: "pending",
       updatedAt: new Date().toISOString(),
     };
     memoryDomains.set(
@@ -1064,8 +1088,8 @@ export async function verifyIndependentSiteDomain(
   await db
     .update(independentSiteDomains)
     .set({
-      verificationStatus: "active",
-      sslStatus: "active",
+      verificationStatus: "verified",
+      sslStatus: "pending",
     })
     .where(
       and(

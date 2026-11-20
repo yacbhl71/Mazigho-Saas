@@ -252,6 +252,25 @@ export function sanitizeBuilderText(raw: string, maxLen = 280): string {
     .slice(0, maxLen);
 }
 
+/** Retire les contenus exécutables avant de rendre un site publiquement. */
+export function sanitizeIndependentHtml(raw: string): string {
+  return (raw || "")
+    .replace(/<\/?(?:script|iframe|object|embed|base|meta|link|svg|math)(?:\s[^>]*)?>[\s\S]*?<\/(?:script|iframe|object|embed|svg|math)>/gi, "")
+    .replace(/<\/?(?:script|iframe|object|embed|base|meta|link|svg|math)(?:\s[^>]*)?>/gi, "")
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s+(href|src|action)\s*=\s*(["'])\s*(?:javascript:|data:text\/html|vbscript:)[^"']*\2/gi, (_match, attribute: string) => ` ${attribute}="#"`)
+    .replace(/\s+(href|src|action)\s*=\s*(?:javascript:|data:text\/html|vbscript:)[^\s>]+/gi, (_match, attribute: string) => ` ${attribute}="#"`)
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+}
+
+/** Bloque les constructions CSS pouvant exécuter ou exfiltrer du contenu. */
+export function sanitizeIndependentCss(raw: string): string {
+  return (raw || "")
+    .replace(/<\/?style[^>]*>/gi, "")
+    .replace(/expression\s*\(/gi, "")
+    .replace(/url\s*\(\s*["']?\s*(?:javascript:|data:text\/html)/gi, "url(");
+}
+
 const DEFAULT_CARD_SVG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23263653'/%3E%3Ccircle cx='320' cy='210' r='92' fill='%23f5b98f' fill-opacity='.65'/%3E%3Cpath d='M0 390 Q160 280 320 390 T640 390 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E";
 

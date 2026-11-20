@@ -359,7 +359,15 @@ export const isolatedSiteBuilderRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return await verifyIndependentSiteDomain(ctx.user.id, input.siteId, input.domainId);
+      try {
+        return await verifyIndependentSiteDomain(ctx.user.id, input.siteId, input.domainId);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            err instanceof Error ? err.message : "Le domaine n’est pas encore vérifié par DNS.",
+        });
+      }
     }),
 
   removeDomain: protectedProcedure

@@ -18,6 +18,8 @@ import {
   createDefaultVisualCardItem,
   duplicateCardInVisualCardGrid,
   renderVisualCardGridHtml,
+  sanitizeIndependentCss,
+  sanitizeIndependentHtml,
   validateIndependentCustomDomain,
   type VisualCardGridConfig,
 } from "../shared/isolatedSiteBuilder";
@@ -160,6 +162,17 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(html).toContain('data-card-shape="round"');
     expect(html).toContain('data-card-text="top"');
     expect(html).toContain('data-card-text="inside"');
+  });
+
+  it("4 bis. neutralise les contenus exécutables avant rendu public", () => {
+    const safeHtml = sanitizeIndependentHtml(
+      '<section onclick="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">Lien</a></section>'
+    );
+    expect(safeHtml).not.toMatch(/script|onclick|javascript:/i);
+    expect(safeHtml).toContain('href="#"');
+    expect(sanitizeIndependentCss(".x{background:url(javascript:alert(1));x:expression(alert(1))}")).not.toMatch(
+      /javascript:|expression\s*\(/i
+    );
   });
 
   it("5. fournit les 9 Socles de page prêts à personnaliser (Accueil, Association, Famille, Entreprise, Services, Contact, Événements, Équipe, Actualités)", () => {
@@ -353,9 +366,9 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(domain.verificationStatus).toBe("pending_dns");
     expect(domain.dnsRecordName).toBe("_mazigho-site-verify.www.association-ath-vahloul.org");
 
-    const verified = await verifyIndependentSiteDomain(ownerId, site.id, domain.id);
-    expect(verified.verificationStatus).toBe("active");
-    expect(verified.sslStatus).toBe("active");
+    await expect(verifyIndependentSiteDomain(ownerId, site.id, domain.id)).rejects.toThrow(
+      /INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED/
+    );
 
     await removeIndependentSiteDomain(ownerId, site.id, domain.id);
     expect(await listIndependentSiteDomains(ownerId, site.id)).toHaveLength(0);

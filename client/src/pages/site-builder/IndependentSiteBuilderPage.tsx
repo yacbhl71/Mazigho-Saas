@@ -283,7 +283,7 @@ export default function IndependentSiteBuilderPage() {
       if (selectedSiteId) {
         await utils.independentSiteBuilder.listDomains.invalidate({ siteId: selectedSiteId });
       }
-      setStatusBanner(`Domaine ${dom.hostname} vérifié et SSL activé.`);
+      setStatusBanner(`Domaine ${dom.hostname} vérifié. L’activation SSL sera effectuée par l’infrastructure de publication.`);
     },
   });
 

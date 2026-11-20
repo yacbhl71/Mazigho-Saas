@@ -5,6 +5,8 @@ import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   INDEPENDENT_SITE_TEMPLATES,
   RESPONSIVE_VIEWPORTS,
+  sanitizeIndependentCss,
+  sanitizeIndependentHtml,
   type ResponsiveViewportMode,
 } from "@shared/isolatedSiteBuilder";
 import { Badge } from "@/components/ui/badge";
@@ -174,7 +176,7 @@ export default function IndependentSitePublicPreviewPage() {
           }}
           className="min-h-[82vh] overflow-hidden rounded-2xl border border-slate-700 bg-white text-slate-900 shadow-2xl transition-all duration-200"
         >
-          <style>{activePage.css}</style>
+          <style>{sanitizeIndependentCss(activePage.css)}</style>
           <div
             onClick={(e) => {
               const anchor = (e.target as HTMLElement).closest("a");
@@ -189,7 +191,7 @@ export default function IndependentSitePublicPreviewPage() {
                 }
               }
             }}
-            dangerouslySetInnerHTML={{ __html: activePage.html }}
+            dangerouslySetInnerHTML={{ __html: sanitizeIndependentHtml(activePage.html) }}
           />
         </div>
       </main>
