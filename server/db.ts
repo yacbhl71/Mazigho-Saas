@@ -5288,6 +5288,24 @@ export async function getStudioVisualBuilderProject(storeId: number) {
       },
       "store"
     );
+    const publishedRaw = await getStoreSettingValue(storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY);
+    let publication: { publishedAt: string | null; pageCount: number; versionId: string | null; history: Array<{ id: string; publishedAt: string; pageCount: number; versionId: string | null; mode: string; projectMode: string; commerceEnabled: boolean }> } = { publishedAt: null, pageCount: 0, versionId: null, history: [] };
+    if (publishedRaw) {
+      try {
+        const published = JSON.parse(publishedRaw) as Record<string, unknown>;
+        publication = {
+          publishedAt: typeof published.publishedAt === "string" ? published.publishedAt : null,
+          pageCount: Array.isArray(published.publishedPages) && published.publishedPages.length > 0 ? published.publishedPages.length : 1,
+          versionId: typeof published.versionId === "string" ? published.versionId : null,
+          history: Array.isArray(published.publicationHistory)
+            ? published.publicationHistory.filter((item): item is { id: string; publishedAt: string; pageCount: number; versionId: string | null; mode: string; projectMode: string; commerceEnabled: boolean } => Boolean(item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string" && typeof (item as Record<string, unknown>).publishedAt === "string" && typeof (item as Record<string, unknown>).pageCount === "number" && typeof (item as Record<string, unknown>).mode === "string" && typeof (item as Record<string, unknown>).projectMode === "string" && typeof (item as Record<string, unknown>).commerceEnabled === "boolean"))
+                .slice(0, 10)
+            : [],
+        };
+      } catch {
+        // An invalid publication snapshot must not prevent the private draft from loading.
+      }
+    }
     return {
       storeId,
       mode: typeof parsed.mode === "string" ? parsed.mode : "blank",
@@ -5302,6 +5320,10 @@ export async function getStudioVisualBuilderProject(storeId: number) {
           }
         : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+      publishedAt: publication.publishedAt,
+      publishedPageCount: publication.pageCount,
+      publishedVersionId: publication.versionId,
+      publicationHistory: publication.history,
       versions: Array.isArray(parsed.versions)
         ? parsed.versions
             .filter((version): version is StudioVisualBuilderVersion =>
@@ -5869,6 +5891,16 @@ export async function publishStudioVisualBuilderProject(input: {
     throw new Error("VISUAL_BUILDER_PUBLICATION_INVALID");
   }
   const publishedAt = new Date().toISOString();
+  const previousPublishedRaw = await getStoreSettingValue(input.storeId, STUDIO_VISUAL_BUILDER_PUBLISHED_KEY);
+  let previousHistory: Array<{ id: string; publishedAt: string; pageCount: number; versionId: string | null; mode: string; projectMode: string; commerceEnabled: boolean }> = [];
+  if (previousPublishedRaw) {
+    try {
+      const previousPublished = JSON.parse(previousPublishedRaw) as Record<string, unknown>;
+      previousHistory = Array.isArray(previousPublished.publicationHistory) ? previousPublished.publicationHistory.filter((item): item is typeof previousHistory[number] => Boolean(item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string" && typeof (item as Record<string, unknown>).publishedAt === "string" && typeof (item as Record<string, unknown>).pageCount === "number" && typeof (item as Record<string, unknown>).mode === "string" && typeof (item as Record<string, unknown>).projectMode === "string" && typeof (item as Record<string, unknown>).commerceEnabled === "boolean")).slice(0, 9) : [];
+    } catch {
+      previousHistory = [];
+    }
+  }
   const publishedPages = (input.publishedPages ?? [])
     .map((page) => ({
       ...page,
@@ -5877,6 +5909,7 @@ export async function publishStudioVisualBuilderProject(input: {
         : stripPublishedCatalogueMarkers(page.html),
     }))
     .filter((page) => page.html.trim() && page.slug.startsWith("/"));
+  const publicationHistory = [{ id: randomUUID(), publishedAt, pageCount: publishedPages.length || 1, versionId: input.versionId ?? null, mode: input.mode, projectMode: state.projectMode, commerceEnabled: state.commerceEnabled }, ...previousHistory];
   await setStoreSettingValue(
     input.storeId,
     STUDIO_VISUAL_BUILDER_PUBLISHED_KEY,
@@ -5895,6 +5928,7 @@ export async function publishStudioVisualBuilderProject(input: {
       publishedPages,
       versionId: input.versionId ?? null,
       publishedAt,
+      publicationHistory,
     }),
     "Version du constructeur visuel explicitement publiée après validation Studio."
   );
