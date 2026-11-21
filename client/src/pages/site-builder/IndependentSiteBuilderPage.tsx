@@ -18,6 +18,8 @@ import {
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
+  INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE,
+  INDEPENDENT_SITE_ROLE_PRESENTATIONS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
   RESPONSIVE_DEVICE_PRESETS,
@@ -49,6 +51,7 @@ import {
   filterIndependentSocles,
   filterIndependentTemplates,
   formatIndependentBuilderErrorMessage,
+  getIndependentSiteRolePresentation,
   normalizeIndependentPageSlug,
   parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
@@ -513,20 +516,89 @@ export default function IndependentSiteBuilderPage() {
     { enabled: Boolean(selectedSiteId) && canManageDomains, retry: false, refetchOnWindowFocus: false }
   );
 
-  const publicationLogsQuery = trpc.independentSiteBuilder.listPublicationLogs.useQuery(
-    { siteId: selectedSiteId ?? 0 },
-    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+  const currentRolePresentation = useMemo(
+    () => getIndependentSiteRolePresentation(accessRole),
+    [accessRole]
   );
 
-  const accessQuery = trpc.independentSiteBuilder.listAccess.useQuery({ siteId: selectedSiteId ?? 0 }, { enabled: Boolean(selectedSiteId), retry: false });
-  const inviteAccessMutation = trpc.independentSiteBuilder.inviteAccess.useMutation({ onSuccess: () => { void accessQuery.refetch(); setStatusBanner("Invitation préparée. Aucun e-mail n’est envoyé sans service configuré."); } });
-  const revokeAccessMutation = trpc.independentSiteBuilder.revokeAccess.useMutation({ onSuccess: () => void accessQuery.refetch() });
-  const updateAccessRoleMutation = trpc.independentSiteBuilder.updateAccessRole.useMutation({ onSuccess: () => void accessQuery.refetch() });
+  const publicationLogsQuery = trpc.independentSiteBuilder.listPublicationLogs.useQuery(
+    { siteId: selectedSiteId ?? 0 },
+    { enabled: Boolean(selectedSiteId) && canAdministerSite, retry: false, refetchOnWindowFocus: false }
+  );
+
   const [accessEmailInput, setAccessEmailInput] = useState("");
   const [accessRoleInput, setAccessRoleInput] = useState<"admin" | "editor">("editor");
+  const [accessExpiresHours, setAccessExpiresHours] = useState<number>(72);
+  const [copiedInviteLink, setCopiedInviteLink] = useState(false);
+  const [lastCreatedInvitation, setLastCreatedInvitation] = useState<{
+    email: string;
+    role: "admin" | "editor";
+    expiresAtIso: string;
+    invitationPath: string;
+    invitationDelivery: "not_configured" | "delivered" | "failed";
+    siteTitle: string;
+  } | null>(null);
+
+  const accessQuery = trpc.independentSiteBuilder.listAccess.useQuery(
+    { siteId: selectedSiteId ?? 0 },
+    { enabled: Boolean(selectedSiteId) && canManageAccess, retry: false, refetchOnWindowFocus: false }
+  );
+  const inviteAccessMutation = trpc.independentSiteBuilder.inviteAccess.useMutation({
+    onSuccess: (created) => {
+      void accessQuery.refetch();
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const path =
+        created.invitationPath ||
+        (created.developmentOnlyToken
+          ? `/constructeur-sites/invitation/${encodeURIComponent(created.developmentOnlyToken)}`
+          : "/connexion-administration");
+      const fullLink = `${origin}${path}`;
+      const expiresAtIso =
+        typeof created.expiresAt === "string"
+          ? created.expiresAt
+          : created.invitationExpiresAt || new Date(Date.now() + accessExpiresHours * 3600000).toISOString();
+      setLastCreatedInvitation({
+        email: created.email,
+        role: created.role === "admin" ? "admin" : "editor",
+        expiresAtIso,
+        invitationPath: fullLink,
+        invitationDelivery: created.invitationDelivery,
+        siteTitle: created.siteTitle || siteTitle,
+      });
+      setCopiedInviteLink(false);
+      setAccessEmailInput("");
+      setErrorBanner(null);
+      setStatusBanner(
+        created.invitationDelivery === "delivered"
+          ? `Invitation envoyée à ${created.email} (${created.role === "admin" ? "Administrateur" : "Éditeur"}). Vous pouvez également copier le lien d’activation ci-dessous.`
+          : `Invitation à usage unique prête pour ${created.email} (${created.role === "admin" ? "Administrateur" : "Éditeur"}). Copiez et transmettez le lien d’activation ci-dessous.`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de créer l’invitation pour ce membre.");
+    },
+  });
+  const revokeAccessMutation = trpc.independentSiteBuilder.revokeAccess.useMutation({
+    onSuccess: () => {
+      void accessQuery.refetch();
+      setStatusBanner("Accès révoqué. Le lien d’invitation et les droits associés sont désormais bloqués.");
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de révoquer cet accès.");
+    },
+  });
+  const updateAccessRoleMutation = trpc.independentSiteBuilder.updateAccessRole.useMutation({
+    onSuccess: () => {
+      void accessQuery.refetch();
+      setStatusBanner("Rôle du membre mis à jour.");
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de modifier le rôle de ce membre.");
+    },
+  });
   const collaboratorSharesQuery = trpc.independentSiteBuilder.listCollaboratorShares.useQuery(
     { siteId: selectedSiteId ?? 0 },
-    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+    { enabled: Boolean(selectedSiteId) && canAdministerSite, retry: false, refetchOnWindowFocus: false }
   );
 
   const createProjectMutation = trpc.independentSiteBuilder.createProject.useMutation({
@@ -1642,11 +1714,59 @@ export default function IndependentSiteBuilderPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f3ee] text-[#172033]">
-      {selectedSiteId && (accessRole === "admin" || accessRole === "editor") && (
-        <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-semibold text-amber-950">
-          Espace client — accès limité à ce site
+      {/* BANDEAU DE REPÉRAGE IMMÉDIAT DU SITE ADMINISTRÉ, DU RÔLE ACTIF & DU RETOUR AU SITE PUBLIC */}
+      <div
+        role="region"
+        aria-label="Informations sur le site administré et votre rôle d'accès"
+        className="border-b border-[#d9dfcf] bg-[#eef2e8] px-4 py-2.5 text-[#172033] md:px-6"
+      >
+        <div className="mx-auto flex max-w-[1640px] flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-[#40552d] px-2.5 py-1 font-bold text-white">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Espace d’administration du site : « {siteTitle} »
+            </span>
+            <Badge
+              variant="outline"
+              className="border-[#40552d]/40 bg-white font-bold text-[#172033]"
+            >
+              Votre rôle : {currentRolePresentation.badgeLabel}
+            </Badge>
+            <span className="hidden text-slate-700 lg:inline">
+              {currentRolePresentation.description}
+            </span>
+            {!canAdministerSite && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 bg-amber-50 font-semibold text-amber-950"
+              >
+                Mode Éditeur : vos modifications sont enregistrées en brouillon (publication par un Administrateur)
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveInspectorTab("access")}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#40552d]/30 bg-white px-2.5 py-1 text-xs font-semibold text-[#40552d] transition hover:bg-[#f7f9f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#40552d]"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              {canManageAccess
+                ? "Inviter un client / Gérer les accès"
+                : "Voir mes permissions & aide"}
+            </button>
+            <Link
+              href={`/sites/${siteSlug || "association-familiale-ath-vahloul"}`}
+            >
+              <span className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#172033]/20 bg-[#172033] px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-[#24324f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#40552d]">
+                <Globe className="h-3.5 w-3.5 text-[#f5b98f]" />
+                Retour au site public (/sites/{siteSlug || "association-familiale-ath-vahloul"})
+              </span>
+            </Link>
+          </div>
         </div>
-      )}
+      </div>
       {/* EN-TÊTE PRINCIPAL DU PRODUIT INDÉPENDANT */}
       <header className="sticky top-0 z-40 border-b border-[#e2dad0] bg-white/95 px-4 py-3 shadow-2xs backdrop-blur md:px-6">
         <div className="mx-auto flex max-w-[1640px] flex-wrap items-center justify-between gap-3">
@@ -1881,17 +2001,25 @@ export default function IndependentSiteBuilderPage() {
               </Button>
             </Link>
 
-            {/* Étape 3 : Publier en ligne */}
+            {/* Étape 3 : Publier en ligne (réservé Administrateur / Propriétaire) */}
             <Button
               type="button"
               size="sm"
-              title={INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.publier.description}
-              className="h-8 bg-[#172033] text-xs font-semibold text-white hover:bg-[#24324f] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              title={
+                !canAdministerSite
+                  ? "La publication en ligne est réservée à l’Administrateur ou au Propriétaire du site. Vous pouvez sauvegarder votre brouillon et vérifier l’aperçu privé."
+                  : INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.publier.description
+              }
+              className="h-8 bg-[#172033] text-xs font-semibold text-white hover:bg-[#24324f] focus-visible:ring-2 focus-visible:ring-[#9b563e] disabled:cursor-not-allowed disabled:opacity-60"
               onClick={requestPublishCurrentSite}
-              disabled={isBusySaving}
+              disabled={isBusySaving || !canAdministerSite}
             >
               <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
-              {publishSiteMutation.isPending ? "Publication…" : "3. Publier"}
+              {!canAdministerSite
+                ? "3. Publier (Réservé Admin)"
+                : publishSiteMutation.isPending
+                  ? "Publication…"
+                  : "3. Publier"}
             </Button>
 
             {/* Bouton Aide contextuelle non intrusive */}
@@ -4463,8 +4591,13 @@ export default function IndependentSiteBuilderPage() {
                       role="tab"
                       aria-selected={activeInspectorTab === "publication"}
                       disabled={!canAdministerSite}
+                      title={
+                        !canAdministerSite
+                          ? "Section réservée à l’Administrateur ou au Propriétaire du site"
+                          : undefined
+                      }
                       onClick={() => canAdministerSite && setActiveInspectorTab("publication")}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] disabled:cursor-not-allowed disabled:opacity-55 ${
                         activeInspectorTab === "publication"
                           ? "bg-[#172033] text-white"
                           : "text-slate-700 hover:bg-slate-200/70"
@@ -4472,14 +4605,24 @@ export default function IndependentSiteBuilderPage() {
                     >
                       <Globe className="h-3.5 w-3.5 text-[#f5b98f]" />
                       Publication, Domaine & Partage
+                      {!canAdministerSite && (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          Admin
+                        </span>
+                      )}
                     </button>
                     <button
                       type="button"
                       role="tab"
                       aria-selected={activeInspectorTab === "versions"}
                       disabled={!canAdministerSite}
+                      title={
+                        !canAdministerSite
+                          ? "Section réservée à l’Administrateur ou au Propriétaire du site"
+                          : undefined
+                      }
                       onClick={() => canAdministerSite && setActiveInspectorTab("versions")}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] disabled:cursor-not-allowed disabled:opacity-55 ${
                         activeInspectorTab === "versions"
                           ? "bg-[#172033] text-white"
                           : "text-slate-700 hover:bg-slate-200/70"
@@ -4487,9 +4630,25 @@ export default function IndependentSiteBuilderPage() {
                     >
                       <History className="h-3.5 w-3.5 text-[#f5b98f]" />
                       Versions & Import/Export ({versionsQuery.data?.length ?? 0})
+                      {!canAdministerSite && (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          Admin
+                        </span>
+                      )}
                     </button>
-                    <button type="button" role="tab" aria-selected={activeInspectorTab === "access"} disabled={!canManageAccess} onClick={() => canManageAccess && setActiveInspectorTab("access")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${activeInspectorTab === "access" ? "bg-[#172033] text-white" : "text-slate-700 hover:bg-slate-200/70"}`}>
-                      <Lock className="h-3.5 w-3.5 text-[#f5b98f]" /> Accès du site
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeInspectorTab === "access"}
+                      onClick={() => setActiveInspectorTab("access")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        activeInspectorTab === "access"
+                          ? "bg-[#172033] text-white"
+                          : "text-slate-700 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <Lock className="h-3.5 w-3.5 text-[#f5b98f]" />
+                      Accès, Rôles & Livraison client
                     </button>
                   </div>
                 </div>
@@ -5410,18 +5569,596 @@ export default function IndependentSiteBuilderPage() {
                   </div>
                 )}
 
-                {/* ONGLET 3D : VERSIONS, APERÇU DE VERSION & IMPORT / EXPORT JSON CONTRÔLÉ */}
+                {/* ONGLET 3E : ACCÈS DU SITE, PRÉSENTATION DES RÔLES (OWNER, ADMIN, EDITOR) & PARCOURS DE LIVRAISON CLIENT */}
                 {activeInspectorTab === "access" && (
-                  <div className="space-y-4 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
-                    <p className="text-xs text-slate-600">Le constructeur MAZIGHO reste privé : un membre ne voit que le site qui lui est assigné, jamais le catalogue du constructeur ni les autres projets.</p>
-                    <div className="flex flex-wrap gap-2">
-                      <input value={accessEmailInput} onChange={(e) => setAccessEmailInput(e.target.value)} placeholder="email@exemple.com" className="h-9 min-w-64 rounded-md border border-slate-300 bg-white px-3 text-sm" aria-label="Email du membre" />
-                      <select value={accessRoleInput} onChange={(e) => setAccessRoleInput(e.target.value as "admin" | "editor")} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm" aria-label="Rôle du membre"><option value="editor">Éditeur</option><option value="admin">Administrateur</option></select>
-                      <Button type="button" size="sm" disabled={!selectedSiteId || !accessEmailInput || inviteAccessMutation.isPending} onClick={() => selectedSiteId && inviteAccessMutation.mutate({ siteId: selectedSiteId, email: accessEmailInput, role: accessRoleInput })}>Inviter</Button>
+                  <div className="space-y-6">
+                    {/* 1. Résumé immédiat du site administré, du rôle actif et des actions principales */}
+                    <div className="rounded-xl border border-[#d9dfcf] bg-[#f7f9f4] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-[#40552d] text-white">
+                              Votre rôle actif : {currentRolePresentation.badgeLabel}
+                            </Badge>
+                            <Badge variant="outline" className="border-[#d9dfcf] bg-white text-[#172033]">
+                              Site administré : « {siteTitle} »
+                            </Badge>
+                            <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-900">
+                              Espace isolé des autres projets
+                            </Badge>
+                          </div>
+                          <h3 className="pt-1 text-sm font-bold text-[#172033]">
+                            {currentRolePresentation.title} — {currentRolePresentation.audienceSummary}
+                          </h3>
+                          <p className="text-xs text-slate-700">
+                            {currentRolePresentation.description}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isBusySaving || !workflowSummary.canTriggerSave}
+                            onClick={() => handleSaveCurrentProject()}
+                            className="h-8 border-[#9b563e] bg-white text-xs font-semibold text-[#9b563e]"
+                          >
+                            <Save className="mr-1.5 h-3.5 w-3.5" />
+                            Sauvegarder le brouillon
+                          </Button>
+                          <Link href={privatePreviewHref}>
+                            <Button type="button" size="sm" variant="outline" className="h-8 bg-white text-xs">
+                              <Eye className="mr-1.5 h-3.5 w-3.5 text-[#9b563e]" />
+                              Aperçu privé
+                            </Button>
+                          </Link>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isBusySaving || !canAdministerSite}
+                            onClick={requestPublishCurrentSite}
+                            title={
+                              !canAdministerSite
+                                ? "Publication réservée à l’Administrateur ou au Propriétaire du site"
+                                : undefined
+                            }
+                            className="h-8 bg-[#172033] text-xs text-white hover:bg-[#24324f] disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
+                            {canAdministerSite ? "Publier le site" : "Publier (Réservé Admin)"}
+                          </Button>
+                          <Link href={`/sites/${siteSlug || "association-familiale-ath-vahloul"}`}>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-[#40552d] bg-white text-xs font-semibold text-[#40552d] hover:bg-[#eef3e7]"
+                            >
+                              <Globe className="mr-1.5 h-3.5 w-3.5" />
+                              Retour au site public (/sites/{siteSlug || "association-familiale-ath-vahloul"})
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
                     </div>
-                    <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-                      {(accessQuery.data ?? []).map((member) => <div key={member.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"><span><strong>{member.email}</strong><span className="ml-2 text-xs text-slate-500">{member.role} · {member.status}</span></span>{member.role !== "owner" && <span className="flex gap-2"><select value={member.role} onChange={(e) => selectedSiteId && updateAccessRoleMutation.mutate({ siteId: selectedSiteId, memberId: member.id, role: e.target.value as "admin" | "editor" })} className="h-8 rounded border border-slate-300 px-2 text-xs"><option value="editor">Éditeur</option><option value="admin">Administrateur</option></select><Button type="button" variant="outline" size="sm" onClick={() => selectedSiteId && window.confirm(`Révoquer l’accès de ${member.email} ?`) && revokeAccessMutation.mutate({ siteId: selectedSiteId, memberId: member.id })}>Révoquer</Button></span>}</div>)}
-                      {!accessQuery.isLoading && !(accessQuery.data?.length) && <p className="p-4 text-sm text-slate-500">Aucun membre supplémentaire.</p>}
+
+                    {/* 2. Présentation claire et non technique des 3 rôles (Owner, Admin, Editor) alignée sur le serveur */}
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Présentation des rôles d’accès au site (Propriétaire · Administrateur · Éditeur)
+                        </h3>
+                        <span className="text-xs text-slate-600">
+                          Permissions contrôlées côté serveur et strictement limitées à ce site
+                        </span>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        {(["owner", "admin", "editor"] as const).map((roleKey) => {
+                          const roleInfo = INDEPENDENT_SITE_ROLE_PRESENTATIONS[roleKey];
+                          const isCurrentUserRole = accessRole === roleKey;
+                          return (
+                            <div
+                              key={roleKey}
+                              className={`flex flex-col justify-between rounded-xl border p-4 text-xs transition ${
+                                isCurrentUserRole
+                                  ? "border-2 border-[#40552d] bg-[#f7f9f4] shadow-xs"
+                                  : "border-slate-200 bg-white"
+                              }`}
+                            >
+                              <div className="space-y-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                  <strong className="text-sm text-[#172033]">{roleInfo.title}</strong>
+                                  {isCurrentUserRole && (
+                                    <Badge className="bg-[#40552d] text-[10px] text-white">
+                                      Votre rôle actuel
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-[11px] font-semibold text-[#9b563e]">
+                                  {roleInfo.audienceSummary}
+                                </p>
+                                <p className="leading-relaxed text-slate-600">{roleInfo.description}</p>
+
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
+                                  <p className="font-bold text-emerald-950">✓ Fonctions disponibles :</p>
+                                  <ul className="mt-1 space-y-1 text-[11px] text-slate-700">
+                                    {roleInfo.allowedActions.map((act) => (
+                                      <li key={act}>• {act}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+
+                                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                                  <p className="font-bold text-slate-800">• Fonctions non incluses :</p>
+                                  <ul className="mt-1 space-y-1 text-[11px] text-slate-600">
+                                    {roleInfo.restrictedActions.map((act) => (
+                                      <li key={act}>• {act}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 3. Invitation client & Gestion des membres (Propriétaire) ou Information en lecture seule (Admin/Éditeur) */}
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <div className="space-y-4 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Inviter un client ou un membre sur « {siteTitle} »
+                          </h3>
+                          <Badge variant="outline" className="bg-white text-[10px]">
+                            Lien à usage unique · Durée limitée
+                          </Badge>
+                        </div>
+
+                        <p className="text-xs text-slate-600">
+                          {INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.isolationNotice}
+                        </p>
+
+                        {!selectedSiteId ? (
+                          <div
+                            role="status"
+                            className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950"
+                          >
+                            Cliquez d’abord sur <strong>« Sauvegarder »</strong> en haut de la page pour enregistrer ce site avant d’inviter un membre ou un client.
+                          </div>
+                        ) : !canManageAccess ? (
+                          <div
+                            role="status"
+                            className="rounded-lg border border-slate-300 bg-white p-3.5 text-xs text-slate-700"
+                          >
+                            <p className="font-bold text-[#172033]">
+                              Gestion des invitations réservée au Propriétaire du site (Owner)
+                            </p>
+                            <p className="mt-1 text-slate-600">
+                              Vous êtes connecté avec le rôle <strong>{currentRolePresentation.shortLabel}</strong>. Pour inviter une nouvelle personne, modifier un rôle ou révoquer un accès, contactez le propriétaire du site.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3.5">
+                              <div>
+                                <label
+                                  htmlFor="independent-access-email-input"
+                                  className="block text-xs font-semibold text-[#172033]"
+                                >
+                                  1. Adresse e-mail exacte de la personne invitée
+                                </label>
+                                <input
+                                  id="independent-access-email-input"
+                                  type="email"
+                                  value={accessEmailInput}
+                                  onChange={(e) => setAccessEmailInput(e.target.value)}
+                                  placeholder="president@association-exemple.org"
+                                  aria-label="Email du membre"
+                                  className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                                />
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  Important : la personne invitée devra se connecter sur{" "}
+                                  <code>/connexion-administration</code> avec cette adresse e-mail exacte.
+                                </p>
+                              </div>
+
+                              <div className="grid gap-2.5 sm:grid-cols-2">
+                                <div>
+                                  <label
+                                    htmlFor="independent-access-role-select"
+                                    className="block text-xs font-semibold text-[#172033]"
+                                  >
+                                    2. Rôle attribué
+                                  </label>
+                                  <select
+                                    id="independent-access-role-select"
+                                    value={accessRoleInput}
+                                    onChange={(e) =>
+                                      setAccessRoleInput(e.target.value as "admin" | "editor")
+                                    }
+                                    aria-label="Rôle du membre"
+                                    className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                                  >
+                                    <option value="admin">
+                                      Administrateur (gère le contenu + publie en ligne)
+                                    </option>
+                                    <option value="editor">
+                                      Éditeur (modifie le contenu en brouillon sans publier)
+                                    </option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label
+                                    htmlFor="independent-access-duration-select"
+                                    className="block text-xs font-semibold text-[#172033]"
+                                  >
+                                    3. Durée de validité du lien
+                                  </label>
+                                  <select
+                                    id="independent-access-duration-select"
+                                    value={accessExpiresHours}
+                                    onChange={(e) => setAccessExpiresHours(Number(e.target.value))}
+                                    aria-label="Durée de validité de l'invitation"
+                                    className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                                  >
+                                    <option value={24}>24 heures (1 jour)</option>
+                                    <option value={72}>72 heures (3 jours — recommandé)</option>
+                                    <option value={168}>7 jours (1 semaine)</option>
+                                    <option value={720}>30 jours (livraison client étendue)</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                <span className="text-[11px] text-slate-600">
+                                  Rôle choisi :{" "}
+                                  <strong>
+                                    {getIndependentSiteRolePresentation(accessRoleInput).title}
+                                  </strong>
+                                </span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-[#172033] text-xs text-white hover:bg-[#24324f]"
+                                  disabled={
+                                    !selectedSiteId ||
+                                    !accessEmailInput.trim() ||
+                                    inviteAccessMutation.isPending
+                                  }
+                                  onClick={() =>
+                                    selectedSiteId &&
+                                    inviteAccessMutation.mutate({
+                                      siteId: selectedSiteId,
+                                      email: accessEmailInput.trim(),
+                                      role: accessRoleInput,
+                                      expiresInHours: accessExpiresHours,
+                                    })
+                                  }
+                                >
+                                  {inviteAccessMutation.isPending
+                                    ? "Génération du lien…"
+                                    : "Inviter et générer le lien d’accès"}
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Carte lisible du lien d'invitation généré */}
+                            {lastCreatedInvitation && (
+                              <div
+                                role="status"
+                                className="space-y-2.5 rounded-xl border-2 border-emerald-400 bg-emerald-50/90 p-3.5 text-xs text-emerald-950"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <strong className="flex items-center gap-1.5 text-emerald-950">
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                                    Lien d’invitation prêt pour {lastCreatedInvitation.email}
+                                  </strong>
+                                  <Badge
+                                    variant="outline"
+                                    className="border-emerald-400 bg-white text-[10px] text-emerald-900"
+                                  >
+                                    Rôle :{" "}
+                                    {lastCreatedInvitation.role === "admin"
+                                      ? "Administrateur (Admin)"
+                                      : "Éditeur (Editor)"}
+                                  </Badge>
+                                </div>
+
+                                <p className="text-[11px] text-emerald-900">
+                                  • <strong>Site concerné :</strong> « {lastCreatedInvitation.siteTitle} » (
+                                  <code>/sites/{siteSlug}</code>)<br />
+                                  • <strong>E-mail obligatoire pour activer :</strong>{" "}
+                                  <strong>{lastCreatedInvitation.email}</strong><br />
+                                  • <strong>Valable jusqu’au :</strong>{" "}
+                                  {new Date(lastCreatedInvitation.expiresAtIso).toLocaleString("fr-FR", {
+                                    day: "2-digit",
+                                    month: "long",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}{" "}
+                                  (usage unique)
+                                </p>
+
+                                <div className="space-y-1.5">
+                                  <label className="block text-[11px] font-bold text-emerald-950">
+                                    Lien d’activation à transmettre au client :
+                                  </label>
+                                  <input
+                                    type="text"
+                                    readOnly
+                                    value={lastCreatedInvitation.invitationPath}
+                                    aria-label="Lien d'invitation généré"
+                                    onFocus={(e) => e.currentTarget.select()}
+                                    className="h-8 w-full rounded border border-emerald-300 bg-white px-2.5 font-mono text-[11px] text-[#172033]"
+                                  />
+                                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="h-7 bg-emerald-800 text-[11px] text-white hover:bg-emerald-900"
+                                      onClick={() => {
+                                        if (
+                                          typeof navigator !== "undefined" &&
+                                          navigator.clipboard
+                                        ) {
+                                          void navigator.clipboard.writeText(
+                                            lastCreatedInvitation.invitationPath
+                                          );
+                                          setCopiedInviteLink(true);
+                                          setStatusBanner(
+                                            `Lien d’invitation copié dans le presse-papiers pour ${lastCreatedInvitation.email}.`
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      {copiedInviteLink
+                                        ? "✓ Lien copié !"
+                                        : "Copier le lien d’invitation"}
+                                    </Button>
+                                    <span className="text-[11px] text-emerald-800">
+                                      {lastCreatedInvitation.invitationDelivery === "delivered"
+                                        ? "Un e-mail d’invitation a également été envoyé."
+                                        : "Envoi d’e-mail non configuré : copiez et envoyez ce lien directement à votre client."}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Liste des membres et invitations du site */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-[#172033]">
+                                  Membres et invitations sur ce site ({(accessQuery.data ?? []).length})
+                                </h4>
+                                <span className="text-[11px] text-slate-500">
+                                  Révocation immédiate à tout moment
+                                </span>
+                              </div>
+
+                              <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+                                {(accessQuery.data ?? []).map((member) => {
+                                  const memberRoleInfo = getIndependentSiteRolePresentation(
+                                    member.role
+                                  );
+                                  const isExpiredInvite =
+                                    member.status === "invited" &&
+                                    Boolean(
+                                      member.invitationExpiresAt &&
+                                        new Date(member.invitationExpiresAt).getTime() <= Date.now()
+                                    );
+                                  const statusLabel =
+                                    member.status === "active"
+                                      ? "Accès actif"
+                                      : member.status === "blocked"
+                                        ? "Accès révoqué"
+                                        : isExpiredInvite
+                                          ? "Invitation expirée"
+                                          : "Invitation en attente";
+
+                                  return (
+                                    <div
+                                      key={member.id}
+                                      className="flex flex-wrap items-center justify-between gap-2.5 p-3 text-xs"
+                                    >
+                                      <div className="space-y-0.5">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <strong className="text-[#172033]">{member.email}</strong>
+                                          <Badge
+                                            variant="outline"
+                                            className="border-slate-300 bg-slate-50 text-[10px] text-[#172033]"
+                                          >
+                                            {memberRoleInfo.badgeLabel}
+                                          </Badge>
+                                          <Badge
+                                            variant="outline"
+                                            className={
+                                              member.status === "active"
+                                                ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                                                : member.status === "blocked" || isExpiredInvite
+                                                  ? "border-rose-300 bg-rose-50 text-[10px] text-rose-900"
+                                                  : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
+                                            }
+                                          >
+                                            {statusLabel}
+                                          </Badge>
+                                        </div>
+                                        {member.status === "invited" && member.invitationExpiresAt && (
+                                          <p className="text-[11px] text-slate-500">
+                                            {isExpiredInvite ? "Expirée le " : "Valable jusqu’au "}
+                                            {new Date(member.invitationExpiresAt).toLocaleString(
+                                              "fr-FR",
+                                              {
+                                                day: "2-digit",
+                                                month: "2-digit",
+                                                year: "numeric",
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              }
+                                            )}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      {member.role !== "owner" && (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <select
+                                            aria-label={`Rôle de ${member.email}`}
+                                            value={member.role}
+                                            disabled={
+                                              member.status === "blocked" ||
+                                              updateAccessRoleMutation.isPending
+                                            }
+                                            onChange={(e) =>
+                                              selectedSiteId &&
+                                              updateAccessRoleMutation.mutate({
+                                                siteId: selectedSiteId,
+                                                memberId: member.id,
+                                                role: e.target.value as "admin" | "editor",
+                                              })
+                                            }
+                                            className="h-8 rounded border border-slate-300 bg-white px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                                          >
+                                            <option value="editor">Éditeur</option>
+                                            <option value="admin">Administrateur</option>
+                                          </select>
+                                          {member.status !== "blocked" && (
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-8 border-rose-300 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                                              onClick={() => {
+                                                if (!selectedSiteId) return;
+                                                setPendingConfirmAction({
+                                                  title: `Révoquer l’accès de ${member.email} ?`,
+                                                  description: `L’accès et toute invitation en attente pour ${member.email} sur le site « ${siteTitle} » seront immédiatement désactivés.`,
+                                                  confirmLabel: "Confirmer la révocation",
+                                                  variant: "danger",
+                                                  onConfirm: () =>
+                                                    revokeAccessMutation.mutate({
+                                                      siteId: selectedSiteId,
+                                                      memberId: member.id,
+                                                    }),
+                                                });
+                                              }}
+                                            >
+                                              Révoquer
+                                            </Button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {!accessQuery.isLoading && !(accessQuery.data?.length) && (
+                                  <p className="p-4 text-xs text-slate-500">
+                                    Aucun membre supplémentaire invité sur ce site pour le moment.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* 4. Parcours de livraison d'un site au client & Préparation du futur transfert de propriété */}
+                      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            {INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.heading}
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            Remise client & Autonomie
+                          </Badge>
+                        </div>
+
+                        <p className="text-xs text-slate-600">
+                          {INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.subtitle}
+                        </p>
+
+                        <div className="space-y-2.5">
+                          {INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.steps.map((step) => (
+                            <div
+                              key={step.stepNumber}
+                              className="rounded-lg border border-slate-200 bg-[#faf8f5] p-3 text-xs"
+                            >
+                              <p className="font-bold text-[#172033]">
+                                Étape {step.stepNumber} — {step.title}
+                              </p>
+                              <p className="mt-1 leading-relaxed text-slate-600">
+                                {step.description}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Encadré de préparation du futur transfert de propriété (non destructif) */}
+                        <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 text-xs text-amber-950">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <strong className="text-[#172033]">
+                              {
+                                INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE
+                                  .ownershipTransferNotice.title
+                              }
+                            </strong>
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400 bg-white text-[10px] font-semibold text-amber-950"
+                            >
+                              {
+                                INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE
+                                  .ownershipTransferNotice.statusBadge
+                              }
+                            </Badge>
+                          </div>
+                          <p className="mt-1.5 leading-relaxed text-slate-700">
+                            {
+                              INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE
+                                .ownershipTransferNotice.description
+                            }
+                          </p>
+                        </div>
+
+                        {/* Assistance et retour au site public */}
+                        <div className="rounded-xl border border-[#d9dfcf] bg-[#f7f9f4] p-3.5 text-xs text-slate-700">
+                          <p className="font-bold text-[#40552d]">
+                            Assistance & Repères pour le client
+                          </p>
+                          <p className="mt-1 leading-relaxed">
+                            {INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.supportNotice}
+                          </p>
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                            <Link href={`/sites/${siteSlug || "association-familiale-ath-vahloul"}`}>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-[#40552d] bg-white text-[11px] font-semibold text-[#40552d]"
+                              >
+                                <Globe className="mr-1 h-3 w-3" />
+                                Ouvrir le site public (/sites/{siteSlug || "association-familiale-ath-vahloul"})
+                              </Button>
+                            </Link>
+                            <Link href="/connexion-administration">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 bg-white text-[11px]"
+                              >
+                                Page /connexion-administration
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

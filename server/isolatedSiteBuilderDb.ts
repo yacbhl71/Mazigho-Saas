@@ -31,6 +31,7 @@ import {
   validateAndSanitizeIndependentSiteImport,
   validateIndependentCustomDomain,
   type IndependentImageTransforms,
+  type IndependentSiteInvitationInspectionDto,
   type IndependentSiteMenuItem,
   type IndependentSitePage,
   type IndependentSiteReusableBlock,
@@ -168,7 +169,7 @@ const memoryMembers = new Map<number, IndependentSiteAccessDto[]>();
 const memoryAccessAudit: Array<Record<string, unknown>> = [];
 const memoryInvitationTokens = new Map<
   string,
-  { siteId: number; memberId: number; expiresAt: string }
+  { siteId: number; memberId: number; expiresAt: string; usedAt: string | null }
 >();
 function normalizeAccessEmail(email: string) {
   return email.trim().toLowerCase();
@@ -442,9 +443,13 @@ export async function inviteIndependentSiteAccess(
   const role = input.role ?? "editor";
   const db = await getDb();
   let member: IndependentSiteAccessDto;
+  let siteTitle = "Site indépendant";
+  let siteSlug = "";
   if (!db) {
     const site = memorySites.get(input.siteId);
     if (!site) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+    siteTitle = site.title;
+    siteSlug = site.slug;
     const list = ensureMemoryOwner(site);
     const existing = list.find((m) => m.email === email);
     member = {
@@ -459,12 +464,27 @@ export async function inviteIndependentSiteAccess(
     };
     if (existing) Object.assign(existing, member);
     else list.push(member);
+    for (const [k, v] of Array.from(memoryInvitationTokens.entries())) {
+      if (v.siteId === input.siteId && v.memberId === member.id && !v.usedAt) {
+        memoryInvitationTokens.delete(k);
+      }
+    }
     memoryInvitationTokens.set(accessHash(token), {
       siteId: input.siteId,
       memberId: member.id,
       expiresAt: expires.toISOString(),
+      usedAt: null,
     });
   } else {
+    const siteRows = await db
+      .select({ title: independentSites.title, slug: independentSites.slug })
+      .from(independentSites)
+      .where(eq(independentSites.id, input.siteId))
+      .limit(1);
+    if (siteRows[0]) {
+      siteTitle = siteRows[0].title;
+      siteSlug = siteRows[0].slug;
+    }
     const existing = await db
       .select()
       .from(independentSiteMembers)
@@ -512,23 +532,31 @@ export async function inviteIndependentSiteAccess(
   await logIndependentSiteAccessAction(actorUserId, input.siteId, "invite", {
     email,
   });
+  const invitationPath = `/constructeur-sites/invitation/${encodeURIComponent(token)}`;
   const result = {
     ...member,
     expiresAt: expires,
+    siteTitle,
+    siteSlug,
+    invitationPath,
     invitationDelivery: "not_configured" as
-      "not_configured" | "delivered" | "failed",
+      | "not_configured"
+      | "delivered"
+      | "failed",
     developmentOnlyToken:
       process.env.NODE_ENV === "production" ? undefined : token,
   };
   if (!isTransactionalEmailConfigured()) return result;
   try {
-    const link = `${getPublicUrl()}/constructeur-sites/invitation/${encodeURIComponent(token)}`;
+    const link = `${getPublicUrl()}${invitationPath}`;
+    const roleLabel =
+      role === "admin" ? "Administrateur du site" : "Éditeur de contenu";
     const delivery = await sendTransactionalEmail({
       to: email,
-      subject: "Invitation à collaborer sur un site indépendant",
-      text: `Vous êtes invité à collaborer sur un site indépendant MAZIGHO. Activez votre accès : ${link}`,
-      html: `<p>Vous êtes invité à collaborer sur un site indépendant MAZIGHO.</p><p><a href="${link}">Activer mon accès</a></p>`,
-      idempotencyKey: `independent-site-invitation/${input.siteId}/${member.id}`,
+      subject: `Invitation à gérer le site « ${siteTitle} » (${roleLabel})`,
+      text: `Vous êtes invité à rejoindre l’espace d’administration du site « ${siteTitle} » avec le rôle ${roleLabel}. Ce lien est à usage unique et doit être activé avec l’adresse ${email} : ${link}`,
+      html: `<p>Vous êtes invité à rejoindre l’espace d’administration du site <strong>${siteTitle}</strong> avec le rôle <strong>${roleLabel}</strong>.</p><p>Important : connectez-vous avec l’adresse e-mail invitée (<strong>${email}</strong>).</p><p><a href="${link}">Activer mon accès au site</a></p>`,
+      idempotencyKey: `independent-site-invitation/${input.siteId}/${member.id}/${accessHash(token).slice(0, 12)}`,
     });
     return {
       ...result,
@@ -571,7 +599,7 @@ export async function revokeIndependentSiteAccess(
     throw new Error("INDEPENDENT_SITE_MEMBER_NOT_FOUND");
   await db
     .update(independentSiteMembers)
-    .set({ status: "blocked", invitationTokenHash: null })
+    .set({ status: "blocked" })
     .where(eq(independentSiteMembers.id, memberId));
   await logIndependentSiteAccessAction(actorUserId, siteId, "revoke", m);
   return { ...m, status: "blocked" as const };
@@ -608,16 +636,223 @@ export async function updateIndependentSiteAccessRole(
   });
   return { memberId, role };
 }
+export async function inspectIndependentSiteInvitation(
+  token: string,
+  viewerEmail?: string | null,
+): Promise<IndependentSiteInvitationInspectionDto> {
+  const cleanToken = (token || "").trim();
+  if (!cleanToken) {
+    return {
+      status: "not_found",
+      siteId: null,
+      siteTitle: null,
+      siteSlug: null,
+      role: null,
+      invitedEmail: null,
+      expiresAt: null,
+      emailMatchesViewer: null,
+    };
+  }
+  const tokenHash = accessHash(cleanToken);
+  const normalizedViewer = viewerEmail ? normalizeAccessEmail(viewerEmail) : null;
+  const db = await getDb();
+  if (!db) {
+    const invitation = memoryInvitationTokens.get(tokenHash);
+    if (!invitation) {
+      return {
+        status: "not_found",
+        siteId: null,
+        siteTitle: null,
+        siteSlug: null,
+        role: null,
+        invitedEmail: null,
+        expiresAt: null,
+        emailMatchesViewer: null,
+      };
+    }
+    const site = memorySites.get(invitation.siteId);
+    const member = site
+      ? ensureMemoryOwner(site).find((m) => m.id === invitation.memberId)
+      : null;
+    if (!site || !member) {
+      return {
+        status: "not_found",
+        siteId: null,
+        siteTitle: null,
+        siteSlug: null,
+        role: null,
+        invitedEmail: null,
+        expiresAt: null,
+        emailMatchesViewer: null,
+      };
+    }
+    const role: "admin" | "editor" = member.role === "admin" ? "admin" : "editor";
+    const emailMatchesViewer = normalizedViewer
+      ? normalizeAccessEmail(member.email) === normalizedViewer
+      : null;
+    if (member.status === "blocked") {
+      return {
+        status: "revoked",
+        siteId: site.id,
+        siteTitle: site.title,
+        siteSlug: site.slug,
+        role,
+        invitedEmail: member.email,
+        expiresAt: invitation.expiresAt,
+        emailMatchesViewer,
+      };
+    }
+    if (invitation.usedAt || member.status === "active") {
+      return {
+        status: "already_used",
+        siteId: site.id,
+        siteTitle: site.title,
+        siteSlug: site.slug,
+        role,
+        invitedEmail: member.email,
+        expiresAt: invitation.expiresAt,
+        emailMatchesViewer,
+      };
+    }
+    if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
+      return {
+        status: "expired",
+        siteId: site.id,
+        siteTitle: site.title,
+        siteSlug: site.slug,
+        role,
+        invitedEmail: member.email,
+        expiresAt: invitation.expiresAt,
+        emailMatchesViewer,
+      };
+    }
+    return {
+      status: "valid",
+      siteId: site.id,
+      siteTitle: site.title,
+      siteSlug: site.slug,
+      role,
+      invitedEmail: member.email,
+      expiresAt: invitation.expiresAt,
+      emailMatchesViewer,
+    };
+  }
+
+  const rows = await db
+    .select({
+      id: independentSiteMembers.id,
+      siteId: independentSiteMembers.siteId,
+      email: independentSiteMembers.email,
+      role: independentSiteMembers.role,
+      status: independentSiteMembers.status,
+      invitationExpiresAt: independentSiteMembers.invitationExpiresAt,
+      invitationUsedAt: independentSiteMembers.invitationUsedAt,
+      siteTitle: independentSites.title,
+      siteSlug: independentSites.slug,
+    })
+    .from(independentSiteMembers)
+    .leftJoin(
+      independentSites,
+      eq(independentSites.id, independentSiteMembers.siteId),
+    )
+    .where(eq(independentSiteMembers.invitationTokenHash, tokenHash))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) {
+    return {
+      status: "not_found",
+      siteId: null,
+      siteTitle: null,
+      siteSlug: null,
+      role: null,
+      invitedEmail: null,
+      expiresAt: null,
+      emailMatchesViewer: null,
+    };
+  }
+  const role: "admin" | "editor" = row.role === "admin" ? "admin" : "editor";
+  const expiresAtIso = row.invitationExpiresAt
+    ? row.invitationExpiresAt.toISOString()
+    : null;
+  const emailMatchesViewer = normalizedViewer
+    ? normalizeAccessEmail(row.email) === normalizedViewer
+    : null;
+
+  if (row.status === "blocked") {
+    return {
+      status: "revoked",
+      siteId: row.siteId,
+      siteTitle: row.siteTitle ?? "Site indépendant",
+      siteSlug: row.siteSlug ?? null,
+      role,
+      invitedEmail: row.email,
+      expiresAt: expiresAtIso,
+      emailMatchesViewer,
+    };
+  }
+  if (row.invitationUsedAt !== null || row.status === "active") {
+    return {
+      status: "already_used",
+      siteId: row.siteId,
+      siteTitle: row.siteTitle ?? "Site indépendant",
+      siteSlug: row.siteSlug ?? null,
+      role,
+      invitedEmail: row.email,
+      expiresAt: expiresAtIso,
+      emailMatchesViewer,
+    };
+  }
+  if (!row.invitationExpiresAt || row.invitationExpiresAt.getTime() <= Date.now()) {
+    return {
+      status: "expired",
+      siteId: row.siteId,
+      siteTitle: row.siteTitle ?? "Site indépendant",
+      siteSlug: row.siteSlug ?? null,
+      role,
+      invitedEmail: row.email,
+      expiresAt: expiresAtIso,
+      emailMatchesViewer,
+    };
+  }
+  return {
+    status: "valid",
+    siteId: row.siteId,
+    siteTitle: row.siteTitle ?? "Site indépendant",
+    siteSlug: row.siteSlug ?? null,
+    role,
+    invitedEmail: row.email,
+    expiresAt: expiresAtIso,
+    emailMatchesViewer,
+  };
+}
 export async function acceptIndependentSiteInvitation(
   userId: number,
   token: string,
   accountEmail: string,
 ) {
   const email = normalizeAccessEmail(accountEmail);
+  const inspection = await inspectIndependentSiteInvitation(token, email);
+  if (inspection.status === "not_found") {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:NOT_FOUND");
+  }
+  if (inspection.status === "revoked") {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:REVOKED");
+  }
+  if (inspection.status === "already_used") {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:ALREADY_USED");
+  }
+  if (inspection.status === "expired") {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:EXPIRED");
+  }
+  if (inspection.emailMatchesViewer === false) {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:EMAIL_MISMATCH");
+  }
+
   const db = await getDb();
   if (!db) {
     const invitation = memoryInvitationTokens.get(accessHash(token));
-    if (!invitation || new Date(invitation.expiresAt) <= new Date())
+    if (!invitation || new Date(invitation.expiresAt) <= new Date() || invitation.usedAt)
       throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
     const site = memorySites.get(invitation.siteId);
     const member = site
@@ -631,13 +866,15 @@ export async function acceptIndependentSiteInvitation(
       throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
     member.userId = userId;
     member.status = "active";
-    memoryInvitationTokens.delete(accessHash(token));
+    invitation.usedAt = new Date().toISOString();
     await logIndependentSiteAccessAction(userId, invitation.siteId, "accept", {
       email: member.email,
       userId,
     });
     return {
       siteId: invitation.siteId,
+      siteTitle: site?.title ?? "Site indépendant",
+      siteSlug: site?.slug ?? null,
       role: member.role,
       status: "active" as const,
     };
@@ -663,7 +900,6 @@ export async function acceptIndependentSiteInvitation(
       userId,
       status: "active",
       invitationUsedAt: new Date(),
-      invitationTokenHash: null,
     })
     .where(
       and(
@@ -676,7 +912,13 @@ export async function acceptIndependentSiteInvitation(
     email: m.email,
     userId,
   });
-  return { siteId: m.siteId, role: m.role, status: "active" as const };
+  return {
+    siteId: m.siteId,
+    siteTitle: inspection.siteTitle ?? "Site indépendant",
+    siteSlug: inspection.siteSlug ?? null,
+    role: m.role,
+    status: "active" as const,
+  };
 }
 
 const DEFAULT_THEME: IndependentSiteThemeConfig = {
