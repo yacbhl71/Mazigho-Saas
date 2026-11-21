@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   INDEPENDENT_BUILDER_HELP_GUIDES,
@@ -36,6 +37,7 @@ export default function IndependentSitePublicPreviewPage() {
   const [, publicParams] = useRoute("/sites/:slug");
   const slug = previewParams?.slug || publicParams?.slug || "association-familiale-ath-vahloul";
   const isPreviewRoute = Boolean(previewParams?.slug);
+  const { user } = useAuth();
 
   const queryParams = useMemo(
     () =>
@@ -64,6 +66,10 @@ export default function IndependentSitePublicPreviewPage() {
   const siteQuery = trpc.independentSiteBuilder.getPublicSiteBySlug.useQuery(
     { slug, previewMode: isPreviewRoute, previewToken: isPreviewRoute ? previewToken : undefined },
     { retry: false, refetchOnWindowFocus: false }
+  );
+  const siteAccessQuery = trpc.independentSiteBuilder.getAccessRole.useQuery(
+    { siteId: siteQuery.data?.id ?? 0 },
+    { enabled: Boolean(user && siteQuery.data?.id), retry: false, refetchOnWindowFocus: false },
   );
 
   // En mode prévisualisation privée (/constructeur-sites/apercu/:slug),
@@ -164,6 +170,9 @@ export default function IndependentSitePublicPreviewPage() {
   });
 
   const isPublicAthVahloulDemo = !isPreviewRoute && slug === "association-familiale-ath-vahloul" && !siteQuery.data;
+  const siteLoginHref = `/login?returnTo=${encodeURIComponent(`/sites/${site.slug}`)}`;
+  const siteAdminLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/constructeur-sites?siteSlug=${site.slug}`)}`;
+  const hasSiteAdministrationAccess = Boolean(user && siteAccessQuery.data?.role);
 
   return (
     <div className={isPreviewRoute ? "min-h-screen bg-[#111827] text-slate-100" : "min-h-screen bg-white text-slate-900"}>
@@ -411,6 +420,17 @@ export default function IndependentSitePublicPreviewPage() {
           className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-900"
         >
           Démonstration ATH VAHLOUL — contenus imaginés à personnaliser avant toute mise en ligne réelle.
+        </div>
+      )}
+
+      {!isPreviewRoute && (
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+          <div className="mx-auto flex max-w-7xl items-center justify-end">
+            <div className="flex items-center gap-2">
+              {!user && <Link href={siteLoginHref}><Button size="sm" variant="ghost" className="text-slate-600 hover:bg-white hover:text-slate-900">Se connecter</Button></Link>}
+              {hasSiteAdministrationAccess && <Link href={siteAdminLoginHref}><Button size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100">Administration du site</Button></Link>}
+            </div>
+          </div>
         </div>
       )}
 

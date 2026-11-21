@@ -478,6 +478,13 @@ export default function IndependentSiteBuilderPage() {
     { retry: false, refetchOnWindowFocus: false }
   );
 
+  useEffect(() => {
+    if (selectedSiteId || !projectsQuery.data || typeof window === "undefined") return;
+    const requestedSlug = new URLSearchParams(window.location.search).get("siteSlug")?.trim().toLowerCase();
+    if (!requestedSlug) return;
+    const requestedProject = projectsQuery.data.find((project) => project.slug.toLowerCase() === requestedSlug);
+    if (requestedProject) setSelectedSiteId(requestedProject.id);
+  }, [projectsQuery.data, selectedSiteId]);
   const activeProjectQuery = trpc.independentSiteBuilder.getProject.useQuery(
     { siteId: selectedSiteId ?? 0 },
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }

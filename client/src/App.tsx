@@ -385,8 +385,14 @@ function BrowserTitle() {
 function StorefrontMarketing() {
   const [location] = useLocation();
   const pathname = location.split("?")[0];
+  const search = location.includes("?") ? location.slice(location.indexOf("?") + 1) : "";
+  const query = new URLSearchParams(search);
+  const isIndependentClientAuth =
+    pathname.startsWith("/constructeur-sites/invitation/") ||
+    ((pathname === "/login" || pathname === "/register") &&
+      (query.get("intent") === "independent" || /^\/constructeur-sites\/invitation\/[A-Za-z0-9_-]{20,200}$/.test(query.get("returnTo") || "")));
   const hostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
-  if (pathname === "/mazigho-saas" || pathname.startsWith("/creation-boutique") || hostname === "pro.mazigho.ch") return null;
+  if (isIndependentClientAuth || pathname === "/connexion-administration" || pathname === "/mazigho-saas" || pathname.startsWith("/creation-boutique") || hostname === "pro.mazigho.ch") return null;
   return <><MarketingPixels /><MarketingConsentBanner /></>;
 }
 
@@ -419,7 +425,7 @@ function Router() {
     path === "/constructeur-sites" ||
     path.startsWith("/constructeur-sites/") ||
     path.startsWith("/sites/") ||
-    ["/login", "/register", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/activer-compte"].includes(path);
+    ["/login", "/register", "/connexion-administration", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/activer-compte"].includes(path);
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const forcePreview = maintenancePreview?.get("preview_maintenance") === "1";
   const forceStoreMaintenancePreview = maintenancePreview?.get("preview_store_maintenance") === "1";
@@ -527,6 +533,7 @@ function Router() {
       <Route path={"/commandes"} component={Orders} />
       <Route path={"/parametres"} component={SettingsPage} />
       <Route path="/login" component={Login} />
+      <Route path="/connexion-administration" component={Login} />
       <Route path="/mot-de-passe-oublie" component={ForgotPassword} />
       <Route path="/reinitialiser-mot-de-passe" component={ResetPassword} />
       <Route path="/activer-compte" component={ActivateAccount} />
@@ -637,7 +644,7 @@ function Router() {
         </Switch>
       </Suspense>
       <StorefrontMarketing />
-      <MazighoSurfaceSwitcher />
+      {!location.startsWith("/constructeur-sites/invitation/") && !location.startsWith("/connexion-administration") && !location.includes("intent=independent") && <MazighoSurfaceSwitcher />}
     </>
   );
 }
