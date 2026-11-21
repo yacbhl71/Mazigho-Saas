@@ -229,6 +229,7 @@ const storefrontThemePresetBusinessTypes: Record<StorefrontThemePreset, Provisio
   jewelry: "bijoux",
   coffee: "autre",
   marketExpress: "autre",
+  mazighoShop: "autre",
   gallerySignature: "autre",
   studioFlux: "autre",
   glamourNoir: "autre",

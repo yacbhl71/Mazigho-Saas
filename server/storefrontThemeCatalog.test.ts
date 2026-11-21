@@ -8,13 +8,14 @@ import {
 } from "../shared/storefrontThemeCatalog";
 
 describe("shared storefront theme catalog", () => {
-  it("exposes twenty-eight unique owner-selectable theme identifiers", () => {
-    expect(storefrontThemeIds).toHaveLength(28);
-    expect(new Set(storefrontThemeIds).size).toBe(28);
+  it("exposes twenty-nine unique owner-selectable theme identifiers", () => {
+    expect(storefrontThemeIds).toHaveLength(29);
+    expect(new Set(storefrontThemeIds).size).toBe(29);
     expect(storefrontThemeCatalog.map(theme => theme.id)).toEqual(storefrontThemeIds);
     expect(storefrontThemeIds).toEqual(
       expect.arrayContaining([
         "marketExpress",
+        "mazighoShop",
         "gallerySignature",
         "studioFlux",
         "glamourNoir",
