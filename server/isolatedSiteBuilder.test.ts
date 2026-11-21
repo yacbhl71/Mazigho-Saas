@@ -341,6 +341,16 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
       "/contact",
     ]);
 
+    const homePage = demo.pages.find((p) => p.slug === "/")!;
+    const announcementsPage = demo.pages.find((p) => p.slug === "/annonces")!;
+    expect(homePage.seoTitle).toContain("Démonstration");
+    expect(String(homePage.html)).toContain("Démonstration à personnaliser");
+    expect(String(homePage.html)).toContain("textes, dates, coordonnées et illustrations");
+    expect(announcementsPage.visibility).toBe("members");
+    expect(announcementsPage.indexable).toBe(false);
+    expect(String(announcementsPage.html)).toContain("La mémoire se partage avec consentement");
+    expect(String(announcementsPage.html)).toContain("Choisir ce qui doit être partagé");
+
     const nav = buildNavigationFromPages(demo.pages);
     const familleMenu = nav.find((item) => item.href === "/notre-famille");
     const evenementsMenu = nav.find((item) => item.href === "/evenements");
