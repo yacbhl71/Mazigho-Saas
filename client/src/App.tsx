@@ -128,6 +128,7 @@ const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
 const ShippingReturns = lazy(() => import("./pages/ShippingReturns"));
 const IndependentSiteBuilderPage = lazy(() => import("./pages/site-builder/IndependentSiteBuilderPage"));
+const IndependentSiteAdminPage = lazy(() => import("./pages/site-builder/IndependentSiteAdminPage"));
 const SiteInvitationPage = lazy(() => import("./pages/site-builder/SiteInvitationPage"));
 const IndependentSitePublicPreviewPage = lazy(() => import("./pages/site-builder/IndependentSitePublicPreviewPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -411,6 +412,7 @@ function Router() {
   const isPublicSaasLanding =
     path === "/mazigho-saas" ||
     path.startsWith("/creation-boutique") ||
+    path === "/administration-site" ||
     path === "/constructeur-sites" ||
     path.startsWith("/constructeur-sites/") ||
     path.startsWith("/sites/") ||
@@ -424,6 +426,7 @@ function Router() {
     path.startsWith("/admin") ||
     path === "/constructeur-sites" ||
     path.startsWith("/constructeur-sites/") ||
+    path === "/administration-site" ||
     path.startsWith("/sites/") ||
     ["/login", "/register", "/connexion-administration", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/activer-compte"].includes(path);
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
@@ -501,6 +504,7 @@ function Router() {
         <Switch>
       <Route path={"/"} component={isSaasLandingHost ? MazighoSaasLanding : Home} />
       <Route path={"/constructeur-sites/invitation/:token"} component={SiteInvitationPage} />
+      <Route path={"/administration-site"} component={IndependentSiteAdminPage} />
       <Route path={"/constructeur-sites/apercu/:slug"} component={IndependentSitePublicPreviewPage} />
       <Route path={"/constructeur-sites"} component={IndependentSiteBuilderPage} />
       <Route path={"/sites/:slug"} component={IndependentSitePublicPreviewPage} />

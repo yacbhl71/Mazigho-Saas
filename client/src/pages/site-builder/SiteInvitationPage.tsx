@@ -248,7 +248,7 @@ export default function SiteInvitationPage() {
                   className="bg-[#172033] text-white hover:bg-[#24324f]"
                   onClick={() =>
                     setLocation(
-                      `/constructeur-sites?siteId=${acceptedResult.siteId}`,
+                      `/administration-site?siteId=${acceptedResult.siteId}`,
                     )
                   }
                 >
@@ -543,7 +543,7 @@ export default function SiteInvitationPage() {
                               className="bg-[#172033] text-white hover:bg-[#24324f]"
                               onClick={() =>
                                 setLocation(
-                                  `/constructeur-sites?siteId=${inspection.siteId}`,
+                                  `/administration-site?siteId=${inspection.siteId}`,
                                 )
                               }
                             >
@@ -554,8 +554,8 @@ export default function SiteInvitationPage() {
                             <Link
                               href={`/connexion-administration?returnTo=${encodeURIComponent(
                                 inspection.siteId
-                                  ? `/constructeur-sites?siteId=${inspection.siteId}`
-                                  : "/constructeur-sites",
+                                  ? `/administration-site?siteId=${inspection.siteId}`
+                                  : "/administration-site",
                               )}${
                                 inspection.invitedEmail
                                   ? `&email=${encodeURIComponent(

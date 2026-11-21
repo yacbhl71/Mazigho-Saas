@@ -5207,16 +5207,18 @@ export function sanitizeIndependentAdministrationReturnTo(
 ): string {
   const candidate = (rawReturnTo || "").trim();
   if (!candidate.startsWith("/") || candidate.startsWith("//")) {
-    return "/constructeur-sites";
+    return "/administration-site";
   }
   if (
     candidate === "/constructeur-sites" ||
     /^\/constructeur-sites\?(?:siteSlug=[a-z0-9-]{1,120}|siteId=[0-9]{1,12})$/.test(candidate) ||
+    /^\/administration-site\?siteSlug=[a-z0-9-]{1,120}$/.test(candidate) ||
+    /^\/administration-site\?siteId=[0-9]{1,12}$/.test(candidate) ||
     /^\/constructeur-sites\/invitation\/[A-Za-z0-9_-]{16,200}$/.test(candidate) ||
     /^\/constructeur-sites\/apercu\/[a-z0-9-]{1,120}$/.test(candidate) ||
     /^\/sites\/[a-z0-9-]{1,120}$/.test(candidate)
   ) {
     return candidate;
   }
-  return "/constructeur-sites";
+  return "/administration-site";
 }

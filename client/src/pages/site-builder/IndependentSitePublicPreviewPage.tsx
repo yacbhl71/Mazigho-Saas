@@ -170,8 +170,8 @@ export default function IndependentSitePublicPreviewPage() {
   });
 
   const isPublicAthVahloulDemo = !isPreviewRoute && slug === "association-familiale-ath-vahloul" && !siteQuery.data;
-  const siteLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/constructeur-sites?siteSlug=${site.slug}`)}`;
-  const siteAdminLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/constructeur-sites?siteSlug=${site.slug}`)}`;
+  const siteLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/administration-site?siteSlug=${site.slug}`)}`;
+  const siteAdminLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/administration-site?siteSlug=${site.slug}`)}`;
   const hasSiteAdministrationAccess = Boolean(user && (siteAccessQuery.data?.role || isPublicAthVahloulDemo));
 
   return (
@@ -428,7 +428,7 @@ export default function IndependentSitePublicPreviewPage() {
           <div className="mx-auto flex max-w-7xl items-center justify-end">
             <div className="flex items-center gap-2">
               {!user && <Link href={siteLoginHref}><Button size="sm" variant="ghost" className="text-slate-600 hover:bg-white hover:text-slate-900">Se connecter</Button></Link>}
-              {hasSiteAdministrationAccess && <Link href={user ? `/constructeur-sites?siteSlug=${site.slug}` : siteAdminLoginHref}><Button size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100">Administration du site</Button></Link>}
+              {hasSiteAdministrationAccess && <Link href={user ? `/administration-site?siteSlug=${site.slug}` : siteAdminLoginHref}><Button size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100">Administration du site</Button></Link>}
             </div>
           </div>
         </div>

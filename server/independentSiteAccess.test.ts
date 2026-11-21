@@ -262,11 +262,16 @@ describe("independent site access isolation", () => {
 
     // returnTo safety: keeps independent site routes and never falls back to /demarrer-boutique
     expect(sanitizeIndependentAdministrationReturnTo(undefined)).toBe(
-      "/constructeur-sites",
+      "/administration-site",
     );
     expect(
       sanitizeIndependentAdministrationReturnTo("/demarrer-boutique?plan=free"),
-    ).toBe("/constructeur-sites");
+    ).toBe("/administration-site");
+    expect(
+      sanitizeIndependentAdministrationReturnTo(
+        "/administration-site?siteSlug=association-familiale-ath-vahloul",
+      ),
+    ).toBe("/administration-site?siteSlug=association-familiale-ath-vahloul");
     expect(
       sanitizeIndependentAdministrationReturnTo(
         "/constructeur-sites?siteId=1042",
@@ -286,6 +291,6 @@ describe("independent site access isolation", () => {
       sanitizeIndependentAdministrationReturnTo(
         "https://mazighoshop.com/boutique",
       ),
-    ).toBe("/constructeur-sites");
+    ).toBe("/administration-site");
   });
 });
