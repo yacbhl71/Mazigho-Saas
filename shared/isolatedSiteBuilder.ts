@@ -368,7 +368,10 @@ export function sanitizeBuilderImageSrc(raw: string, fallback = DEFAULT_CARD_SVG
     return fallback;
   }
   if (/^data:image\/(?:svg\+xml|png|jpeg|jpg|webp|gif)/i.test(trimmed)) {
-    return trimmed;
+    if (/(?:<script|%3cscript|onload\s*=|onerror\s*=|javascript:|vbscript:)/i.test(trimmed)) {
+      return fallback;
+    }
+    return trimmed.replace(/"/g, "%22");
   }
   if (
     (trimmed.startsWith("/") && !trimmed.startsWith("//")) ||
@@ -2666,4 +2669,461 @@ export function assertZeroEcommerceInIndependentSite(payload: unknown): void {
   }
 
   walk(payload);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Parcours Professionnel : État du Projet, Filet de Sécurité Local,
+//    Aides Contextuelles, Prévisualisation & Robustesse
+// ---------------------------------------------------------------------------
+
+export type IndependentProjectMode = "site_vitrine" | "boutique_hybride";
+
+export interface IndependentProjectModeOption {
+  value: IndependentProjectMode;
+  label: "Site vitrine" | "Boutique hybride";
+  shortDescription: string;
+  detailedHelp: string;
+}
+
+export const INDEPENDENT_PROJECT_MODE_OPTIONS: ReadonlyArray<IndependentProjectModeOption> = [
+  {
+    value: "site_vitrine",
+    label: "Site vitrine",
+    shortDescription: "Site de présentation sans vente en ligne obligatoire.",
+    detailedHelp:
+      "Idéal pour présenter une association, une famille, un cabinet, un artisan, un événement ou des services sans catalogue marchand ni panier.",
+  },
+  {
+    value: "boutique_hybride",
+    label: "Boutique hybride",
+    shortDescription: "Site éditorial combinant pages de présentation et vitrine d’offres.",
+    detailedHelp:
+      "Permet d’associer des pages éditoriales riches (histoire, valeurs, réalisations, prise de contact) à une présentation d’offres ou de créations, tout en restant géré de façon 100 % indépendante de Studio MAZIGHO.",
+  },
+] as const;
+
+export function resolveIndependentProjectMode(
+  siteType?: IndependentSiteType | null,
+  explicitMode?: IndependentProjectMode | null
+): IndependentProjectMode {
+  if (explicitMode === "site_vitrine" || explicitMode === "boutique_hybride") {
+    return explicitMode;
+  }
+  void siteType;
+  return "site_vitrine";
+}
+
+export const INDEPENDENT_BUILDER_HELP_GUIDES = {
+  libraryRoles: {
+    bloc: {
+      title: "Qu’est-ce qu’un Bloc ?",
+      description:
+        "Une brique visuelle simple (bannière Hero, texte, image, grille de cartes « + », bouton, FAQ) que vous insérez où vous voulez dans la page active.",
+    },
+    module: {
+      title: "Qu’est-ce qu’un Module ?",
+      description:
+        "Un composant fonctionnel déjà structuré (calendrier d’événements, formulaire de participation, annuaire de prêt de matériel, trombinoscope, galerie commentée).",
+    },
+    socle: {
+      title: "Qu’est-ce qu’un Socle ?",
+      description:
+        "La structure complète d’une seule page (ex. page Accueil, page Famille, page Contact) qui remplace le contenu de la page en cours pour démarrer rapidement.",
+    },
+    modele: {
+      title: "Qu’est-ce qu’un Modèle ?",
+      description:
+        "Un site internet complet comprenant plusieurs pages déjà reliées entre elles par un menu, un thème de couleurs et des contenus prêts à personnaliser.",
+    },
+  },
+  workflowActions: {
+    sauvegarder: {
+      title: "Sauvegarder (Enregistrer)",
+      description:
+        "Enregistre votre travail dans votre espace privé et crée un point de sauvegarde sans modifier ce que voient vos visiteurs publics.",
+    },
+    previsualiser: {
+      title: "Prévisualiser (Aperçu privé)",
+      description:
+        "Ouvre un aperçu privé pour tester votre site sur ordinateur, tablette et mobile. Une prévisualisation n’est jamais une publication réelle.",
+    },
+    publier: {
+      title: "Publier en ligne",
+      description:
+        "Met officiellement votre site à jour sur son adresse publique (/sites/:slug) après confirmation explicite de votre part.",
+    },
+  },
+  projectModes: {
+    site_vitrine:
+      "Mode Site vitrine : conçu pour présenter une activité, une association, une famille, un événement ou des services sans vente en ligne.",
+    boutique_hybride:
+      "Mode Boutique hybride : conçu pour associer des pages éditoriales complètes à une vitrine d’offres ou de prestations, sans dépendre du moteur de caisse e-commerce.",
+  },
+  separationNotice:
+    "Ce constructeur indépendant est strictement séparé du constructeur boutique Studio MAZIGHO : vos créations, sauvegardes et publications ici ne touchent jamais à vos boutiques e-commerce, à vos commandes, à vos stocks ni au site public ATH VAHLOUL.",
+} as const;
+
+export function formatIndependentBuilderErrorMessage(rawError: unknown): string {
+  const message =
+    typeof rawError === "string"
+      ? rawError.trim()
+      : rawError instanceof Error
+        ? rawError.message.trim()
+        : "";
+
+  if (!message) {
+    return "Une erreur est survenue lors de l’opération. Vos modifications restent présentes dans l’éditeur : vous pouvez réessayer.";
+  }
+
+  if (message.includes("INDEPENDENT_SITE_SECRET_DETECTED")) {
+    return "Sauvegarde refusée par sécurité : une clé secrète ou un jeton privé a été détecté dans le contenu. Supprimez toute donnée sensible avant d’enregistrer.";
+  }
+  if (message.includes("INDEPENDENT_SITE_ECOMMERCE_DEPENDENCY_FORBIDDEN")) {
+    return "Action refusée : ce constructeur indépendant ne peut pas contenir de composant lié au panier, au stock ou au paiement e-commerce.";
+  }
+  if (message.includes("INDEPENDENT_SITE_EMPTY_PAGES_FORBIDDEN")) {
+    return "Sauvegarde impossible : votre site doit comporter au moins une page.";
+  }
+  if (message.includes("INDEPENDENT_SITE_NOT_FOUND")) {
+    return "Ce projet est introuvable ou vous n’avez pas l’autorisation de le modifier.";
+  }
+  if (message.includes("INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED")) {
+    return "Vérification DNS incomplète : l’enregistrement TXT n’est pas encore visible sur votre domaine. Patientez quelques minutes après l’ajout chez votre hébergeur DNS puis réessayez.";
+  }
+  if (/UNAUTHORIZED|401|non connect|authentication|login/i.test(message)) {
+    return "Vous n’êtes pas connecté ou votre session a expiré. Vos modifications restent affichées à l’écran : reconnectez-vous avant de sauvegarder.";
+  }
+  if (/network|fetch|timeout|ECONN|503|502|504/i.test(message)) {
+    return "La sauvegarde est anormalement lente ou la connexion a été interrompue. Vos modifications sont conservées localement en filet de sécurité : cliquez sur « Enregistrer » pour réessayer.";
+  }
+
+  return message;
+}
+
+export type IndependentWorkflowLifecycleStatus =
+  | "brouillon"
+  | "sauvegarde"
+  | "publie"
+  | "archive";
+
+export interface IndependentProjectWorkflowInput {
+  projectId: number | null;
+  title: string;
+  siteType: IndependentSiteType;
+  projectMode?: IndependentProjectMode | null;
+  status: IndependentSiteStatus;
+  hasUnsavedChanges: boolean;
+  isSaving: boolean;
+  lastSavedAt: string | null;
+  saveError?: string | null;
+}
+
+export interface IndependentProjectWorkflowSummary {
+  projectTitle: string;
+  projectMode: IndependentProjectMode;
+  projectModeLabel: "Site vitrine" | "Boutique hybride";
+  workflowStatus: IndependentWorkflowLifecycleStatus;
+  workflowStatusLabel: "Brouillon" | "Sauvegardé" | "Publié" | "Archivé";
+  statusDetailLabel: string;
+  hasUnsavedChanges: boolean;
+  unsavedIndicatorLabel: string;
+  lastSavedLabel: string;
+  savingInProgressMessage: string | null;
+  saveSuccessMessage: string | null;
+  saveErrorMessage: string | null;
+  canTriggerSave: boolean;
+}
+
+export function computeIndependentProjectWorkflowState(
+  input: IndependentProjectWorkflowInput
+): IndependentProjectWorkflowSummary {
+  const safeTitle = sanitizeBuilderText(input.title || "Mon Site Internet", 160) || "Mon Site Internet";
+  const projectMode = resolveIndependentProjectMode(input.siteType, input.projectMode);
+  const projectModeLabel =
+    projectMode === "boutique_hybride" ? "Boutique hybride" : "Site vitrine";
+
+  let workflowStatus: IndependentWorkflowLifecycleStatus = "brouillon";
+  let workflowStatusLabel: "Brouillon" | "Sauvegardé" | "Publié" | "Archivé" = "Brouillon";
+  let statusDetailLabel = "Brouillon en cours d’édition";
+
+  if (input.status === "published") {
+    workflowStatus = "publie";
+    workflowStatusLabel = "Publié";
+    statusDetailLabel = input.hasUnsavedChanges
+      ? "Publié en ligne · Modifications locales non enregistrées"
+      : "Publié en ligne et à jour";
+  } else if (input.status === "archived") {
+    workflowStatus = "archive";
+    workflowStatusLabel = "Archivé";
+    statusDetailLabel = "Projet archivé (non visible publiquement)";
+  } else if (!input.hasUnsavedChanges && (Boolean(input.projectId) || Boolean(input.lastSavedAt))) {
+    workflowStatus = "sauvegarde";
+    workflowStatusLabel = "Sauvegardé";
+    statusDetailLabel = "Brouillon sauvegardé (non publié)";
+  } else {
+    workflowStatus = "brouillon";
+    workflowStatusLabel = "Brouillon";
+    statusDetailLabel = input.hasUnsavedChanges
+      ? "Brouillon avec modifications non enregistrées"
+      : "Nouveau brouillon non enregistré";
+  }
+
+  const unsavedIndicatorLabel = input.hasUnsavedChanges
+    ? "Modifications non enregistrées"
+    : "Toutes les modifications sont enregistrées";
+
+  const lastSavedLabel = input.lastSavedAt
+    ? `Dernière sauvegarde : ${input.lastSavedAt}`
+    : "Aucune sauvegarde enregistrée durant cette session";
+
+  const savingInProgressMessage = input.isSaving
+    ? "Sauvegarde en cours… Veuillez patienter pendant l’enregistrement de vos pages."
+    : null;
+
+  const saveSuccessMessage =
+    !input.isSaving && !input.hasUnsavedChanges && input.lastSavedAt && !input.saveError
+      ? `Sauvegarde confirmée (${input.lastSavedAt}) pour « ${safeTitle} ».`
+      : null;
+
+  const saveErrorMessage = input.saveError
+    ? formatIndependentBuilderErrorMessage(input.saveError)
+    : null;
+
+  return {
+    projectTitle: safeTitle,
+    projectMode,
+    projectModeLabel,
+    workflowStatus,
+    workflowStatusLabel,
+    statusDetailLabel,
+    hasUnsavedChanges: input.hasUnsavedChanges,
+    unsavedIndicatorLabel,
+    lastSavedLabel,
+    savingInProgressMessage,
+    saveSuccessMessage,
+    saveErrorMessage,
+    canTriggerSave: !input.isSaving,
+  };
+}
+
+/**
+ * Garantit qu'un projet vide (0 page) dispose toujours d'au moins une page d'accueil saine
+ * afin d'éviter toute erreur de rendu dans l'éditeur ou l'aperçu.
+ */
+export function ensureNonEmptyIndependentPages(
+  pages: ReadonlyArray<IndependentSitePage> | null | undefined,
+  siteTitle = "Mon Site Internet"
+): IndependentSitePage[] {
+  if (Array.isArray(pages) && pages.length > 0) {
+    return pages.map((page, index) => ({
+      ...page,
+      id: page.id || `page-${index + 1}`,
+      title: sanitizeBuilderText(page.title || `Page ${index + 1}`, 140) || `Page ${index + 1}`,
+      slug: normalizeIndependentPageSlug(page.slug || (index === 0 ? "/" : `/page-${index + 1}`)),
+      parentPageId: page.parentPageId ?? null,
+      showInMenu: page.showInMenu !== false,
+      menuOrder: typeof page.menuOrder === "number" ? page.menuOrder : index + 1,
+      visibility: page.visibility || "public",
+      seoTitle: sanitizeBuilderText(
+        page.seoTitle || `${page.title || `Page ${index + 1}`} | ${siteTitle}`,
+        180
+      ),
+      seoDescription: sanitizeBuilderText(page.seoDescription || "", 320),
+      socialImageUrl: page.socialImageUrl
+        ? sanitizeBuilderImageSrc(page.socialImageUrl)
+        : undefined,
+      indexable: page.indexable !== false,
+      html: sanitizeIndependentHtml(page.html || INDEPENDENT_PAGE_SOCLES[0].html),
+      css: sanitizeIndependentCss(
+        page.css || "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }"
+      ),
+    }));
+  }
+
+  const safeTitle = sanitizeBuilderText(siteTitle || "Mon Site Internet", 140) || "Mon Site Internet";
+  const defaultSocle = INDEPENDENT_PAGE_SOCLES[0];
+  return [
+    {
+      id: "page-accueil",
+      title: "Accueil",
+      slug: "/",
+      parentPageId: null,
+      showInMenu: true,
+      menuOrder: 1,
+      visibility: "public",
+      seoTitle: `Accueil | ${safeTitle}`,
+      seoDescription: defaultSocle.description,
+      indexable: true,
+      html: defaultSocle.html,
+      css: "body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #172033; }",
+    },
+  ];
+}
+
+export interface IndependentBuilderLocalSafetySnapshot {
+  version: 1;
+  siteId: number | null;
+  slug: string;
+  title: string;
+  siteType: IndependentSiteType;
+  projectMode: IndependentProjectMode;
+  pages: IndependentSitePage[];
+  reusableBlocks: IndependentSiteReusableBlock[];
+  activePageId: string;
+  savedAtIso: string;
+}
+
+export function buildLocalSafetyStorageKey(siteId: number | null, slug?: string): string {
+  if (typeof siteId === "number" && Number.isFinite(siteId) && siteId > 0) {
+    return `mazigho_independent_builder_safety_v1:site-${siteId}`;
+  }
+  return `mazigho_independent_builder_safety_v1:draft-${slugifyIndependentSite(slug || "nouveau-site")}`;
+}
+
+export function createLocalSafetySnapshot(
+  input: {
+    siteId: number | null;
+    slug: string;
+    title: string;
+    siteType: IndependentSiteType;
+    projectMode?: IndependentProjectMode;
+    pages: ReadonlyArray<IndependentSitePage>;
+    reusableBlocks?: ReadonlyArray<IndependentSiteReusableBlock>;
+    activePageId?: string;
+  },
+  nowIso = new Date().toISOString()
+): IndependentBuilderLocalSafetySnapshot {
+  assertNoSecretsInIndependentSite(input);
+  assertZeroEcommerceInIndependentSite(input);
+
+  const safeTitle = sanitizeBuilderText(input.title || "Mon Site Internet", 160) || "Mon Site Internet";
+  const safePages = ensureNonEmptyIndependentPages(input.pages, safeTitle);
+  const safeBlocks: IndependentSiteReusableBlock[] = (input.reusableBlocks ?? []).map((b, i) => ({
+    id: b.id || `reusable-${i + 1}`,
+    name: sanitizeBuilderText(b.name || `Bloc #${i + 1}`, 140),
+    category: sanitizeBuilderText(b.category || "Mes blocs", 80),
+    html: sanitizeIndependentHtml(b.html),
+    createdAt: b.createdAt || nowIso,
+  }));
+  const activePageId =
+    safePages.find((p) => p.id === input.activePageId)?.id ?? safePages[0].id;
+
+  return {
+    version: 1,
+    siteId: input.siteId ?? null,
+    slug: slugifyIndependentSite(input.slug || safeTitle),
+    title: safeTitle,
+    siteType: input.siteType || "vitrine",
+    projectMode: resolveIndependentProjectMode(input.siteType, input.projectMode),
+    pages: safePages,
+    reusableBlocks: safeBlocks,
+    activePageId,
+    savedAtIso: nowIso,
+  };
+}
+
+/**
+ * Détermine si un filet de sécurité local temporaire doit être proposé à la restauration.
+ * La restauration est toujours explicite et contrôlée par l'utilisateur, jamais automatique ni silencieuse.
+ */
+export function shouldOfferLocalSafetyRestore(
+  snapshot: IndependentBuilderLocalSafetySnapshot | null | undefined,
+  serverProject: {
+    id: number;
+    title: string;
+    updatedAt?: string | null;
+    pages: ReadonlyArray<IndependentSitePage>;
+  } | null
+): boolean {
+  if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.pages) || snapshot.pages.length === 0) {
+    return false;
+  }
+  if (!serverProject) {
+    return true;
+  }
+  if (snapshot.siteId !== null && snapshot.siteId !== serverProject.id) {
+    return false;
+  }
+
+  const serverSignature = JSON.stringify(
+    serverProject.pages.map((p) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      html: p.html,
+      css: p.css,
+      seoTitle: p.seoTitle,
+      seoDescription: p.seoDescription,
+    }))
+  );
+  const localSignature = JSON.stringify(
+    snapshot.pages.map((p) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      html: p.html,
+      css: p.css,
+      seoTitle: p.seoTitle,
+      seoDescription: p.seoDescription,
+    }))
+  );
+
+  if (serverSignature === localSignature && snapshot.title === serverProject.title) {
+    return false;
+  }
+
+  return true;
+}
+
+export function buildEditorPreviewUrl(options: {
+  slug: string;
+  siteId?: number | null;
+  pageSlug?: string | null;
+}): string {
+  const safeSlug = slugifyIndependentSite(options.slug || "association-familiale-ath-vahloul");
+  const params = new URLSearchParams();
+  if (typeof options.siteId === "number" && options.siteId > 0) {
+    params.set("siteId", String(options.siteId));
+  }
+  if (options.pageSlug) {
+    params.set("page", normalizeIndependentPageSlug(options.pageSlug));
+  }
+  const qs = params.toString();
+  return `/constructeur-sites/apercu/${safeSlug}${qs ? `?${qs}` : ""}`;
+}
+
+export function buildPreviewReturnUrl(options?: {
+  siteId?: number | null;
+  slug?: string | null;
+  pageSlug?: string | null;
+}): string {
+  const params = new URLSearchParams();
+  if (typeof options?.siteId === "number" && options.siteId > 0) {
+    params.set("siteId", String(options.siteId));
+  } else if (options?.slug) {
+    params.set("slug", slugifyIndependentSite(options.slug));
+  }
+  if (options?.pageSlug) {
+    params.set("page", normalizeIndependentPageSlug(options.pageSlug));
+  }
+  const qs = params.toString();
+  return `/constructeur-sites${qs ? `?${qs}` : ""}`;
+}
+
+export function parseBuilderQueryParams(search: string): {
+  siteId: number | null;
+  slug: string | null;
+  pageSlug: string | null;
+} {
+  const cleanSearch = (search || "").startsWith("?") ? search.slice(1) : search || "";
+  const params = new URLSearchParams(cleanSearch);
+  const rawSiteId = params.get("siteId");
+  const parsedId = rawSiteId && /^\d+$/.test(rawSiteId) ? Number(rawSiteId) : null;
+  const rawSlug = params.get("slug");
+  const rawPage = params.get("page");
+  return {
+    siteId: parsedId && parsedId > 0 ? parsedId : null,
+    slug: rawSlug ? slugifyIndependentSite(rawSlug) : null,
+    pageSlug: rawPage ? normalizeIndependentPageSlug(rawPage) : null,
+  };
 }

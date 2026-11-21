@@ -5,10 +5,12 @@ import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
+  INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
   INDEPENDENT_MODULE_CATEGORIES,
   INDEPENDENT_PAGE_SOCLES,
+  INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
@@ -19,23 +21,33 @@ import {
   applyVisualCardUseCasePreset,
   assertNoSecretsInIndependentSite,
   assertZeroEcommerceInIndependentSite,
+  buildEditorPreviewUrl,
   buildImageTransformCss,
+  buildLocalSafetyStorageKey,
   buildNavigationFromPages,
   buildPageSeoPreview,
+  buildPreviewReturnUrl,
+  computeIndependentProjectWorkflowState,
   createDefaultVisualCardItem,
+  createLocalSafetySnapshot,
   duplicateCardInVisualCardGrid,
+  ensureNonEmptyIndependentPages,
   extractImagesFromPageHtml,
   filterIndependentBlocks,
   filterIndependentModules,
   filterIndependentSocles,
   filterIndependentTemplates,
+  formatIndependentBuilderErrorMessage,
+  parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
+  resolveIndependentProjectMode,
   sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
   setVisualCardGridTextPlacement,
+  shouldOfferLocalSafetyRestore,
   updateCardInVisualCardGrid,
   updateImageAltInPageHtml,
   validateIndependentCustomDomain,
@@ -568,5 +580,235 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(migrationSql).toContain("CREATE TABLE IF NOT EXISTS `independentSiteMedia`");
     expect(migrationSql).toContain("CREATE TABLE IF NOT EXISTS `independentSiteDomains`");
     expect(migrationSql).not.toMatch(/DROP|TRUNCATE|DELETE|ALTER TABLE `stores`/i);
+  });
+
+  it("13. calcule clairement l’état du projet (Site vitrine / Boutique hybride, Brouillon / Sauvegardé / Publié, verrou anti-double-clic et messages d’erreur compréhensibles)", () => {
+    expect(INDEPENDENT_PROJECT_MODE_OPTIONS.map((m) => m.label)).toEqual([
+      "Site vitrine",
+      "Boutique hybride",
+    ]);
+    expect(resolveIndependentProjectMode("association")).toBe("site_vitrine");
+    expect(resolveIndependentProjectMode("services")).toBe("site_vitrine");
+    expect(resolveIndependentProjectMode("services", "boutique_hybride")).toBe("boutique_hybride");
+
+    // 1. Projet en brouillon avec modifications non enregistrées
+    const dirtyDraft = computeIndependentProjectWorkflowState({
+      projectId: 42,
+      title: "Association ATH VAHLOUL",
+      siteType: "familial",
+      status: "draft",
+      hasUnsavedChanges: true,
+      isSaving: false,
+      lastSavedAt: null,
+    });
+    expect(dirtyDraft.projectModeLabel).toBe("Site vitrine");
+    expect(dirtyDraft.workflowStatus).toBe("brouillon");
+    expect(dirtyDraft.workflowStatusLabel).toBe("Brouillon");
+    expect(dirtyDraft.unsavedIndicatorLabel).toBe("Modifications non enregistrées");
+    expect(dirtyDraft.canTriggerSave).toBe(true);
+
+    // 2. Sauvegarde lente en cours (prévention des doubles clics)
+    const savingState = computeIndependentProjectWorkflowState({
+      projectId: 42,
+      title: "Association ATH VAHLOUL",
+      siteType: "familial",
+      status: "draft",
+      hasUnsavedChanges: true,
+      isSaving: true,
+      lastSavedAt: null,
+    });
+    expect(savingState.canTriggerSave).toBe(false);
+    expect(savingState.savingInProgressMessage).toContain("Sauvegarde en cours");
+
+    // 3. Projet sauvegardé (brouillon à jour)
+    const savedDraft = computeIndependentProjectWorkflowState({
+      projectId: 42,
+      title: "Association ATH VAHLOUL",
+      siteType: "familial",
+      status: "draft",
+      hasUnsavedChanges: false,
+      isSaving: false,
+      lastSavedAt: "2026-11-21T10:30:00.000Z",
+    });
+    expect(savedDraft.workflowStatus).toBe("sauvegarde");
+    expect(savedDraft.workflowStatusLabel).toBe("Sauvegardé");
+    expect(savedDraft.unsavedIndicatorLabel).toBe("Toutes les modifications sont enregistrées");
+
+    // 4. Projet publié
+    const publishedState = computeIndependentProjectWorkflowState({
+      projectId: 42,
+      title: "Association ATH VAHLOUL",
+      siteType: "familial",
+      status: "published",
+      hasUnsavedChanges: false,
+      isSaving: false,
+      lastSavedAt: "2026-11-21T10:35:00.000Z",
+    });
+    expect(publishedState.workflowStatus).toBe("publie");
+    expect(publishedState.workflowStatusLabel).toBe("Publié");
+
+    // 5. Messages d'erreur compréhensibles en cas de sauvegarde refusée
+    expect(
+      formatIndependentBuilderErrorMessage(
+        new Error("INDEPENDENT_SITE_SECRET_DETECTED: Clé détectée")
+      )
+    ).toContain("clé secrète ou un jeton privé");
+    expect(
+      formatIndependentBuilderErrorMessage(
+        new Error("INDEPENDENT_SITE_EMPTY_PAGES_FORBIDDEN")
+      )
+    ).toContain("au moins une page");
+    expect(
+      formatIndependentBuilderErrorMessage(new Error("UNAUTHORIZED"))
+    ).toContain("reconnectez-vous");
+  });
+
+  it("14. protège contre la perte de travail via un filet de sécurité local explicite et contrôlé (jamais silencieux)", () => {
+    expect(buildLocalSafetyStorageKey(99)).toBe("mazigho_independent_builder_safety_v1:site-99");
+
+    const samplePages = ensureNonEmptyIndependentPages([]);
+    expect(samplePages).toHaveLength(1);
+    expect(samplePages[0].slug).toBe("/");
+
+    const snapshot = createLocalSafetySnapshot(
+      {
+        siteId: 99,
+        slug: "site-test-filet-local",
+        title: "Site Test Filet Local",
+        siteType: "vitrine",
+        projectMode: "site_vitrine",
+        pages: samplePages,
+      },
+      "2026-11-21T12:05:00.000Z"
+    );
+
+    // Le snapshot local est proposé uniquement s'il correspond au même projet et contient un état différent
+    const shouldOfferWhenNewerAndDifferent = shouldOfferLocalSafetyRestore(snapshot, {
+      id: 99,
+      title: "Site Test Initial",
+      updatedAt: "2026-11-21T12:00:00.000Z",
+      pages: samplePages,
+    });
+    expect(shouldOfferWhenNewerAndDifferent).toBe(true);
+
+    // Jamais proposé si le contenu sauvegardé sur le serveur est déjà identique
+    const shouldNotOfferWhenIdentical = shouldOfferLocalSafetyRestore(snapshot, {
+      id: 99,
+      title: "Site Test Filet Local",
+      updatedAt: "2026-11-21T12:00:00.000Z",
+      pages: samplePages,
+    });
+    expect(shouldNotOfferWhenIdentical).toBe(false);
+
+    // Jamais proposé pour un autre projet
+    const shouldNotOfferForDifferentSite = shouldOfferLocalSafetyRestore(snapshot, {
+      id: 100,
+      title: "Autre Projet",
+      updatedAt: "2026-11-21T12:00:00.000Z",
+      pages: samplePages,
+    });
+    expect(shouldNotOfferForDifferentSite).toBe(false);
+  });
+
+  it("15. gère l’aller-retour entre Éditeur et Prévisualisation privée ainsi que les 5 guides d’aide contextuelle non intrusifs", () => {
+    const previewUrl = buildEditorPreviewUrl({
+      slug: "association-familiale-ath-vahloul",
+      pageSlug: "/notre-famille",
+      siteId: 77,
+    });
+    expect(previewUrl).toBe(
+      "/constructeur-sites/apercu/association-familiale-ath-vahloul?siteId=77&page=%2Fnotre-famille"
+    );
+
+    const returnUrl = buildPreviewReturnUrl({
+      siteId: 77,
+      slug: "association-familiale-ath-vahloul",
+      pageSlug: "/notre-famille",
+    });
+    expect(returnUrl).toBe(
+      "/constructeur-sites?siteId=77&page=%2Fnotre-famille"
+    );
+
+    const parsed = parseBuilderQueryParams(
+      "?siteId=77&slug=association-familiale-ath-vahloul&page=%2Fnotre-famille"
+    );
+    expect(parsed).toEqual({
+      siteId: 77,
+      slug: "association-familiale-ath-vahloul",
+      pageSlug: "/notre-famille",
+    });
+
+    // Vérification des 5 guides d'aide utilisateur
+    expect(Object.keys(INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles)).toEqual([
+      "bloc",
+      "module",
+      "socle",
+      "modele",
+    ]);
+    expect(Object.keys(INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions)).toEqual([
+      "sauvegarder",
+      "previsualiser",
+      "publier",
+    ]);
+    expect(INDEPENDENT_BUILDER_HELP_GUIDES.projectModes.site_vitrine).toContain("Site vitrine");
+    expect(INDEPENDENT_BUILDER_HELP_GUIDES.projectModes.boutique_hybride).toContain("Boutique hybride");
+    expect(INDEPENDENT_BUILDER_HELP_GUIDES.separationNotice).toContain("Studio MAZIGHO");
+  });
+
+  it("16. couvre les 12 cas de robustesse (projet vide, 1 page, multi-pages, cartes répétables, SVG sûr/malveillant, image HTTPS, recherche 0 résultat, sauvegarde refusée)", async () => {
+    const ownerId = 905;
+
+    // 1. Projet vide -> repli automatique vers 1 page d'accueil valide
+    const fallbackPages = ensureNonEmptyIndependentPages([]);
+    expect(fallbackPages).toHaveLength(1);
+    expect(fallbackPages[0].title).toBe("Accueil");
+
+    // 2. Projet avec 1 seule page
+    const singlePageSite = await createIndependentSiteProject(ownerId, {
+      title: "Site Une Seule Page",
+      siteType: "vitrine",
+      socleId: "socle-accueil",
+    });
+    expect(singlePageSite.pages).toHaveLength(1);
+
+    // 3. Projet multi-pages
+    const multiPageSite = await createIndependentSiteProject(ownerId, {
+      title: "Site Multi Pages",
+      siteType: "association",
+      templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+    });
+    expect(multiPageSite.pages.length).toBeGreaterThanOrEqual(6);
+
+    // 4. Cartes visuelles répétables
+    let cardGrid = applyVisualCardUseCasePreset("services");
+    cardGrid = addCardToVisualCardGrid(cardGrid, { title: "Service Supplémentaire" });
+    expect(cardGrid.cards.length).toBeGreaterThanOrEqual(4);
+
+    // 5. Image SVG data:image/svg+xml sûre préservée vs SVG malveillant neutralisé
+    const safeSvg =
+      "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40'/%3E%3C/svg%3E";
+    expect(sanitizeBuilderImageSrc(safeSvg)).toBe(safeSvg);
+    const maliciousSvg =
+      "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'><script>alert(1)</script></svg>";
+    expect(sanitizeBuilderImageSrc(maliciousSvg)).not.toContain("onload");
+    expect(sanitizeBuilderImageSrc(maliciousSvg)).not.toContain("<script");
+
+    // 6. Image externe https://
+    const externalHttps = "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=800&q=80";
+    expect(sanitizeBuilderImageSrc(externalHttps)).toBe(externalHttps);
+
+    // 7. Recherche sans résultat dans les 4 filtres de bibliothèque
+    expect(filterIndependentBlocks({ search: "zqxw-introuvable-999" })).toHaveLength(0);
+    expect(filterIndependentModules({ search: "zqxw-introuvable-999" })).toHaveLength(0);
+    expect(filterIndependentSocles({ search: "zqxw-introuvable-999" })).toHaveLength(0);
+    expect(filterIndependentTemplates({ search: "zqxw-introuvable-999" })).toHaveLength(0);
+
+    // 8. Sauvegarde refusée (pages vides ou utilisateur non autorisé)
+    await expect(
+      saveIndependentSiteProject(ownerId, {
+        siteId: singlePageSite.id,
+        pages: [],
+      })
+    ).rejects.toThrow(/INDEPENDENT_SITE_EMPTY_PAGES_FORBIDDEN/);
   });
 });
