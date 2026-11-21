@@ -644,7 +644,7 @@ function Router() {
         </Switch>
       </Suspense>
       <StorefrontMarketing />
-      {!location.startsWith("/constructeur-sites/invitation/") && !location.startsWith("/connexion-administration") && !location.includes("intent=independent") && <MazighoSurfaceSwitcher />}
+      {!location.startsWith("/constructeur-sites/invitation/") && !location.startsWith("/connexion-administration") && !location.startsWith("/sites/") && !location.includes("intent=independent") && <MazighoSurfaceSwitcher />}
     </>
   );
 }
