@@ -55,7 +55,6 @@ import {
   normalizeIndependentPageSlug,
   parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
-  repairKnownIndependentInternalLinks,
   renderVisualCardGridHtml,
   reorderIndependentPagesMenu,
   replaceMediaUrlAcrossPages,
@@ -683,17 +682,29 @@ export default function IndependentSiteBuilderPage() {
     },
   });
 
+  const repairKnownInternalLinksMutation = trpc.independentSiteBuilder.repairKnownInternalLinks.useMutation({
+    onSuccess: async ({ project, changes }) => {
+      await utils.independentSiteBuilder.listProjects.invalidate();
+      loadProjectIntoWorkspace(project);
+      setHasUnsavedChanges(false);
+      setErrorBanner(null);
+      setStatusBanner(
+        changes.length > 0
+          ? `${changes.length} lien(s) connu(s) réparé(s) et sauvegardé(s) dans le projet privé.`
+          : "Aucun alias connu à réparer. Les liens restants nécessitent une vérification manuelle.",
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(formatIndependentBuilderErrorMessage(err));
+    },
+  });
+
   const handleRepairKnownInternalLinks = () => {
-    if (!selectedSiteId) return;
-    const repaired = repairKnownIndependentInternalLinks(pages);
-    if (repaired.changes.length === 0) {
-      setStatusBanner("Aucun alias de lien connu n’a pu être réparé automatiquement. Les chemins restants doivent être vérifiés manuellement.");
+    if (!selectedSiteId) {
+      setErrorBanner("Aucun site n’est sélectionné pour la réparation des liens.");
       return;
     }
-    setPages(repaired.pages);
-    setHasUnsavedChanges(true);
-    saveProjectMutation.mutate({ siteId: selectedSiteId, pages: repaired.pages });
-    setStatusBanner(`${repaired.changes.length} lien(s) connu(s) réparé(s), avec conservation des ancres et paramètres.`);
+    repairKnownInternalLinksMutation.mutate({ siteId: selectedSiteId });
   };
 
   const duplicateProjectMutation = trpc.independentSiteBuilder.duplicateProject.useMutation({

@@ -44,6 +44,7 @@ import {
   resolveIndependentSiteOwnerUserId,
   listIndependentSiteVersions,
   publishIndependentSiteProject,
+  repairKnownIndependentSiteLinks,
   removeIndependentSiteDomain,
   restoreIndependentSiteVersion,
   revokeIndependentCollaboratorPreviewShare,
@@ -251,6 +252,23 @@ export const isolatedSiteBuilderRouter = router({
           });
         }
         throw new TRPCError({ code: "BAD_REQUEST", message: msg });
+      }
+    }),
+
+  repairKnownInternalLinks: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+        return await repairKnownIndependentSiteLinks(ctx.user.id, input.siteId);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Impossible de réparer les liens internes.",
+        });
       }
     }),
 

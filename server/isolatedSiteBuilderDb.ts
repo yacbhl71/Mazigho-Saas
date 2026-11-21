@@ -39,6 +39,7 @@ import {
   type IndependentSiteStatus,
   type IndependentSiteThemeConfig,
   type IndependentSiteType,
+  type RepairedInternalLinkChange,
 } from "../shared/isolatedSiteBuilder";
 import { getDb } from "./db";
 import {
@@ -2179,6 +2180,23 @@ export async function ensureAthVahloulDemoProject(
     slug: "association-familiale-ath-vahloul",
     templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   });
+}
+
+export async function repairKnownIndependentSiteLinks(
+  userId: number,
+  siteId: number,
+): Promise<{ project: IndependentSiteProjectDto; changes: RepairedInternalLinkChange[] }> {
+  const ownerUserId = await resolveIndependentSiteOwnerUserId(userId, siteId, "editor");
+  const project = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!project) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  const repaired = repairKnownIndependentInternalLinks(project.pages);
+  if (repaired.changes.length === 0) return { project, changes: [] };
+  const saved = await saveIndependentSiteProject(ownerUserId, {
+    siteId,
+    pages: repaired.pages,
+    createVersionLabel: "Réparation manuelle des anciens liens internes",
+  });
+  return { project: saved, changes: repaired.changes };
 }
 
 // ---------------------------------------------------------------------------
