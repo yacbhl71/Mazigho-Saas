@@ -2353,6 +2353,44 @@ export const INDEPENDENT_SITE_TEMPLATES: ReadonlyArray<IndependentSiteTemplate> 
   },
 ] as const;
 
+/**
+ * Palette ATH VAHLOUL inspirée de la référence 143.ch :
+ * charbon éditorial, rouge signal, blanc et neutres chauds.
+ * Le remplacement est limité au modèle ATH afin de préserver les autres modèles.
+ */
+const ATH_VAHLOUL_SWISS_PALETTE: Readonly<Record<string, string>> = {
+  "#172033": "#342e31",
+  "#9b563e": "#e0301f",
+  "#faf8f5": "#f7f5f2",
+  "#f5b98f": "#f4f1ec",
+  "#e8e2d9": "#eeeae4",
+  "#263653": "#59634c",
+  "#52657b": "#7b8770",
+  "#e6ebf2": "#f4f1ec",
+  "#526070": "#687454",
+  "#f3eee8": "#f8e9ed",
+  "#f7f4ef": "#eef2e8",
+  "#e5ddd2": "#ddd8d2",
+};
+
+function applyAthVahloulSwissPalette(value: string): string {
+  return Object.entries(ATH_VAHLOUL_SWISS_PALETTE).reduce(
+    (result, [from, to]) => result.replaceAll(from, to),
+    value,
+  );
+}
+
+const athVahloulTemplate = INDEPENDENT_SITE_TEMPLATES[0] as unknown as IndependentSiteTemplate;
+athVahloulTemplate.theme = {
+  ...athVahloulTemplate.theme,
+  primaryColor: "#342e31",
+  accentColor: "#e0301f",
+  backgroundColor: "#f7f5f2",
+};
+athVahloulTemplate.pages.forEach((page) => {
+  page.css = applyAthVahloulSwissPalette(page.css);
+  page.html = applyAthVahloulSwissPalette(page.html);
+});
 // ---------------------------------------------------------------------------
 // 7. Recherche & Filtrage de la Bibliothèque Professionnelle + Outils SEO
 // ---------------------------------------------------------------------------
