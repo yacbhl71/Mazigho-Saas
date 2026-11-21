@@ -14,13 +14,17 @@ import {
   assertNoSecretsInIndependentSite,
   assertZeroEcommerceInIndependentSite,
   buildNavigationFromPages,
+  evaluateIndependentSiteQualityAndChecklist,
+  exportIndependentSiteProjectToJson,
   normalizeImageTransforms,
   normalizeIndependentPageSlug,
   sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   sanitizeBuilderText,
+  shouldAutoCreateVersionOnSave,
   slugifyIndependentSite,
+  validateAndSanitizeIndependentSiteImport,
   validateIndependentCustomDomain,
   type IndependentImageTransforms,
   type IndependentSiteMenuItem,
@@ -208,7 +212,7 @@ export async function getIndependentSiteProject(
 
 export async function getPublicIndependentSiteBySlug(
   slug: string,
-  options?: { allowDraftForOwnerUserId?: number }
+  options?: { allowDraftForOwnerUserId?: number; previewToken?: string | null }
 ): Promise<{
   id: number;
   slug: string;
@@ -219,6 +223,8 @@ export async function getPublicIndependentSiteBySlug(
   navigation: IndependentSiteMenuItem[];
   pages: IndependentSitePage[];
   publishedAt: string | null;
+  isCollaboratorPreview?: boolean;
+  collaboratorLabel?: string | null;
 } | null> {
   const normalizedSlug = slugifyIndependentSite(slug);
   const db = await getDb();
@@ -248,7 +254,12 @@ export async function getPublicIndependentSiteBySlug(
     typeof options?.allowDraftForOwnerUserId === "number" &&
     project.ownerUserId === options.allowDraftForOwnerUserId;
 
-  if (project.status === "published" && project.publishedSnapshot) {
+  const tokenVerification = options?.previewToken
+    ? verifyIndependentCollaboratorPreviewToken(project.id, options.previewToken)
+    : { valid: false as const };
+  const isCollaboratorPreview = tokenVerification.valid;
+
+  if (project.status === "published" && project.publishedSnapshot && !isOwnerPreview && !isCollaboratorPreview) {
     return {
       id: project.id,
       slug: project.slug,
@@ -262,7 +273,7 @@ export async function getPublicIndependentSiteBySlug(
     };
   }
 
-  if (isOwnerPreview) {
+  if (isOwnerPreview || isCollaboratorPreview) {
     return {
       id: project.id,
       slug: project.slug,
@@ -272,6 +283,22 @@ export async function getPublicIndependentSiteBySlug(
       theme: project.theme,
       navigation: project.navigation,
       pages: project.pages,
+      publishedAt: project.publishedAt,
+      isCollaboratorPreview,
+      collaboratorLabel: tokenVerification.share?.collaboratorLabel ?? null,
+    };
+  }
+
+  if (project.status === "published" && project.publishedSnapshot) {
+    return {
+      id: project.id,
+      slug: project.slug,
+      title: project.publishedSnapshot.title,
+      siteType: project.publishedSnapshot.siteType,
+      status: project.status,
+      theme: project.publishedSnapshot.theme,
+      navigation: project.publishedSnapshot.navigation,
+      pages: project.publishedSnapshot.pages,
       publishedAt: project.publishedAt,
     };
   }
@@ -457,6 +484,16 @@ export async function saveIndependentSiteProject(
   }));
   const now = new Date().toISOString();
 
+  const autoVersionDecision = shouldAutoCreateVersionOnSave(
+    current.pages,
+    nextPages,
+    current.title,
+    nextTitle
+  );
+  const effectiveVersionLabel =
+    input.createVersionLabel ||
+    (autoVersionDecision.shouldCreate ? autoVersionDecision.autoLabel : undefined);
+
   const db = await getDb();
   if (!db) {
     const updated: IndependentSiteProjectDto = {
@@ -470,8 +507,8 @@ export async function saveIndependentSiteProject(
       updatedAt: now,
     };
     memorySites.set(current.id, updated);
-    if (input.createVersionLabel) {
-      await createIndependentSiteVersion(ownerUserId, current.id, input.createVersionLabel);
+    if (effectiveVersionLabel) {
+      await createIndependentSiteVersion(ownerUserId, current.id, effectiveVersionLabel);
     }
     return JSON.parse(JSON.stringify(updated));
   }
@@ -488,8 +525,8 @@ export async function saveIndependentSiteProject(
     })
     .where(and(eq(independentSites.id, current.id), eq(independentSites.ownerUserId, ownerUserId)));
 
-  if (input.createVersionLabel) {
-    await createIndependentSiteVersion(ownerUserId, current.id, input.createVersionLabel);
+  if (effectiveVersionLabel) {
+    await createIndependentSiteVersion(ownerUserId, current.id, effectiveVersionLabel);
   }
 
   const reloaded = await getIndependentSiteProject(ownerUserId, current.id);
@@ -577,6 +614,26 @@ export async function publishIndependentSiteProject(
     throw new Error("INDEPENDENT_SITE_PUBLISH_EMPTY_CONTENT");
   }
 
+  const qualityCheck = evaluateIndependentSiteQualityAndChecklist({
+    title: current.title,
+    slug: current.slug,
+    siteType: current.siteType,
+    status: current.status,
+    templateId: current.templateId,
+    theme: current.theme,
+    navigation: current.navigation,
+    pages: current.pages,
+  });
+
+  if (!qualityCheck.canPublish) {
+    const failedLabels = qualityCheck.checklist
+      .filter((c) => c.blocking && !c.passed)
+      .map((c) => c.label);
+    throw new Error(
+      `INDEPENDENT_SITE_PUBLISH_CHECKLIST_BLOCKED: ${failedLabels.join(" | ")}`
+    );
+  }
+
   const nowIso = new Date().toISOString();
   const snapshot = {
     title: current.title,
@@ -602,7 +659,18 @@ export async function publishIndependentSiteProject(
       updatedAt: nowIso,
     };
     memorySites.set(siteId, updated);
-    await createIndependentSiteVersion(ownerUserId, siteId, `Publication du site (${nowIso.slice(0, 10)})`);
+    const ver = await createIndependentSiteVersion(
+      ownerUserId,
+      siteId,
+      `Publication du site (${nowIso.slice(0, 10)})`
+    );
+    recordIndependentPublicationLog({
+      siteId,
+      ownerUserId,
+      action: "publish",
+      versionNumber: ver.versionNumber,
+      summary: `Publication validée (${current.pages.length} page(s), score qualité ${qualityCheck.overallScore100}/100) sur /sites/${current.slug}`,
+    });
     return JSON.parse(JSON.stringify(updated));
   }
 
@@ -615,7 +683,18 @@ export async function publishIndependentSiteProject(
     })
     .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)));
 
-  await createIndependentSiteVersion(ownerUserId, siteId, `Publication du site (${nowIso.slice(0, 10)})`);
+  const ver = await createIndependentSiteVersion(
+    ownerUserId,
+    siteId,
+    `Publication du site (${nowIso.slice(0, 10)})`
+  );
+  recordIndependentPublicationLog({
+    siteId,
+    ownerUserId,
+    action: "publish",
+    versionNumber: ver.versionNumber,
+    summary: `Publication validée (${current.pages.length} page(s), score qualité ${qualityCheck.overallScore100}/100) sur /sites/${current.slug}`,
+  });
   const reloaded = await getIndependentSiteProject(ownerUserId, siteId);
   if (!reloaded) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
   return reloaded;
@@ -738,7 +817,7 @@ export async function restoreIndependentSiteVersion(
     throw new Error("INDEPENDENT_SITE_VERSION_NOT_FOUND");
   }
 
-  return await saveIndependentSiteProject(ownerUserId, {
+  const restored = await saveIndependentSiteProject(ownerUserId, {
     siteId,
     title: target.snapshot.title,
     siteType: target.snapshot.siteType,
@@ -748,6 +827,16 @@ export async function restoreIndependentSiteVersion(
     reusableBlocks: target.snapshot.reusableBlocks,
     createVersionLabel: `Restauration de v${target.versionNumber} (${target.label})`,
   });
+
+  recordIndependentPublicationLog({
+    siteId,
+    ownerUserId,
+    action: "restore_version",
+    versionNumber: target.versionNumber,
+    summary: `Version v${target.versionNumber} (« ${target.label} ») restaurée dans l’espace de travail.`,
+  });
+
+  return restored;
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,4 +1252,455 @@ export async function ensureAthVahloulDemoProject(
     slug: "association-familiale-ath-vahloul",
     templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   });
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 2 — Journal de Publication, Dépublication, Renommage & Remplacement Média,
+//           Import/Export JSON Contrôlé & Collaboration Contrôlée (Liens d’aperçu privé)
+// ---------------------------------------------------------------------------
+
+export interface IndependentPublicationLogEntryDto {
+  id: number;
+  siteId: number;
+  ownerUserId: number;
+  action: "publish" | "unpublish" | "restore_version" | "import_json";
+  authorLabel: string;
+  versionNumber: number | null;
+  summary: string;
+  createdAt: string;
+}
+
+export interface IndependentCollaboratorPreviewShareDto {
+  id: number;
+  siteId: number;
+  ownerUserId: number;
+  token: string;
+  collaboratorLabel: string;
+  collaboratorEmail: string | null;
+  permission: "read_only_preview";
+  expiresAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  previewPath: string;
+}
+
+const memoryPublicationLogs = new Map<number, IndependentPublicationLogEntryDto[]>();
+const memoryPreviewShares = new Map<number, IndependentCollaboratorPreviewShareDto[]>();
+let nextMemoryPubLogId = 12001;
+let nextMemoryShareId = 15001;
+
+export function recordIndependentPublicationLog(input: {
+  siteId: number;
+  ownerUserId: number;
+  action: IndependentPublicationLogEntryDto["action"];
+  authorLabel?: string;
+  versionNumber?: number | null;
+  summary: string;
+}): IndependentPublicationLogEntryDto {
+  const entry: IndependentPublicationLogEntryDto = {
+    id: nextMemoryPubLogId++,
+    siteId: input.siteId,
+    ownerUserId: input.ownerUserId,
+    action: input.action,
+    authorLabel: sanitizeBuilderText(
+      input.authorLabel || `Propriétaire #${input.ownerUserId}`,
+      120
+    ),
+    versionNumber: input.versionNumber ?? null,
+    summary: sanitizeBuilderText(input.summary, 280),
+    createdAt: new Date().toISOString(),
+  };
+  const current = memoryPublicationLogs.get(input.siteId) ?? [];
+  memoryPublicationLogs.set(input.siteId, [entry, ...current]);
+  return entry;
+}
+
+export async function listIndependentPublicationLogs(
+  ownerUserId: number,
+  siteId: number
+): Promise<IndependentPublicationLogEntryDto[]> {
+  const project = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+  const logs = memoryPublicationLogs.get(siteId) ?? [];
+  if (logs.length === 0 && project.publishedAt) {
+    return [
+      {
+        id: 1,
+        siteId,
+        ownerUserId,
+        action: "publish",
+        authorLabel: `Propriétaire #${ownerUserId}`,
+        versionNumber: null,
+        summary: `Site « ${project.title} » publié sur /sites/${project.slug}`,
+        createdAt: project.publishedAt,
+      },
+    ];
+  }
+  return [...logs];
+}
+
+export async function unpublishIndependentSiteProject(
+  ownerUserId: number,
+  siteId: number,
+  reason?: string
+): Promise<IndependentSiteProjectDto> {
+  const current = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!current) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+
+  const nowIso = new Date().toISOString();
+  const db = await getDb();
+  if (!db) {
+    const updated: IndependentSiteProjectDto = {
+      ...current,
+      status: "draft",
+      publishedSnapshot: null,
+      publishedAt: null,
+      updatedAt: nowIso,
+    };
+    memorySites.set(siteId, updated);
+    const ver = await createIndependentSiteVersion(
+      ownerUserId,
+      siteId,
+      `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`
+    );
+    recordIndependentPublicationLog({
+      siteId,
+      ownerUserId,
+      action: "unpublish",
+      versionNumber: ver.versionNumber,
+      summary: `Site dépublié et repassé en brouillon privé (${
+        reason ? sanitizeBuilderText(reason, 100) : "invisible sur /sites/" + current.slug
+      }).`,
+    });
+    return JSON.parse(JSON.stringify(updated));
+  }
+
+  await db
+    .update(independentSites)
+    .set({
+      status: "draft",
+      publishedSnapshotJson: null,
+      publishedAt: null,
+    })
+    .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)));
+
+  const ver = await createIndependentSiteVersion(
+    ownerUserId,
+    siteId,
+    `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`
+  );
+  recordIndependentPublicationLog({
+    siteId,
+    ownerUserId,
+    action: "unpublish",
+    versionNumber: ver.versionNumber,
+    summary: `Site dépublié et repassé en brouillon privé.`,
+  });
+
+  const reloaded = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!reloaded) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  return reloaded;
+}
+
+export async function updateIndependentSiteMediaMetadata(
+  ownerUserId: number,
+  input: {
+    siteId: number;
+    mediaId: number;
+    label?: string;
+    altText?: string;
+    newUrl?: string;
+    replaceInPages?: boolean;
+  }
+): Promise<{
+  media: IndependentSiteMediaDto;
+  replacedOccurrencesCount: number;
+}> {
+  assertNoSecretsInIndependentSite(input);
+  const project = await getIndependentSiteProject(ownerUserId, input.siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+
+  const allMedia = await listIndependentSiteMedia(ownerUserId, input.siteId);
+  const target = allMedia.find((m) => m.id === input.mediaId);
+  if (!target) {
+    throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
+  }
+
+  const nextLabel = input.label ? sanitizeBuilderText(input.label, 150) : target.label;
+  const nextAlt = input.altText ? sanitizeBuilderText(input.altText, 220) : target.altText;
+  const nextUrl = input.newUrl ? sanitizeBuilderImageSrc(input.newUrl) : target.url;
+
+  let replacedOccurrencesCount = 0;
+  if (input.replaceInPages && input.newUrl && input.newUrl.trim() !== target.url) {
+    const oldUrl = target.url;
+    const updatedPages = project.pages.map((page) => {
+      let html = page.html || "";
+      if (html.includes(oldUrl)) {
+        const parts = html.split(oldUrl);
+        replacedOccurrencesCount += parts.length - 1;
+        html = parts.join(nextUrl);
+      }
+      return {
+        ...page,
+        html: sanitizeIndependentHtml(html),
+        socialImageUrl: page.socialImageUrl === oldUrl ? nextUrl : page.socialImageUrl,
+      };
+    });
+    if (replacedOccurrencesCount > 0) {
+      await saveIndependentSiteProject(ownerUserId, {
+        siteId: project.id,
+        pages: updatedPages,
+      });
+    }
+  }
+
+  const db = await getDb();
+  if (!db) {
+    const list = memoryMedia.get(input.siteId) ?? [];
+    const idx = list.findIndex((m) => m.id === input.mediaId && m.ownerUserId === ownerUserId);
+    if (idx === -1) throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
+    const updated: IndependentSiteMediaDto = {
+      ...list[idx],
+      label: nextLabel,
+      altText: nextAlt,
+      url: nextUrl,
+    };
+    const nextList = [...list];
+    nextList[idx] = updated;
+    memoryMedia.set(input.siteId, nextList);
+    return {
+      media: updated,
+      replacedOccurrencesCount,
+    };
+  }
+
+  await db
+    .update(independentSiteMedia)
+    .set({
+      label: nextLabel,
+      altText: nextAlt,
+      url: nextUrl,
+    })
+    .where(
+      and(
+        eq(independentSiteMedia.id, input.mediaId),
+        eq(independentSiteMedia.siteId, input.siteId),
+        eq(independentSiteMedia.ownerUserId, ownerUserId)
+      )
+    );
+
+  const refreshed = await listIndependentSiteMedia(ownerUserId, input.siteId);
+  const found = refreshed.find((m) => m.id === input.mediaId);
+  if (!found) throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
+  return {
+    media: found,
+    replacedOccurrencesCount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Collaboration Contrôlée : Liens d'aperçu privé en lecture seule avec expiration et révocation
+// ---------------------------------------------------------------------------
+
+export async function createIndependentCollaboratorPreviewShare(
+  ownerUserId: number,
+  input: {
+    siteId: number;
+    collaboratorLabel: string;
+    collaboratorEmail?: string | null;
+    expiresInHours?: number;
+  }
+): Promise<IndependentCollaboratorPreviewShareDto> {
+  const project = await getIndependentSiteProject(ownerUserId, input.siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+
+  const hours = Math.max(1, Math.min(24 * 30, input.expiresInHours ?? 72));
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + hours * 3600 * 1000).toISOString();
+  const token = `mpreview_${project.id}_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`;
+  const cleanLabel =
+    sanitizeBuilderText(input.collaboratorLabel || "Relecteur invité", 120) || "Relecteur invité";
+  const cleanEmail = input.collaboratorEmail
+    ? sanitizeBuilderText(input.collaboratorEmail, 160)
+    : null;
+
+  const share: IndependentCollaboratorPreviewShareDto = {
+    id: nextMemoryShareId++,
+    siteId: project.id,
+    ownerUserId,
+    token,
+    collaboratorLabel: cleanLabel,
+    collaboratorEmail: cleanEmail,
+    permission: "read_only_preview",
+    expiresAt,
+    revokedAt: null,
+    createdAt: now.toISOString(),
+    previewPath: `/constructeur-sites/apercu/${project.slug}?previewToken=${encodeURIComponent(token)}`,
+  };
+
+  const current = memoryPreviewShares.get(project.id) ?? [];
+  memoryPreviewShares.set(project.id, [share, ...current]);
+  return share;
+}
+
+export async function listIndependentCollaboratorPreviewShares(
+  ownerUserId: number,
+  siteId: number
+): Promise<IndependentCollaboratorPreviewShareDto[]> {
+  const project = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+  return [...(memoryPreviewShares.get(siteId) ?? [])];
+}
+
+export async function revokeIndependentCollaboratorPreviewShare(
+  ownerUserId: number,
+  siteId: number,
+  shareId: number
+): Promise<IndependentCollaboratorPreviewShareDto> {
+  const project = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+  const current = memoryPreviewShares.get(siteId) ?? [];
+  const idx = current.findIndex((s) => s.id === shareId && s.ownerUserId === ownerUserId);
+  if (idx === -1) {
+    throw new Error("INDEPENDENT_SITE_SHARE_NOT_FOUND");
+  }
+  const updated: IndependentCollaboratorPreviewShareDto = {
+    ...current[idx],
+    revokedAt: new Date().toISOString(),
+  };
+  const next = [...current];
+  next[idx] = updated;
+  memoryPreviewShares.set(siteId, next);
+  return updated;
+}
+
+export function verifyIndependentCollaboratorPreviewToken(
+  siteId: number,
+  token: string | null | undefined,
+  nowIso = new Date().toISOString()
+): {
+  valid: boolean;
+  share?: IndependentCollaboratorPreviewShareDto;
+  reason?: "missing" | "not_found" | "revoked" | "expired";
+} {
+  if (!token || !token.trim()) {
+    return { valid: false, reason: "missing" };
+  }
+  const list = memoryPreviewShares.get(siteId) ?? [];
+  const found = list.find((s) => s.token === token.trim());
+  if (!found) {
+    return { valid: false, reason: "not_found" };
+  }
+  if (found.revokedAt) {
+    return { valid: false, share: found, reason: "revoked" };
+  }
+  if (new Date(found.expiresAt).getTime() <= new Date(nowIso).getTime()) {
+    return { valid: false, share: found, reason: "expired" };
+  }
+  return { valid: true, share: found };
+}
+
+export async function exportIndependentSiteProjectJson(
+  ownerUserId: number,
+  siteId: number
+) {
+  const project = await getIndependentSiteProject(ownerUserId, siteId);
+  if (!project) {
+    throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+  }
+  return exportIndependentSiteProjectToJson({
+    title: project.title,
+    slug: project.slug,
+    siteType: project.siteType,
+    templateId: project.templateId,
+    theme: project.theme,
+    navigation: project.navigation,
+    pages: project.pages,
+    reusableBlocks: project.reusableBlocks,
+  });
+}
+
+export async function importIndependentSiteProjectJson(
+  ownerUserId: number,
+  input: {
+    siteId?: number | null;
+    rawJson: string;
+    newTitle?: string;
+  }
+): Promise<IndependentSiteProjectDto> {
+  const validation = validateAndSanitizeIndependentSiteImport(input.rawJson);
+  if (!validation.valid || !validation.sanitizedPackage) {
+    throw new Error(
+      `INDEPENDENT_SITE_IMPORT_REJECTED: ${validation.error || "Format invalide"}`
+    );
+  }
+
+  const imported = validation.sanitizedPackage.project;
+  const targetTitle = sanitizeBuilderText(
+    input.newTitle?.trim() || imported.title,
+    160
+  );
+
+  if (input.siteId) {
+    const existing = await getIndependentSiteProject(ownerUserId, input.siteId);
+    if (!existing) {
+      throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+    }
+    const updated = await saveIndependentSiteProject(ownerUserId, {
+      siteId: existing.id,
+      title: targetTitle,
+      siteType: imported.siteType,
+      theme: imported.theme,
+      navigation: imported.navigation,
+      pages: imported.pages,
+      reusableBlocks: imported.reusableBlocks,
+      createVersionLabel: `Import JSON (${targetTitle})`,
+    });
+    recordIndependentPublicationLog({
+      siteId: existing.id,
+      ownerUserId,
+      action: "import_json",
+      summary: `Import JSON contrôlé appliqué sur le projet (${imported.pages.length} page(s), ${imported.reusableBlocks.length} bloc(s)).`,
+    });
+    return updated;
+  }
+
+  const created = await createIndependentSiteProject(ownerUserId, {
+    title: targetTitle,
+    siteType: imported.siteType,
+    slug: imported.slug,
+    templateId: imported.templateId,
+  });
+
+  const saved = await saveIndependentSiteProject(ownerUserId, {
+    siteId: created.id,
+    title: targetTitle,
+    siteType: imported.siteType,
+    theme: imported.theme,
+    navigation: imported.navigation,
+    pages: imported.pages,
+    reusableBlocks: imported.reusableBlocks,
+    createVersionLabel: `Import JSON initial (${targetTitle})`,
+  });
+
+  recordIndependentPublicationLog({
+    siteId: created.id,
+    ownerUserId,
+    action: "import_json",
+    summary: `Nouveau projet créé depuis un import JSON contrôlé (${imported.pages.length} page(s)).`,
+  });
+
+  return saved;
 }

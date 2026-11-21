@@ -52,16 +52,44 @@ import {
   updateImageAltInPageHtml,
   validateIndependentCustomDomain,
   type VisualCardGridConfig,
+  DEMO_CONTENT_NOTICE_LABEL,
+  INDEPENDENT_NAV_AND_FOOTER_PRESETS,
+  INDEPENDENT_SITE_EXPORT_FORMAT,
+  INDEPENDENT_SITE_EXPORT_MAX_BYTES,
+  MAX_INDEPENDENT_SUBMENU_DEPTH,
+  assessIndependentMediaItem,
+  auditIndependentPageSeo,
+  auditIndependentSiteAccessibility,
+  auditIndependentSiteResponsive,
+  buildIndependentVersionPreview,
+  computeColorContrastRatio,
+  detectIndependentDemoContentStatus,
+  duplicateIndependentPageInList,
+  duplicateIndependentReusableBlockInList,
+  evaluateIndependentSiteQualityAndChecklist,
+  exportIndependentSiteProjectToJson,
+  filterIndependentMediaItems,
+  generateUniquePageSlug,
+  reorderIndependentPagesMenu,
+  replaceMediaUrlAcrossPages,
+  shouldAutoCreateVersionOnSave,
+  validateAndSanitizeIndependentSiteImport,
+  verifyIndependentInternalLinks,
 } from "../shared/isolatedSiteBuilder";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
+  createIndependentCollaboratorPreviewShare,
   createIndependentSiteProject,
   deleteIndependentSiteMedia,
   duplicateIndependentSiteProject,
   ensureAthVahloulDemoProject,
+  exportIndependentSiteProjectJson,
   getIndependentSiteProject,
   getPublicIndependentSiteBySlug,
+  importIndependentSiteProjectJson,
+  listIndependentCollaboratorPreviewShares,
+  listIndependentPublicationLogs,
   listIndependentSiteDomains,
   listIndependentSiteMedia,
   listIndependentSiteProjects,
@@ -69,9 +97,13 @@ import {
   publishIndependentSiteProject,
   removeIndependentSiteDomain,
   restoreIndependentSiteVersion,
+  revokeIndependentCollaboratorPreviewShare,
   saveIndependentSiteProject,
+  unpublishIndependentSiteProject,
+  updateIndependentSiteMediaMetadata,
   updateIndependentSiteMediaTransforms,
   updateIndependentSiteStatus,
+  verifyIndependentCollaboratorPreviewToken,
   verifyIndependentSiteDomain,
 } from "./isolatedSiteBuilderDb";
 
@@ -820,5 +852,453 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
         pages: [],
       })
     ).rejects.toThrow(/INDEPENDENT_SITE_EMPTY_PAGES_FORBIDDEN/);
+  });
+
+  it("17. Phase 2 — Historique & Versions automatiques + Duplication (page avec slug unique, bloc réutilisable, projet)", async () => {
+    const ownerId = 1001;
+    const site = await createIndependentSiteProject(ownerId, {
+      title: "Site Phase 2 Versions & Duplication",
+      siteType: "association",
+    });
+
+    // 1. Auto-versioning sur sauvegarde importante (changement de structure/page)
+    const initialPages = site.pages;
+    const dupPageResult = duplicateIndependentPageInList(
+      initialPages,
+      initialPages[0].id,
+      "Nos Activités"
+    );
+    expect(dupPageResult.duplicatedPage).not.toBeNull();
+    expect(dupPageResult.duplicatedPage?.slug).toBe("/nos-activites");
+    expect(dupPageResult.pages).toHaveLength(2);
+
+    // Vérifie la génération automatique d'un slug unique en cas de collision
+    const collidingSlug = generateUniquePageSlug("/nos-activites", dupPageResult.pages);
+    expect(collidingSlug).toBe("/nos-activites-2");
+
+    const autoCheck = shouldAutoCreateVersionOnSave(initialPages, dupPageResult.pages);
+    expect(autoCheck.shouldCreate).toBe(true);
+
+    // Sauvegarde importante déclenchant automatiquement une nouvelle version sans label explicite
+    await saveIndependentSiteProject(ownerId, {
+      siteId: site.id,
+      pages: dupPageResult.pages,
+    });
+    const versions = await listIndependentSiteVersions(ownerId, site.id);
+    expect(versions.length).toBeGreaterThanOrEqual(2);
+
+    // Aperçu détaillé d'une version avec auteur, date, numéro et résumé des changements
+    const preview = buildIndependentVersionPreview(versions[0], initialPages);
+    expect(preview.versionNumber).toBe(versions[0].versionNumber);
+    expect(preview.authorLabel).toBeTruthy();
+    expect(preview.pageCount).toBe(2);
+    expect(preview.pageTitles[0]).toBeTruthy();
+
+    // Duplication d'un bloc réutilisable avec nouveau nom
+    const blocks = [
+      {
+        id: "rb-orig",
+        name: "Bloc Contact Association",
+        category: "Mes blocs",
+        html: "<section><h2>Contact</h2></section>",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const dupBlockResult = duplicateIndependentReusableBlockInList(
+      blocks,
+      "rb-orig",
+      "Bloc Contact Association — Copie V2"
+    );
+    expect(dupBlockResult.reusableBlocks).toHaveLength(2);
+    expect(dupBlockResult.duplicatedBlock?.name).toBe("Bloc Contact Association — Copie V2");
+  });
+
+  it("18. Phase 2 — Import & Export JSON contrôlé (versionné, sans secret ni paiement, validation, sanitation, limite de taille)", async () => {
+    const ownerId = 1002;
+    const site = await createIndependentSiteProject(ownerId, {
+      title: "Site Exportable Propre",
+      siteType: "vitrine",
+    });
+
+    const exportedPkg = await exportIndependentSiteProjectJson(ownerId, site.id);
+    const exportedJson = JSON.stringify(exportedPkg);
+    expect(exportedPkg.format).toBe(INDEPENDENT_SITE_EXPORT_FORMAT);
+    expect(exportedPkg.schemaVersion).toBe(1);
+    expect(exportedJson).not.toMatch(/stripe|sk_live|password|payment|stock|storeId|checkout/i);
+
+    // Validation & aperçu avant remplacement
+    const validImport = validateAndSanitizeIndependentSiteImport(exportedJson);
+    expect(validImport.valid).toBe(true);
+    expect(validImport.preview?.title).toBe("Site Exportable Propre");
+    expect(validImport.preview?.pageCount).toBe(1);
+
+    // Import contrôlé créant ou mettant à jour un projet
+    const importedProject = await importIndependentSiteProjectJson(ownerId, {
+      rawJson: exportedJson,
+      newTitle: "Site Importé Vérifié",
+    });
+    expect(importedProject.title).toBe("Site Importé Vérifié");
+
+    // Rejet d'un JSON malformé
+    expect(validateAndSanitizeIndependentSiteImport("{json-invalide").valid).toBe(false);
+
+    // Neutralisation + avertissement sur balise <script> et rejet d'un JSON contenant un secret ou storeId
+    const scriptJson = JSON.stringify({
+      ...exportedPkg,
+      project: {
+        ...exportedPkg.project,
+        pages: [
+          {
+            ...exportedPkg.project.pages[0],
+            html: "<section><script>window.evil()</script><p>Contenu</p></section>",
+          },
+        ],
+      },
+    });
+    const scriptRes = validateAndSanitizeIndependentSiteImport(scriptJson);
+    expect(scriptRes.valid).toBe(true);
+    expect(scriptRes.warnings.join(" ")).toContain("neutralisés automatiquement");
+    expect(scriptRes.sanitizedPackage?.project.pages[0].html).not.toContain("<script");
+
+    const secretJson = JSON.stringify({
+      ...exportedPkg,
+      storeId: 99,
+    });
+    const secretRes = validateAndSanitizeIndependentSiteImport(secretJson);
+    expect(secretRes.valid).toBe(false);
+    expect(secretRes.error).toContain("INDEPENDENT_SITE_ECOMMERCE_DEPENDENCY_FORBIDDEN");
+
+    // Rejet d'un JSON dépassant la taille maximale
+    const oversizedJson = "x".repeat(INDEPENDENT_SITE_EXPORT_MAX_BYTES + 100);
+    const oversizedRes = validateAndSanitizeIndependentSiteImport(oversizedJson);
+    expect(oversizedRes.valid).toBe(false);
+    expect(oversizedRes.error).toContain("dépasse la taille maximale");
+  });
+
+  it("19. Phase 2 — Contrôle SEO par page, Accessibilité à 3 niveaux (Bloquant, À corriger, Conseil) et Vérification Responsive (dont 320px)", () => {
+    // 1. Contrôle du contraste de couleurs WCAG
+    expect(computeColorContrastRatio("#172033", "#ffffff")).toBeGreaterThan(12);
+    expect(computeColorContrastRatio("#cccccc", "#ffffff")).toBeLessThan(2);
+
+    // 2. Audit SEO par page (distinction erreurs bloquantes vs points à corriger vs recommandations)
+    const goodPage = {
+      id: "p-seo-ok",
+      title: "Accueil Association",
+      slug: "/",
+      parentPageId: null,
+      showInMenu: true,
+      menuOrder: 1,
+      visibility: "public" as const,
+      seoTitle: "Association Culturelle Atlas — Rencontres & Patrimoine",
+      seoDescription:
+        "Découvrez les activités culturelles, les ateliers intergénérationnels et les événements solidaires de notre association.",
+      indexable: true,
+      html: '<section><h1>Association Culturelle Atlas</h1><p>Bienvenue au cœur de notre association culturelle et citoyenne fondée pour transmettre nos savoirs.</p><img src="https://example.com/a.webp" alt="Membres réunis" /></section>',
+      css: "",
+    };
+    const seoOk = auditIndependentPageSeo(goodPage, "association-atlas");
+    expect(seoOk.blockingErrors).toHaveLength(0);
+    expect(seoOk.h1Count).toBe(1);
+    expect(seoOk.canonicalUrl).toBe("https://sites.mazigho.com/sites/association-atlas");
+
+    const badSeoPage = {
+      ...goodPage,
+      id: "p-seo-bad",
+      title: "",
+      seoTitle: "",
+      seoDescription: "Trop court",
+      html: '<section><h1>Titre 1</h1><h1>Titre 2</h1><img src="https://example.com/a.webp" /></section>',
+    };
+    const seoBad = auditIndependentPageSeo(badSeoPage, "association-atlas");
+    expect(seoBad.blockingErrors.length).toBeGreaterThan(0);
+    expect(seoBad.recommendations.some((r) => r.message.includes("<h1>"))).toBe(true);
+    expect(seoBad.warningsToFix.some((w) => w.message.includes("texte alternatif"))).toBe(true);
+
+    // 3. Audit Accessibilité (3 niveaux en français : Bloquant, À corriger, Conseil)
+    const a11yBadPage = {
+      ...goodPage,
+      html: '<section><h1>Titre</h1><h3>Sous-titre sautant H2</h3><img src="https://example.com/sans-alt.jpg" /><a href="/contact">cliquez ici</a><button></button><input type="text" /></section>',
+      css: ".btn:focus { outline: none; }",
+    };
+    const a11yReport = auditIndependentSiteAccessibility([a11yBadPage], {
+      primaryColor: "#dddddd",
+      backgroundColor: "#ffffff",
+      accentColor: "#1d4ed8",
+      fontHeading: "Inter",
+      fontBody: "Inter",
+    });
+    expect(a11yReport.blockingCount).toBeGreaterThanOrEqual(2);
+    expect(a11yReport.toFixCount).toBeGreaterThanOrEqual(2);
+    expect(a11yReport.issues.some((i) => i.level === "Bloquant")).toBe(true);
+    expect(a11yReport.issues.some((i) => i.level === "À corriger")).toBe(true);
+    expect(a11yReport.issues.some((i) => i.level === "Conseil")).toBe(true);
+
+    // 4. Vérification Responsive (desktop, tablette, mobile, 320px, largeur fixe, débordement, menu trop long)
+    const nonResponsivePage = {
+      ...goodPage,
+      html: '<section style="width: 1200px"><img src="https://example.com/large.jpg" style="width: 900px" /><p style="white-space: nowrap">Texte très long qui déborde sur un petit écran de 320px sans retour à la ligne</p></section>',
+    };
+    const responsiveReport = auditIndependentSiteResponsive([nonResponsivePage]);
+    expect(responsiveReport.criticalCount).toBeGreaterThanOrEqual(1);
+    const narrow320 = responsiveReport.checkedViewports.find((vp) => vp.id === "narrow-320");
+    expect(narrow320?.passed).toBe(false);
+    expect(responsiveReport.issues.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("20. Phase 2 — Médias (recherche, filtre MIME, poids/dimensions, alerte fichier lourd, renommage et remplacement d’URL sans casser les pages)", async () => {
+    const ownerId = 1003;
+    const site = await createIndependentSiteProject(ownerId, {
+      title: "Site Médiathèque Phase 2",
+      siteType: "professionnel",
+    });
+
+    const m1 = await addIndependentSiteMedia(ownerId, {
+      siteId: site.id,
+      label: "Photo Façade Cabinet",
+      altText: "Façade du cabinet au 14 rue de la Paix",
+      url: "https://images.unsplash.com/photo-1?w=1200&h=800",
+      mimeType: "image/webp",
+    });
+    const m2 = await addIndependentSiteMedia(ownerId, {
+      siteId: site.id,
+      label: "Logo Vectoriel",
+      altText: "",
+      url: "https://example.com/logo.svg",
+      mimeType: "image/svg+xml",
+    });
+
+    const mediaList = await listIndependentSiteMedia(ownerId, site.id);
+    expect(filterIndependentMediaItems(mediaList, { search: "Façade" })).toHaveLength(1);
+    expect(
+      filterIndependentMediaItems(mediaList, { mimeTypeFilter: "image/svg+xml" })
+    ).toHaveLength(1);
+
+    const a1 = assessIndependentMediaItem({
+      url: m1.url,
+      altText: m1.altText,
+      mimeType: m1.mimeType,
+      widthPx: 1200,
+      heightPx: 800,
+      fileSizeBytes: 180_000,
+    });
+    expect(a1.hasValidAltText).toBe(true);
+    expect(a1.dimensionsLabel).toBe("1200 × 800 px");
+
+    const a2 = assessIndependentMediaItem({
+      url: m2.url,
+      altText: "",
+      mimeType: m2.mimeType,
+      fileSizeBytes: 620_000,
+    });
+    expect(a2.hasValidAltText).toBe(false);
+    expect(a2.isTooHeavyWarning).toBe(true);
+    expect(a2.warningMessage).toContain("Fichier lourd");
+
+    // Renommage et remplacement d'URL dans la médiathèque et à travers les pages
+    const pagesWithImage = [
+      {
+        ...site.pages[0],
+        html: `<section><img src="${m1.url}" alt="${m1.altText}" /></section>`,
+      },
+    ];
+    const newUrl = "https://images.unsplash.com/photo-remplacee?w=1280&h=720";
+    const replaced = replaceMediaUrlAcrossPages(pagesWithImage, m1.url, newUrl);
+    expect(replaced.replacedCount).toBe(1);
+    expect(replaced.pages[0].html).toContain(newUrl);
+
+    const updatedMeta = await updateIndependentSiteMediaMetadata(ownerId, {
+      siteId: site.id,
+      mediaId: m1.id,
+      label: "Façade Rénovée 2026",
+      altText: "Nouvelle façade rénovée",
+      newUrl,
+    });
+    expect(updatedMeta.media.label).toBe("Façade Rénovée 2026");
+    expect(updatedMeta.media.url).toBe(newUrl);
+  });
+
+  it("21. Phase 2 — Navigation & Footer (presets accessibles, réorganisation, vérification des liens internes, profondeur max 2 niveaux)", () => {
+    expect(MAX_INDEPENDENT_SUBMENU_DEPTH).toBe(2);
+    expect(INDEPENDENT_NAV_AND_FOOTER_PRESETS.length).toBeGreaterThanOrEqual(2);
+    expect(
+      INDEPENDENT_NAV_AND_FOOTER_PRESETS.some((p) => p.kind === "header_navigation")
+    ).toBe(true);
+    expect(INDEPENDENT_NAV_AND_FOOTER_PRESETS.some((p) => p.kind === "footer_complet")).toBe(
+      true
+    );
+
+    const pages = [
+      {
+        id: "p1",
+        title: "Accueil",
+        slug: "/",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 1,
+        visibility: "public" as const,
+        seoTitle: "Accueil",
+        seoDescription: "Bienvenue sur notre site officiel.",
+        html: '<section><h1>Accueil</h1><a href="/contact">Nous contacter</a><a href="/page-inexistante">Lien cassé</a></section>',
+        css: "",
+      },
+      {
+        id: "p2",
+        title: "Contact",
+        slug: "/contact",
+        parentPageId: null,
+        showInMenu: true,
+        menuOrder: 2,
+        visibility: "public" as const,
+        seoTitle: "Contact",
+        seoDescription: "Coordonnées et formulaire de contact.",
+        html: "<section><h1>Contact</h1><p>contact@association-locale.fr</p></section>",
+        css: "",
+      },
+    ];
+
+    const linkCheck = verifyIndependentInternalLinks(pages);
+    expect(linkCheck.valid).toBe(false);
+    expect(linkCheck.brokenLinks).toHaveLength(1);
+    expect(linkCheck.brokenLinks[0].targetHref).toBe("/page-inexistante");
+
+    const reordered = reorderIndependentPagesMenu(pages, "p2", "up");
+    const p2After = reordered.find((p) => p.id === "p2");
+    const p1After = reordered.find((p) => p.id === "p1");
+    expect(p2After?.menuOrder).toBe(1);
+    expect(p1After?.menuOrder).toBe(2);
+  });
+
+  it("22. Phase 2 — Checklist avant publication (14 points), blocage en cas d’erreur critique, Dépublication, Journal de publication et Collaboration contrôlée en lecture seule", async () => {
+    const ownerId = 1004;
+    const site = await createIndependentSiteProject(ownerId, {
+      title: "Site Associatif Citoyen",
+      siteType: "association",
+    });
+
+    // 1. Checklist en 14 points sur un projet avec un lien interne cassé -> publication bloquée
+    const brokenPages = [
+      {
+        ...site.pages[0],
+        html: '<section><h1>Accueil</h1><p>Bienvenue dans notre collectif citoyen.</p><a href="/introuvable">Lien mort</a></section>',
+      },
+    ];
+    await saveIndependentSiteProject(ownerId, {
+      siteId: site.id,
+      pages: brokenPages,
+    });
+
+    await expect(publishIndependentSiteProject(ownerId, site.id)).rejects.toThrow(
+      /INDEPENDENT_SITE_PUBLISH_CHECKLIST_BLOCKED/
+    );
+
+    // 2. Correction du lien cassé -> les 14 points passent sans erreur bloquante
+    const cleanPages = [
+      {
+        ...site.pages[0],
+        seoTitle: "Collectif Citoyen — Accueil & Actions",
+        seoDescription:
+          "Présentation des actions solidaires, des rencontres locales et des coordonnées de notre collectif citoyen.",
+        html: '<section><h1>Collectif Citoyen</h1><p>Bienvenue dans notre collectif citoyen engagé pour l’entraide locale. Contact : bureau@collectif-citoyen.org</p></section>',
+      },
+    ];
+    await saveIndependentSiteProject(ownerId, {
+      siteId: site.id,
+      pages: cleanPages,
+    });
+
+    const quality = evaluateIndependentSiteQualityAndChecklist({
+      title: site.title,
+      slug: site.slug,
+      siteType: site.siteType,
+      projectMode: "site_vitrine",
+      status: site.status,
+      templateId: null,
+      pages: cleanPages,
+    });
+    expect(quality.checklist).toHaveLength(14);
+    expect(quality.canPublish).toBe(true);
+    expect(quality.overallScore100).toBeGreaterThanOrEqual(80);
+
+    // 3. Publication réussie + entrée dans le journal de publication
+    const published = await publishIndependentSiteProject(ownerId, site.id);
+    expect(published.status).toBe("published");
+
+    // 4. Dépublication (retour en brouillon) -> n'apparaît plus sur l'URL publique /sites/:slug
+    const unpublished = await unpublishIndependentSiteProject(ownerId, site.id);
+    expect(unpublished.status).toBe("draft");
+    expect(await getPublicIndependentSiteBySlug(site.slug)).toBeNull();
+
+    const logs = await listIndependentPublicationLogs(ownerId, site.id);
+    expect(logs.length).toBeGreaterThanOrEqual(2);
+    expect(logs.map((l) => l.action)).toContain("publish");
+    expect(logs.map((l) => l.action)).toContain("unpublish");
+
+    // 5. Collaboration contrôlée : partage d'aperçu privé en lecture seule avec révocation instantanée
+    const share = await createIndependentCollaboratorPreviewShare(ownerId, {
+      siteId: site.id,
+      collaboratorLabel: "Relecteur Bureau",
+      expiresInHours: 24,
+    });
+    expect(share.permission).toBe("read_only_preview");
+    expect(share.token).toContain("mpreview_");
+
+    const shares = await listIndependentCollaboratorPreviewShares(ownerId, site.id);
+    expect(shares).toHaveLength(1);
+
+    // Le collaborateur muni du jeton peut consulter l'aperçu privé du brouillon
+    const collabPreview = await getPublicIndependentSiteBySlug(site.slug, {
+      previewToken: share.token,
+    });
+    expect(collabPreview?.title).toBe("Site Associatif Citoyen");
+
+    // Révocation instantanée du jeton collaborateur
+    await revokeIndependentCollaboratorPreviewShare(ownerId, site.id, share.id);
+    expect(
+      (await verifyIndependentCollaboratorPreviewToken(site.id, share.token)).valid
+    ).toBe(false);
+    expect(
+      await getPublicIndependentSiteBySlug(site.slug, {
+        previewToken: share.token,
+      })
+    ).toBeNull();
+  });
+
+  it("23. Phase 2 — Détection explicite du contenu de démonstration (« Démonstration à personnaliser ») et préservation d’ATH VAHLOUL", async () => {
+    const ownerId = 1005;
+    const athDemo = await ensureAthVahloulDemoProject(ownerId);
+
+    const demoStatus = detectIndependentDemoContentStatus({
+      title: athDemo.title,
+      slug: athDemo.slug,
+      templateId: athDemo.templateId,
+      pages: athDemo.pages,
+    });
+    expect(demoStatus.isDemoTemplate).toBe(true);
+    expect(demoStatus.badgeLabel).toBe(DEMO_CONTENT_NOTICE_LABEL);
+    expect(demoStatus.detectedMarkers.length).toBeGreaterThan(0);
+
+    // Un projet personnalisé sans mention fictive n'est plus signalé comme démo
+    const customStatus = detectIndependentDemoContentStatus({
+      title: "Cabinet d’Architecture Minérale",
+      slug: "cabinet-architecture-minerale",
+      templateId: null,
+      pages: [
+        {
+          id: "p1",
+          title: "Accueil",
+          slug: "/",
+          parentPageId: null,
+          showInMenu: true,
+          menuOrder: 1,
+          visibility: "public",
+          seoTitle: "Cabinet d’Architecture Minérale à Lyon",
+          seoDescription: "Conception bioclimatique, rénovation patrimoniale et suivi de chantier.",
+          html: "<section><h1>Cabinet d’Architecture Minérale</h1><p>Nous accompagnons vos projets de construction durable à Lyon et en Auvergne-Rhône-Alpes.</p></section>",
+          css: "",
+        },
+      ],
+    });
+    expect(customStatus.isDemoTemplate).toBe(false);
+    expect(customStatus.hasUnchangedDemoMarkers).toBe(false);
   });
 });

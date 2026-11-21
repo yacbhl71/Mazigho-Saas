@@ -7,12 +7,14 @@ import { trpc } from "@/lib/trpc";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   DEFAULT_IMAGE_TRANSFORMS,
+  DEMO_CONTENT_NOTICE_LABEL,
   INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
   INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
   INDEPENDENT_MODULE_CATEGORIES,
+  INDEPENDENT_NAV_AND_FOOTER_PRESETS,
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
@@ -23,8 +25,11 @@ import {
   VISUAL_CARD_USE_CASE_PRESETS,
   addCardToVisualCardGrid,
   applyVisualCardUseCasePreset,
+  assessIndependentMediaItem,
+  auditIndependentPageSeo,
   buildEditorPreviewUrl,
   buildImageTransformCss,
+  buildIndependentVersionPreview,
   buildLocalSafetyStorageKey,
   buildNavigationFromPages,
   buildPageSeoPreview,
@@ -32,9 +37,14 @@ import {
   createDefaultVisualCardItem,
   createLocalSafetySnapshot,
   duplicateCardInVisualCardGrid,
+  duplicateIndependentPageInList,
+  duplicateIndependentReusableBlockInList,
   ensureNonEmptyIndependentPages,
+  evaluateIndependentSiteQualityAndChecklist,
+  exportIndependentSiteProjectToJson,
   extractImagesFromPageHtml,
   filterIndependentBlocks,
+  filterIndependentMediaItems,
   filterIndependentModules,
   filterIndependentSocles,
   filterIndependentTemplates,
@@ -43,12 +53,16 @@ import {
   parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
+  reorderIndependentPagesMenu,
+  replaceMediaUrlAcrossPages,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
   setVisualCardGridTextPlacement,
   shouldOfferLocalSafetyRestore,
   updateCardInVisualCardGrid,
   updateImageAltInPageHtml,
+  validateAndSanitizeIndependentSiteImport,
+  verifyIndependentInternalLinks,
   type IndependentBuilderLibraryTab,
   type IndependentBuilderLocalSafetySnapshot,
   type IndependentImageTransforms,
@@ -126,7 +140,7 @@ interface PendingConfirmAction {
   onConfirm: () => void;
 }
 
-type InspectorTabId = "seo" | "publication" | "versions";
+type InspectorTabId = "seo" | "qualite" | "publication" | "versions";
 
 const LIBRARY_TAB_META: Record<
   IndependentBuilderLibraryTab,
@@ -309,6 +323,30 @@ export default function IndependentSiteBuilderPage() {
   const [customDomainInput, setCustomDomainInput] = useState("");
   const [versionLabelInput, setVersionLabelInput] = useState("");
   const [reusableBlockNameInput, setReusableBlockNameInput] = useState("");
+  const [previewedVersionId, setPreviewedVersionId] = useState<number | null>(null);
+
+  // Phase 2 : Duplication avec demande de nom personnalisable
+  const [duplicateProjectCustomTitle, setDuplicateProjectCustomTitle] = useState("");
+  const [duplicatePageCustomTitle, setDuplicatePageCustomTitle] = useState("");
+  const [duplicateBlockCustomName, setDuplicateBlockCustomName] = useState("");
+
+  // Phase 2 : Recherche & Filtre Médias + Édition/Remplacement média
+  const [mediaSearchInput, setMediaSearchInput] = useState("");
+  const [mediaMimeFilter, setMediaMimeFilter] = useState("all");
+  const [editingMediaId, setEditingMediaId] = useState<number | null>(null);
+  const [editMediaLabel, setEditMediaLabel] = useState("");
+  const [editMediaAlt, setEditMediaAlt] = useState("");
+  const [editMediaNewUrl, setEditMediaNewUrl] = useState("");
+
+  // Phase 2 : Import / Export JSON contrôlé
+  const [exportedJsonText, setExportedJsonText] = useState<string | null>(null);
+  const [importJsonRawInput, setImportJsonRawInput] = useState("");
+  const [importCustomTitleInput, setImportCustomTitleInput] = useState("");
+
+  // Phase 2 : Collaboration contrôlée (Partage d'aperçu privé en lecture seule)
+  const [collabLabelInput, setCollabLabelInput] = useState("");
+  const [collabEmailInput, setCollabEmailInput] = useState("");
+  const [collabExpiresHours, setCollabExpiresHours] = useState<number>(72);
 
   // Restauration du contexte de projet et de page lors du retour depuis la prévisualisation (?siteId=&page=)
   useEffect(() => {
@@ -460,6 +498,16 @@ export default function IndependentSiteBuilderPage() {
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
   );
 
+  const publicationLogsQuery = trpc.independentSiteBuilder.listPublicationLogs.useQuery(
+    { siteId: selectedSiteId ?? 0 },
+    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+  );
+
+  const collaboratorSharesQuery = trpc.independentSiteBuilder.listCollaboratorShares.useQuery(
+    { siteId: selectedSiteId ?? 0 },
+    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+  );
+
   const createProjectMutation = trpc.independentSiteBuilder.createProject.useMutation({
     onSuccess: async (created) => {
       saveInFlightRef.current = false;
@@ -546,9 +594,10 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       setSelectedSiteId(copy.id);
       loadProjectIntoWorkspace(copy);
+      setDuplicateProjectCustomTitle("");
       setHasUnsavedChanges(false);
       setErrorBanner(null);
-      setStatusBanner(`Site dupliqué sous le nom « ${copy.title} ».`);
+      setStatusBanner(`Site dupliqué sous le nom « ${copy.title} » (slug unique : /${copy.slug}).`);
     },
     onError: (err) => {
       setErrorBanner(err.message || "Impossible de dupliquer ce projet.");
@@ -559,6 +608,7 @@ export default function IndependentSiteBuilderPage() {
     onSuccess: async (published) => {
       await utils.independentSiteBuilder.listProjects.invalidate();
       await utils.independentSiteBuilder.listVersions.invalidate({ siteId: published.id });
+      await utils.independentSiteBuilder.listPublicationLogs.invalidate({ siteId: published.id });
       setSiteStatus(published.status);
       setHasUnsavedChanges(false);
       setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
@@ -569,6 +619,22 @@ export default function IndependentSiteBuilderPage() {
     },
     onError: (err) => {
       setErrorBanner(err.message || "Échec de la publication du site.");
+    },
+  });
+
+  const unpublishSiteMutation = trpc.independentSiteBuilder.unpublishSite.useMutation({
+    onSuccess: async (unpublished) => {
+      await utils.independentSiteBuilder.listProjects.invalidate();
+      await utils.independentSiteBuilder.listVersions.invalidate({ siteId: unpublished.id });
+      await utils.independentSiteBuilder.listPublicationLogs.invalidate({ siteId: unpublished.id });
+      setSiteStatus(unpublished.status);
+      setErrorBanner(null);
+      setStatusBanner(
+        `Site « ${unpublished.title} » dépublié et repassé en brouillon privé (invisible sur /sites/${unpublished.slug}).`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Échec de la dépublication du site.");
     },
   });
 
@@ -612,6 +678,7 @@ export default function IndependentSiteBuilderPage() {
       setHasUnsavedChanges(false);
       if (selectedSiteId) {
         await utils.independentSiteBuilder.listVersions.invalidate({ siteId: selectedSiteId });
+        await utils.independentSiteBuilder.listPublicationLogs.invalidate({ siteId: selectedSiteId });
       }
       setErrorBanner(null);
       setStatusBanner(`Version restaurée avec succès pour « ${restored.title} ».`);
@@ -636,6 +703,98 @@ export default function IndependentSiteBuilderPage() {
       setErrorBanner(err.message || "Impossible d’ajouter ce média.");
     },
   });
+
+  const updateMediaMetadataMutation = trpc.independentSiteBuilder.updateMediaMetadata.useMutation({
+    onSuccess: async (result) => {
+      if (selectedSiteId) {
+        await utils.independentSiteBuilder.listMedia.invalidate({ siteId: selectedSiteId });
+        await utils.independentSiteBuilder.getProject.invalidate({ siteId: selectedSiteId });
+      }
+      setEditingMediaId(null);
+      setErrorBanner(null);
+      setStatusBanner(
+        result.replacedOccurrencesCount > 0
+          ? `Média « ${result.media.label} » mis à jour et remplacé dans ${result.replacedOccurrencesCount} emplacement(s) de page sans casser les références.`
+          : `Média « ${result.media.label} » renommé / mis à jour.`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de modifier ce média.");
+    },
+  });
+
+  const deleteMediaMutation = trpc.independentSiteBuilder.deleteMedia.useMutation({
+    onSuccess: async () => {
+      if (selectedSiteId) {
+        await utils.independentSiteBuilder.listMedia.invalidate({ siteId: selectedSiteId });
+      }
+      setErrorBanner(null);
+      setStatusBanner("Média supprimé de la bibliothèque du projet.");
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Impossible de supprimer ce média.");
+    },
+  });
+
+  const importProjectJsonMutation = trpc.independentSiteBuilder.importProjectJson.useMutation({
+    onSuccess: async (importedProject) => {
+      await utils.independentSiteBuilder.listProjects.invalidate();
+      await utils.independentSiteBuilder.listVersions.invalidate({ siteId: importedProject.id });
+      await utils.independentSiteBuilder.listPublicationLogs.invalidate({
+        siteId: importedProject.id,
+      });
+      setSelectedSiteId(importedProject.id);
+      loadProjectIntoWorkspace(importedProject);
+      setImportJsonRawInput("");
+      setImportCustomTitleInput("");
+      setHasUnsavedChanges(false);
+      setErrorBanner(null);
+      setStatusBanner(
+        `Import JSON validé et appliqué sur « ${importedProject.title} » (${importedProject.pages.length} page(s)).`
+      );
+    },
+    onError: (err) => {
+      setErrorBanner(err.message || "Import JSON refusé.");
+    },
+  });
+
+  const createCollaboratorShareMutation =
+    trpc.independentSiteBuilder.createCollaboratorShare.useMutation({
+      onSuccess: async (share) => {
+        if (selectedSiteId) {
+          await utils.independentSiteBuilder.listCollaboratorShares.invalidate({
+            siteId: selectedSiteId,
+          });
+        }
+        setCollabLabelInput("");
+        setCollabEmailInput("");
+        setErrorBanner(null);
+        setStatusBanner(
+          `Lien d’aperçu privé en lecture seule créé pour « ${share.collaboratorLabel} » (expire le ${new Date(share.expiresAt).toLocaleString("fr-FR")}).`
+        );
+      },
+      onError: (err) => {
+        setErrorBanner(err.message || "Impossible de créer le lien d’aperçu collaborateur.");
+      },
+    });
+
+  const revokeCollaboratorShareMutation =
+    trpc.independentSiteBuilder.revokeCollaboratorShare.useMutation({
+      onSuccess: async (revoked) => {
+        if (selectedSiteId) {
+          await utils.independentSiteBuilder.listCollaboratorShares.invalidate({
+            siteId: selectedSiteId,
+          });
+        }
+        setErrorBanner(null);
+        setStatusBanner(
+          `Accès d’aperçu privé révoqué immédiatement pour « ${revoked.collaboratorLabel} ».`
+        );
+      },
+      onError: (err) => {
+        setErrorBanner(err.message || "Impossible de révoquer ce partage.");
+      },
+    });
 
   const addDomainMutation = trpc.independentSiteBuilder.addDomain.useMutation({
     onSuccess: async (dom) => {
@@ -806,6 +965,59 @@ export default function IndependentSiteBuilderPage() {
     return buildPageSeoPreview(activePage, siteSlug);
   }, [activePage, siteSlug]);
 
+  const activePageSeoAudit = useMemo(() => {
+    if (!activePage) return null;
+    return auditIndependentPageSeo(activePage, siteSlug);
+  }, [activePage, siteSlug]);
+
+  const internalLinkCheck = useMemo(
+    () => verifyIndependentInternalLinks(pages),
+    [pages]
+  );
+
+  const qualityReport = useMemo(
+    () =>
+      evaluateIndependentSiteQualityAndChecklist({
+        title: siteTitle,
+        slug: siteSlug,
+        siteType,
+        projectMode,
+        status: siteStatus,
+        templateId: activeProjectQuery.data?.templateId ?? newSiteTemplateId,
+        theme: activeProjectQuery.data?.theme ?? INDEPENDENT_SITE_TEMPLATES[0].theme,
+        navigation: navigationTree,
+        pages,
+        mediaItems: mediaQuery.data ?? [],
+      }),
+    [
+      siteTitle,
+      siteSlug,
+      siteType,
+      projectMode,
+      siteStatus,
+      activeProjectQuery.data?.templateId,
+      activeProjectQuery.data?.theme,
+      newSiteTemplateId,
+      navigationTree,
+      pages,
+      mediaQuery.data?.length,
+    ]
+  );
+
+  const filteredMediaItems = useMemo(
+    () =>
+      filterIndependentMediaItems(mediaQuery.data ?? [], {
+        search: mediaSearchInput,
+        mimeTypeFilter: mediaMimeFilter,
+      }),
+    [mediaQuery.data, mediaSearchInput, mediaMimeFilter]
+  );
+
+  const importValidationPreview = useMemo(() => {
+    if (!importJsonRawInput.trim()) return null;
+    return validateAndSanitizeIndependentSiteImport(importJsonRawInput);
+  }, [importJsonRawInput]);
+
   function syncCurrentEditorToPageState(): IndependentSitePage[] {
     const editor = editorRef.current;
     if (!editor || !activePage) return pages;
@@ -970,6 +1182,161 @@ export default function IndependentSiteBuilderPage() {
     setNewPageParentId("");
     setErrorBanner(null);
     setStatusBanner(`Page « ${createdPage.title} » (${createdPage.slug}) ajoutée au site.`);
+  }
+
+  function handleDuplicatePage(sourcePageId: string) {
+    const synced = syncCurrentEditorToPageState();
+    const source = synced.find((p) => p.id === sourcePageId);
+    if (!source) return;
+    const requestedTitle = duplicatePageCustomTitle.trim() || `${source.title} (copie)`;
+    const { pages: nextPages, duplicatedPage } = duplicateIndependentPageInList(
+      synced,
+      sourcePageId,
+      requestedTitle
+    );
+    if (!duplicatedPage) return;
+    setPages(nextPages);
+    setActivePageId(duplicatedPage.id);
+    setDuplicatePageCustomTitle("");
+    setHasUnsavedChanges(true);
+    if (editorRef.current) {
+      editorRef.current.setComponents(duplicatedPage.html);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${duplicatedPage.css}`);
+      refreshLayersFromEditor(editorRef.current);
+    }
+    setStatusBanner(
+      `Page dupliquée sous le nom « ${duplicatedPage.title} » avec le slug unique « ${duplicatedPage.slug} ».`
+    );
+  }
+
+  function handleReorderPageMenu(pageId: string, direction: "up" | "down") {
+    const synced = syncCurrentEditorToPageState();
+    const reordered = reorderIndependentPagesMenu(synced, pageId, direction);
+    setPages(reordered);
+    setHasUnsavedChanges(true);
+    setStatusBanner("Ordre du menu mis à jour.");
+  }
+
+  function handleDuplicateReusableBlock(blockId: string) {
+    const source = reusableBlocks.find((b) => b.id === blockId);
+    if (!source) return;
+    const requestedName = duplicateBlockCustomName.trim() || `${source.name} (copie)`;
+    const { reusableBlocks: nextBlocks, duplicatedBlock } = duplicateIndependentReusableBlockInList(
+      reusableBlocks,
+      blockId,
+      requestedName
+    );
+    if (!duplicatedBlock) return;
+    setReusableBlocks(nextBlocks);
+    setDuplicateBlockCustomName("");
+    setHasUnsavedChanges(true);
+    setStatusBanner(`Bloc réutilisable dupliqué sous le nom « ${duplicatedBlock.name} ».`);
+  }
+
+  function handleExportProjectJson() {
+    const syncedPages = syncCurrentEditorToPageState();
+    const exported = exportIndependentSiteProjectToJson({
+      title: siteTitle,
+      slug: siteSlug,
+      siteType,
+      projectMode,
+      templateId: activeProjectQuery.data?.templateId ?? newSiteTemplateId,
+      theme: activeProjectQuery.data?.theme ?? INDEPENDENT_SITE_TEMPLATES[0].theme,
+      navigation: buildNavigationFromPages(syncedPages),
+      pages: syncedPages,
+      reusableBlocks,
+    });
+    const raw = JSON.stringify(exported, null, 2);
+    setExportedJsonText(raw);
+    if (typeof window !== "undefined") {
+      try {
+        const blob = new Blob([raw], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${siteSlug || "site-independant"}-export.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        // Fallback: le JSON est affiché dans la zone de texte
+      }
+    }
+    setStatusBanner(
+      `Export JSON contrôlé généré (${exported.project.pages.length} page(s), sans secret ni donnée e-commerce).`
+    );
+  }
+
+  function requestImportProjectJson(replaceCurrent: boolean) {
+    const check = validateAndSanitizeIndependentSiteImport(importJsonRawInput);
+    if (!check.valid || !check.sanitizedPackage || !check.preview) {
+      setErrorBanner(
+        `Import JSON refusé : ${check.error || "Format non reconnu."}`
+      );
+      return;
+    }
+    const targetTitle = importCustomTitleInput.trim() || check.preview.title;
+    setPendingConfirmAction({
+      title: replaceCurrent
+        ? `Remplacer le projet actuel par l’import « ${targetTitle} » ?`
+        : `Créer un nouveau projet à partir de l’import « ${targetTitle} » ?`,
+      description: `L’import JSON contrôlé contient ${check.preview.pageCount} page(s) (${check.preview.pageTitles.join(", ")}) et ${check.preview.reusableBlockCount} bloc(s) réutilisable(s). Le HTML et le CSS ont été nettoyés et vérifiés sans script ni secret.`,
+      confirmLabel: replaceCurrent
+        ? "Confirmer le remplacement"
+        : "Importer comme nouveau projet",
+      variant: replaceCurrent ? "danger" : "primary",
+      onConfirm: () => {
+        if (selectedSiteId && replaceCurrent) {
+          importProjectJsonMutation.mutate({
+            siteId: selectedSiteId,
+            rawJson: importJsonRawInput,
+            newTitle: targetTitle,
+          });
+        } else if (selectedSiteId && !replaceCurrent) {
+          importProjectJsonMutation.mutate({
+            siteId: null,
+            rawJson: importJsonRawInput,
+            newTitle: targetTitle,
+          });
+        } else {
+          const imported = check.sanitizedPackage!.project;
+          setSiteTitle(targetTitle);
+          setSiteType(imported.siteType);
+          setProjectMode(imported.projectMode);
+          setPages(imported.pages);
+          setActivePageId(imported.pages[0].id);
+          setReusableBlocks(imported.reusableBlocks);
+          setHasUnsavedChanges(true);
+          if (editorRef.current && imported.pages[0]) {
+            editorRef.current.setComponents(imported.pages[0].html);
+            editorRef.current.setStyle(
+              `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${imported.pages[0].css}`
+            );
+            refreshLayersFromEditor(editorRef.current);
+          }
+          setImportJsonRawInput("");
+          setImportCustomTitleInput("");
+          setStatusBanner(
+            `Projet « ${targetTitle} » chargé depuis l’import JSON (${imported.pages.length} page(s)). Cliquez sur « Sauvegarder » pour l’enregistrer.`
+          );
+        }
+      },
+    });
+  }
+
+  function requestUnpublishCurrentSite() {
+    if (!selectedSiteId) return;
+    setPendingConfirmAction({
+      title: `Dépublier le site « ${siteTitle} » ?`,
+      description: `Le site repassera immédiatement en statut Brouillon privé. Il ne sera plus visible par le public sur /sites/${siteSlug}, mais tout votre travail restera intact dans l’éditeur et dans l’historique des versions.`,
+      confirmLabel: "Confirmer la dépublication",
+      variant: "danger",
+      onConfirm: () => {
+        unpublishSiteMutation.mutate({
+          siteId: selectedSiteId,
+          reason: "Dépublication manuelle depuis le constructeur",
+        });
+      },
+    });
   }
 
   function requestDeletePage(pageId: string) {
@@ -1146,9 +1513,22 @@ export default function IndependentSiteBuilderPage() {
   }
 
   function requestPublishCurrentSite() {
+    if (!qualityReport.canPublish) {
+      setActiveInspectorTab("qualite");
+      const failedLabels = qualityReport.checklist
+        .filter((c) => c.blocking && !c.passed)
+        .map((c) => c.label);
+      setErrorBanner(
+        `Publication bloquée par la checklist qualité : ${failedLabels.join(" | ")}`
+      );
+      return;
+    }
+    const demoNotice = qualityReport.demoStatus.hasUnchangedDemoMarkers
+      ? ` Attention : ce projet contient encore des mentions de démonstration (${qualityReport.demoStatus.badgeLabel}).`
+      : "";
     setPendingConfirmAction({
-      title: `Publier le site « ${siteTitle} » en ligne ?`,
-      description: `La version actuelle de vos ${pages.length} pages sera publiée sur /sites/${siteSlug} et un point de sauvegarde sera créé automatiquement dans l’historique des versions.`,
+      title: `Publier le site « ${siteTitle} » en ligne (Score qualité : ${qualityReport.overallScore100}/100) ?`,
+      description: `Résumé des changements : ${pages.length} page(s) vérifiées (${internalLinkCheck.checkedLinksCount} lien(s) vérifié(s)) seront publiées sur /sites/${siteSlug} et journalisées avec création automatique d’une version.${demoNotice}`,
       confirmLabel: "Confirmer la publication",
       variant: "primary",
       onConfirm: () => {
@@ -1308,6 +1688,32 @@ export default function IndependentSiteBuilderPage() {
                     className="border-emerald-300 bg-emerald-50/60 text-[11px] font-medium text-emerald-900"
                   >
                     ✓ {workflowSummary.unsavedIndicatorLabel}
+                  </Badge>
+                )}
+
+                {/* Phase 2 : Score global de Qualité du site (cliquable vers le panneau Qualité) */}
+                <button
+                  type="button"
+                  onClick={() => setActiveInspectorTab("qualite")}
+                  title="Ouvrir le panneau Qualité du site, Checklist avant publication, Accessibilité & Responsive"
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                    qualityReport.overallScore100 >= 85
+                      ? "border-emerald-400 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                      : qualityReport.overallScore100 >= 65
+                        ? "border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                        : "border-rose-400 bg-rose-50 text-rose-900 hover:bg-rose-100"
+                  }`}
+                >
+                  Qualité : {qualityReport.overallScore100}/100
+                </button>
+
+                {/* Phase 2 : Mention explicite "Démonstration à personnaliser" si contenu démo */}
+                {qualityReport.demoStatus.hasUnchangedDemoMarkers && (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-400 bg-amber-50/90 text-[11px] font-semibold text-amber-950"
+                  >
+                    ★ {DEMO_CONTENT_NOTICE_LABEL}
                   </Badge>
                 )}
               </div>
@@ -1983,47 +2389,67 @@ export default function IndependentSiteBuilderPage() {
                           <code>/{proj.slug}</code>
                         </p>
                       </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={selectedSiteId === proj.id ? "default" : "outline"}
-                          className="h-7 text-xs"
-                          onClick={() =>
-                            requestSwitchProjectWithGuard(`ouvrir le projet « ${proj.title} »`, () => {
-                              setSelectedSiteId(proj.id);
-                              loadProjectIntoWorkspace(proj);
-                              setHasUnsavedChanges(false);
-                            })
-                          }
-                        >
-                          Ouvrir
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => duplicateProjectMutation.mutate({ siteId: proj.id })}
-                        >
-                          <Copy className="mr-1 h-3 w-3" />
-                          Dupliquer
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() =>
-                            updateStatusMutation.mutate({
-                              siteId: proj.id,
-                              status: proj.status === "archived" ? "draft" : "archived",
-                            })
-                          }
-                        >
-                          <Archive className="mr-1 h-3 w-3" />
-                          {proj.status === "archived" ? "Désarchiver" : "Archiver"}
-                        </Button>
+                      <div className="mt-3 space-y-2">
+                        <input
+                          type="text"
+                          value={duplicateProjectCustomTitle}
+                          onChange={(e) => setDuplicateProjectCustomTitle(e.target.value)}
+                          placeholder={`Nouveau nom pour copie (ex. ${proj.title} — V2)`}
+                          aria-label={`Nouveau nom avant duplication de ${proj.title}`}
+                          className="h-7 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={selectedSiteId === proj.id ? "default" : "outline"}
+                            className="h-7 text-xs"
+                            onClick={() =>
+                              requestSwitchProjectWithGuard(
+                                `ouvrir le projet « ${proj.title} »`,
+                                () => {
+                                  setSelectedSiteId(proj.id);
+                                  loadProjectIntoWorkspace(proj);
+                                  setHasUnsavedChanges(false);
+                                }
+                              )
+                            }
+                          >
+                            Ouvrir
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              const customTitle = duplicateProjectCustomTitle.trim();
+                              duplicateProjectMutation.mutate({
+                                siteId: proj.id,
+                                newTitle: customTitle || undefined,
+                              });
+                              setDuplicateProjectCustomTitle("");
+                            }}
+                          >
+                            <Copy className="mr-1 h-3 w-3" />
+                            Dupliquer
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() =>
+                              updateStatusMutation.mutate({
+                                siteId: proj.id,
+                                status: proj.status === "archived" ? "draft" : "archived",
+                              })
+                            }
+                          >
+                            <Archive className="mr-1 h-3 w-3" />
+                            {proj.status === "archived" ? "Désarchiver" : "Archiver"}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2191,11 +2617,21 @@ export default function IndependentSiteBuilderPage() {
                           Cliquez pour modifier une page
                         </span>
                       </div>
-                      <div className="mt-2 space-y-1.5">
-                        {pages.map((p) => (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={duplicatePageCustomTitle}
+                          onChange={(e) => setDuplicatePageCustomTitle(e.target.value)}
+                          placeholder="Nom personnalisé avant duplication d’une page (optionnel)…"
+                          aria-label="Nom personnalisé avant duplication de page"
+                          className="mb-2 h-7 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                        />
+                      </div>
+                      <div className="mt-1 space-y-1.5">
+                        {pages.map((p, pageIdx) => (
                           <div
                             key={p.id}
-                            className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition ${
+                            className={`flex items-center justify-between gap-1.5 rounded-lg border px-2.5 py-2 text-xs transition ${
                               activePage?.id === p.id
                                 ? "border-[#172033] bg-white font-bold text-[#172033] shadow-2xs"
                                 : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
@@ -2204,24 +2640,55 @@ export default function IndependentSiteBuilderPage() {
                             <button
                               type="button"
                               onClick={() => handleSelectPage(p.id)}
-                              className="flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                              className="min-w-0 flex-1 truncate text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                             >
                               <span>{p.parentPageId ? `↳ ${p.title}` : p.title}</span>
-                              <span className="ml-2 text-[11px] font-normal text-slate-400">
+                              <span className="ml-1.5 text-[11px] font-normal text-slate-400">
                                 ({p.slug})
                               </span>
                             </button>
-                            {pages.length > 1 && (
+                            <div className="flex shrink-0 items-center gap-0.5">
                               <button
                                 type="button"
-                                onClick={() => requestDeletePage(p.id)}
-                                className="ml-2 rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
-                                title={`Supprimer la page ${p.title}`}
-                                aria-label={`Supprimer la page ${p.title}`}
+                                disabled={pageIdx === 0}
+                                onClick={() => handleReorderPageMenu(p.id, "up")}
+                                title={`Monter « ${p.title} » dans le menu`}
+                                aria-label={`Monter ${p.title} dans le menu`}
+                                className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <ArrowUp className="h-3.5 w-3.5" />
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                disabled={pageIdx === pages.length - 1}
+                                onClick={() => handleReorderPageMenu(p.id, "down")}
+                                title={`Descendre « ${p.title} » dans le menu`}
+                                aria-label={`Descendre ${p.title} dans le menu`}
+                                className="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+                              >
+                                <ArrowDown className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDuplicatePage(p.id)}
+                                title={`Dupliquer la page « ${p.title} » avec un slug unique`}
+                                aria-label={`Dupliquer la page ${p.title}`}
+                                className="rounded p-1 text-[#9b563e] hover:bg-amber-50"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                              {pages.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => requestDeletePage(p.id)}
+                                  className="rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+                                  title={`Supprimer la page ${p.title}`}
+                                  aria-label={`Supprimer la page ${p.title}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2303,12 +2770,26 @@ export default function IndependentSiteBuilderPage() {
                       </Button>
                     </div>
 
-                    {/* Aperçu de l'arborescence Menus & Sous-menus */}
-                    <div className="rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
-                      <h4 className="text-xs font-bold text-[#172033]">
-                        Aperçu du menu de navigation
-                      </h4>
-                      <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                    {/* Aperçu de l'arborescence Menus & Sous-menus (limité à 2 niveaux maximum) + Vérification des liens internes */}
+                    <div className="space-y-2.5 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-[#172033]">
+                          Aperçu du menu (max 2 niveaux)
+                        </h4>
+                        <Badge
+                          variant="outline"
+                          className={
+                            internalLinkCheck.valid
+                              ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                              : "border-rose-300 bg-rose-50 text-[10px] text-rose-900"
+                          }
+                        >
+                          {internalLinkCheck.valid
+                            ? "Liens internes : 100 % valides"
+                            : `${internalLinkCheck.brokenLinks.length} lien(s) cassé(s)`}
+                        </Badge>
+                      </div>
+                      <ul className="space-y-1 text-xs text-slate-700">
                         {navigationTree.map((item) => (
                           <li key={item.id}>
                             <span className="font-semibold">{item.label}</span>{" "}
@@ -2325,6 +2806,52 @@ export default function IndependentSiteBuilderPage() {
                           </li>
                         ))}
                       </ul>
+                      {!internalLinkCheck.valid && (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-900">
+                          <strong>Liens internes à corriger :</strong>
+                          <ul className="mt-1 space-y-0.5">
+                            {internalLinkCheck.brokenLinks.map((bl, idx) => (
+                              <li key={idx}>
+                                • Page « {bl.fromPageTitle} » → <code>{bl.targetHref}</code> (
+                                {bl.linkText})
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Préréglages Navigation Principale & Pied de page (Footer) accessibles au clavier */}
+                    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                      <h4 className="text-xs font-bold text-[#172033]">
+                        Navigation & Pied de page accessibles ({INDEPENDENT_NAV_AND_FOOTER_PRESETS.length})
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Insérez un menu principal avec CTA et menu mobile ou un footer complet (liens légaux, réseaux sociaux).
+                      </p>
+                      {INDEPENDENT_NAV_AND_FOOTER_PRESETS.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="rounded-lg border border-slate-200 bg-[#faf8f5] p-2.5 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="text-[#172033]">{preset.label}</strong>
+                            <Badge variant="outline" className="text-[10px]">
+                              {preset.kind === "header_navigation" ? "Menu & Sous-menu" : "Footer complet"}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-600">{preset.description}</p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-7 w-full border-[#e2dad0] bg-white text-xs font-semibold hover:border-[#9b563e]"
+                            onClick={() => insertHtmlIntoCanvas(preset.html, preset.label)}
+                          >
+                            + Insérer dans la page active
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2892,21 +3419,44 @@ export default function IndependentSiteBuilderPage() {
                           Mémoriser
                         </Button>
                       </div>
+                      {reusableBlocks.length > 0 && (
+                        <input
+                          type="text"
+                          value={duplicateBlockCustomName}
+                          onChange={(e) => setDuplicateBlockCustomName(e.target.value)}
+                          placeholder="Nouveau nom avant duplication d’un bloc (optionnel)…"
+                          aria-label="Nouveau nom avant duplication d'un bloc réutilisable"
+                          className="h-7 w-full rounded border border-slate-300 bg-white px-2 text-xs"
+                        />
+                      )}
                       {reusableBlocks.map((rb) => (
                         <div
                           key={rb.id}
-                          className="flex items-center justify-between rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          className="flex items-center justify-between gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
                         >
-                          <span className="font-medium">{rb.name}</span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[11px]"
-                            onClick={() => insertHtmlIntoCanvas(rb.html, rb.name)}
-                          >
-                            Insérer ici
-                          </Button>
+                          <span className="truncate font-medium">{rb.name}</span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => handleDuplicateReusableBlock(rb.id)}
+                              title={`Dupliquer le bloc « ${rb.name} »`}
+                            >
+                              <Copy className="mr-1 h-3 w-3" />
+                              Dupliquer
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => insertHtmlIntoCanvas(rb.html, rb.name)}
+                            >
+                              Insérer ici
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -3189,36 +3739,193 @@ export default function IndependentSiteBuilderPage() {
                         </Button>
                       </div>
 
-                      {mediaQuery.data && mediaQuery.data.length > 0 ? (
-                        <div className="mt-2 space-y-1.5">
-                          {mediaQuery.data.map((m) => (
-                            <div
-                              key={m.id}
-                              className="flex items-center justify-between rounded border border-slate-200 bg-[#faf8f5] px-2.5 py-1.5 text-xs"
-                            >
-                              <span className="truncate font-medium">{m.label}</span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-[11px]"
-                                onClick={() =>
-                                  insertHtmlIntoCanvas(
-                                    `<figure style="margin:0;padding:20px;text-align:center"><img src="${m.url}" alt="${m.altText}" data-site-transformable-image="true" style="${buildImageTransformCss(m.transforms)}" /></figure>`,
-                                    m.label
-                                  )
-                                }
-                              >
-                                Insérer
-                              </Button>
-                            </div>
-                          ))}
+                      {/* Phase 2 : Recherche, filtre par type MIME, poids/dimensions, renommage, remplacement sans casser les pages et suppression avec confirmation */}
+                      <div className="mt-3 space-y-2 border-t border-slate-200 pt-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <input
+                            type="search"
+                            value={mediaSearchInput}
+                            onChange={(e) => setMediaSearchInput(e.target.value)}
+                            placeholder="Rechercher une image par nom ou texte alt…"
+                            aria-label="Rechercher dans la médiathèque du projet"
+                            className="h-7 flex-1 rounded border border-slate-300 bg-[#faf8f5] px-2 text-xs"
+                          />
+                          <select
+                            aria-label="Filtrer les médias par format"
+                            value={mediaMimeFilter}
+                            onChange={(e) => setMediaMimeFilter(e.target.value)}
+                            className="h-7 rounded border border-slate-300 bg-white px-2 text-xs"
+                          >
+                            <option value="all">Tous formats</option>
+                            <option value="image/webp">WebP</option>
+                            <option value="image/jpeg">JPEG</option>
+                            <option value="image/png">PNG</option>
+                            <option value="image/svg+xml">SVG</option>
+                          </select>
                         </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-500">
-                          Aucune image enregistrée dans la médiathèque de ce projet pour le moment.
-                        </p>
-                      )}
+
+                        {filteredMediaItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {filteredMediaItems.map((m) => {
+                              const assessment = assessIndependentMediaItem(m);
+                              const isEditing = editingMediaId === m.id;
+                              return (
+                                <div
+                                  key={m.id}
+                                  className="space-y-1.5 rounded-lg border border-slate-200 bg-[#faf8f5] p-2.5 text-xs"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <strong className="block truncate text-[#172033]">
+                                        {m.label}
+                                      </strong>
+                                      <span className="block truncate text-[11px] text-slate-600">
+                                        Alt :{" "}
+                                        {assessment.hasValidAltText ? (
+                                          m.altText
+                                        ) : (
+                                          <strong className="text-amber-800">
+                                            À compléter (recommandé SEO/Accessibilité)
+                                          </strong>
+                                        )}
+                                      </span>
+                                      <span className="mt-0.5 block text-[10px] text-slate-500">
+                                        {m.mimeType} · {assessment.dimensionsLabel} · ~
+                                        {Math.round(assessment.estimatedBytes / 1024)} Ko
+                                      </span>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 px-2 text-[11px]"
+                                        onClick={() => {
+                                          if (isEditing) {
+                                            setEditingMediaId(null);
+                                          } else {
+                                            setEditingMediaId(m.id);
+                                            setEditMediaLabel(m.label);
+                                            setEditMediaAlt(m.altText);
+                                            setEditMediaNewUrl(m.url);
+                                          }
+                                        }}
+                                      >
+                                        {isEditing ? "Fermer" : "Renommer / Remplacer"}
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 px-2 text-[11px]"
+                                        onClick={() =>
+                                          insertHtmlIntoCanvas(
+                                            `<figure style="margin:0;padding:20px;text-align:center"><img src="${m.url}" alt="${m.altText}" data-site-transformable-image="true" style="${buildImageTransformCss(m.transforms)}" /></figure>`,
+                                            m.label
+                                          )
+                                        }
+                                      >
+                                        Insérer
+                                      </Button>
+                                      <button
+                                        type="button"
+                                        title={`Supprimer ${m.label}`}
+                                        aria-label={`Supprimer ${m.label}`}
+                                        onClick={() => {
+                                          if (!selectedSiteId) return;
+                                          setPendingConfirmAction({
+                                            title: `Supprimer le média « ${m.label} » ?`,
+                                            description:
+                                              "Ce média sera retiré de la bibliothèque de ce projet.",
+                                            confirmLabel: "Supprimer ce média",
+                                            variant: "danger",
+                                            onConfirm: () =>
+                                              deleteMediaMutation.mutate({
+                                                siteId: selectedSiteId,
+                                                mediaId: m.id,
+                                              }),
+                                          });
+                                        }}
+                                        className="rounded p-1 text-rose-600 hover:bg-rose-50"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {assessment.warningMessage && (
+                                    <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-950">
+                                      ⚠ {assessment.warningMessage}
+                                    </p>
+                                  )}
+
+                                  {isEditing && selectedSiteId && (
+                                    <div className="space-y-1.5 rounded border border-slate-300 bg-white p-2">
+                                      <input
+                                        type="text"
+                                        value={editMediaLabel}
+                                        onChange={(e) => setEditMediaLabel(e.target.value)}
+                                        placeholder="Nouveau nom du média"
+                                        className="h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={editMediaAlt}
+                                        onChange={(e) => setEditMediaAlt(e.target.value)}
+                                        placeholder="Texte alternatif (alt) obligatoire/recommandé"
+                                        className="h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                      />
+                                      <input
+                                        type="url"
+                                        value={editMediaNewUrl}
+                                        onChange={(e) =>
+                                          setEditMediaNewUrl(e.target.value)
+                                        }
+                                        placeholder="Nouvelle URL pour remplacer l’image dans toutes les pages"
+                                        className="h-7 w-full rounded border border-slate-300 px-2 text-xs"
+                                      />
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-7 w-full bg-[#172033] text-xs text-white"
+                                        disabled={updateMediaMetadataMutation.isPending}
+                                        onClick={() => {
+                                          const oldUrl = m.url;
+                                          const newUrl = editMediaNewUrl.trim();
+                                          if (newUrl && newUrl !== oldUrl) {
+                                            const replaced = replaceMediaUrlAcrossPages(
+                                              syncCurrentEditorToPageState(),
+                                              oldUrl,
+                                              newUrl,
+                                              editMediaAlt.trim() || undefined
+                                            );
+                                            setPages(replaced.pages);
+                                            setHasUnsavedChanges(true);
+                                          }
+                                          updateMediaMetadataMutation.mutate({
+                                            siteId: selectedSiteId,
+                                            mediaId: m.id,
+                                            label: editMediaLabel.trim() || m.label,
+                                            altText: editMediaAlt.trim() || m.label,
+                                            newUrl:
+                                              newUrl && newUrl !== oldUrl ? newUrl : undefined,
+                                          });
+                                        }}
+                                      >
+                                        Enregistrer & Mettre à jour dans les pages
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">
+                            Aucun média ne correspond à votre filtre dans la médiathèque de ce projet.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3712,6 +4419,20 @@ export default function IndependentSiteBuilderPage() {
                     <button
                       type="button"
                       role="tab"
+                      aria-selected={activeInspectorTab === "qualite"}
+                      onClick={() => setActiveInspectorTab("qualite")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                        activeInspectorTab === "qualite"
+                          ? "bg-[#172033] text-white"
+                          : "text-slate-700 hover:bg-slate-200/70"
+                      }`}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5 text-[#f5b98f]" />
+                      Qualité du site & Checklist ({qualityReport.overallScore100}/100)
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
                       aria-selected={activeInspectorTab === "publication"}
                       onClick={() => setActiveInspectorTab("publication")}
                       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
@@ -3721,7 +4442,7 @@ export default function IndependentSiteBuilderPage() {
                       }`}
                     >
                       <Globe className="h-3.5 w-3.5 text-[#f5b98f]" />
-                      Publication & Domaine personnalisé
+                      Publication, Domaine & Partage
                     </button>
                     <button
                       type="button"
@@ -3735,7 +4456,7 @@ export default function IndependentSiteBuilderPage() {
                       }`}
                     >
                       <History className="h-3.5 w-3.5 text-[#f5b98f]" />
-                      Versions & Sauvegardes ({versionsQuery.data?.length ?? 0})
+                      Versions & Import/Export ({versionsQuery.data?.length ?? 0})
                     </button>
                   </div>
                 </div>
@@ -3908,12 +4629,60 @@ export default function IndependentSiteBuilderPage() {
                               {seoPreview.displayDescription}
                             </p>
                           </div>
-                          {seoPreview.recommendations.length > 0 && (
-                            <ul className="mt-2 space-y-1 text-[11px] text-amber-900">
-                              {seoPreview.recommendations.map((rec, i) => (
-                                <li key={i}>• {rec}</li>
-                              ))}
-                            </ul>
+                          {activePageSeoAudit && (
+                            <div className="mt-2.5 space-y-1.5 text-[11px]">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Badge variant="outline" className="bg-white text-[10px]">
+                                  Balises H1 : {activePageSeoAudit.h1Count}
+                                </Badge>
+                                <Badge variant="outline" className="bg-white text-[10px]">
+                                  Images sans alt : {activePageSeoAudit.imagesMissingAlt}/
+                                  {activePageSeoAudit.imagesTotal}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    activePageSeoAudit.isContentEmpty
+                                      ? "border-rose-300 bg-rose-50 text-[10px] text-rose-900"
+                                      : "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                                  }
+                                >
+                                  {activePageSeoAudit.isContentEmpty
+                                    ? "Contenu vide"
+                                    : "Contenu éditorial présent"}
+                                </Badge>
+                              </div>
+                              {activePageSeoAudit.blockingErrors.length > 0 && (
+                                <div className="rounded border border-rose-300 bg-rose-50 p-2 text-rose-950">
+                                  <strong>Erreurs bloquantes SEO :</strong>
+                                  <ul className="mt-0.5 space-y-0.5">
+                                    {activePageSeoAudit.blockingErrors.map((err) => (
+                                      <li key={err.id}>• {err.message}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {activePageSeoAudit.warningsToFix.length > 0 && (
+                                <div className="rounded border border-amber-300 bg-amber-50 p-2 text-amber-950">
+                                  <strong>Points SEO à corriger :</strong>
+                                  <ul className="mt-0.5 space-y-0.5">
+                                    {activePageSeoAudit.warningsToFix.map((w) => (
+                                      <li key={w.id}>• {w.message}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {activePageSeoAudit.recommendations.length > 0 && (
+                                <div className="rounded border border-sky-200 bg-sky-50 p-2 text-sky-950">
+                                  <strong>Conseils d’optimisation :</strong>
+                                  <ul className="mt-0.5 space-y-0.5">
+                                    {activePageSeoAudit.recommendations.map((rec) => (
+                                      <li key={rec.id}>• {rec.message}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
@@ -3963,306 +4732,881 @@ export default function IndependentSiteBuilderPage() {
                   </div>
                 )}
 
-                {/* ONGLET 3B : PUBLICATION & DOMAINE PERSONNALISÉ (Chantier 7) */}
-                {activeInspectorTab === "publication" && (
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {/* Étapes 1 & 2 : Aperçu et Publication du site */}
-                    <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
-                          Étape 1 & 2 — Vérifier l’aperçu puis publier
-                        </h3>
-                        <Badge
-                          variant="outline"
-                          className={
-                            siteStatus === "published"
-                              ? "border-emerald-400 bg-emerald-50 text-emerald-900"
-                              : "border-amber-400 bg-amber-50 text-amber-950"
-                          }
-                        >
-                          {siteStatus === "published" ? "Site en ligne (Publié)" : "En brouillon"}
-                        </Badge>
+                {/* ONGLET 3B : QUALITÉ DU SITE, CHECKLIST AVANT PUBLICATION (14 POINTS), ACCESSIBILITÉ & RESPONSIVE */}
+                {activeInspectorTab === "qualite" && (
+                  <div className="space-y-5">
+                    {/* Synthèse Qualité du site & Score explicable */}
+                    <div className="grid gap-4 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#9b563e]">
+                          Score global explicable
+                        </span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-extrabold text-[#172033]">
+                            {qualityReport.overallScore100}/100
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={
+                              qualityReport.canPublish
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                                : "border-rose-400 bg-rose-50 text-rose-900"
+                            }
+                          >
+                            {qualityReport.canPublish
+                              ? "Prêt à être publié"
+                              : `${qualityReport.blockingIssuesCount} erreur(s) bloquante(s)`}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-600">{qualityReport.scoreExplanation}</p>
+                        {qualityReport.demoStatus.hasUnchangedDemoMarkers && (
+                          <div className="mt-2 rounded-lg border border-amber-400 bg-amber-50 p-2 text-xs text-amber-950">
+                            <strong>{qualityReport.demoStatus.badgeLabel} :</strong>{" "}
+                            {qualityReport.demoStatus.noticeMessage}
+                          </div>
+                        )}
                       </div>
 
-                      <p className="text-xs text-slate-600">
-                        Tant que votre site est en <strong>Brouillon</strong>, vos modifications restent privées dans l’éditeur. Lorsque vous cliquez sur <strong>Publier le site</strong>, la version actuelle devient visible publiquement.
-                      </p>
-
-                      <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                        <p className="font-semibold text-[#172033]">Adresses du site :</p>
-                        <p className="mt-1 text-slate-600">
-                          • Aperçu multi-écran :{" "}
-                          <code className="text-[#9b563e]">
-                            /constructeur-sites/apercu/{siteSlug}
-                          </code>
-                        </p>
-                        <p className="mt-0.5 text-slate-600">
-                          • Adresse publique :{" "}
-                          <code className="text-emerald-700">/sites/{siteSlug}</code>
-                        </p>
+                      {/* Répartition par pilier */}
+                      <div className="space-y-1.5 text-xs">
+                        <strong className="text-[#172033]">Détail des 6 piliers du score :</strong>
+                        <ul className="space-y-1 text-slate-700">
+                          <li className="flex justify-between">
+                            <span>• SEO & Métadonnées :</span>
+                            <strong>{qualityReport.scoreBreakdown.seoScore100}/100</strong>
+                          </li>
+                          <li className="flex justify-between">
+                            <span>• Accessibilité (3 niveaux) :</span>
+                            <strong>{qualityReport.scoreBreakdown.accessibilityScore100}/100</strong>
+                          </li>
+                          <li className="flex justify-between">
+                            <span>• Vérification Responsive :</span>
+                            <strong>{qualityReport.scoreBreakdown.responsiveScore100}/100</strong>
+                          </li>
+                          <li className="flex justify-between">
+                            <span>• Navigation & Liens :</span>
+                            <strong>{qualityReport.scoreBreakdown.navigationScore100}/100</strong>
+                          </li>
+                          <li className="flex justify-between">
+                            <span>• Médias & Textes alt :</span>
+                            <strong>{qualityReport.scoreBreakdown.mediaScore100}/100</strong>
+                          </li>
+                          <li className="flex justify-between">
+                            <span>• Sécurité & Périmètre :</span>
+                            <strong>{qualityReport.scoreBreakdown.securityScore100}/100</strong>
+                          </li>
+                        </ul>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Link
-                          href={`/constructeur-sites/apercu/${
-                            siteSlug || "association-familiale-ath-vahloul"
-                          }`}
-                        >
-                          <Button type="button" variant="outline" size="sm" className="text-xs">
-                            <Eye className="mr-1.5 h-3.5 w-3.5" />
-                            1. Ouvrir l’aperçu complet
-                          </Button>
-                        </Link>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="bg-[#172033] text-xs text-white hover:bg-[#24324f]"
-                          onClick={requestPublishCurrentSite}
-                          disabled={isBusySaving}
-                        >
-                          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
-                          2. Publier le site maintenant
-                        </Button>
+                      {/* Statuts synthétiques des 6 domaines */}
+                      <div className="space-y-1.5 text-xs">
+                        <strong className="text-[#172033]">États de contrôle du projet :</strong>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">Responsive</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.responsiveAudit.criticalCount === 0
+                                ? "✓ Conforme"
+                                : "⚠ À vérifier"}
+                            </strong>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">SEO</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.scoreBreakdown.seoScore100 >= 85
+                                ? "✓ Conforme"
+                                : qualityReport.scoreBreakdown.seoScore100 >= 60
+                                  ? "⚠ À corriger"
+                                  : "✕ Bloquant"}
+                            </strong>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">Accessibilité</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.accessibilityAudit.blockingCount === 0 &&
+                              qualityReport.accessibilityAudit.toFixCount === 0
+                                ? "✓ Conforme"
+                                : qualityReport.accessibilityAudit.blockingCount === 0
+                                  ? "⚠ À corriger"
+                                  : "✕ Bloquant"}
+                            </strong>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">Médias</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.scoreBreakdown.mediaScore100 === 100
+                                ? "✓ Conforme"
+                                : "⚠ À optimiser"}
+                            </strong>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">Navigation</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.brokenLinksReport.valid
+                                ? "✓ Conforme"
+                                : "✕ Liens à corriger"}
+                            </strong>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white p-2">
+                            <span className="block text-[10px] text-slate-500">Publication</span>
+                            <strong className="text-[#172033]">
+                              {qualityReport.publicationStatusLabel}
+                            </strong>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Étape 3 : Domaine personnalisé & Vérification DNS TXT réelle */}
-                    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#172033]">
-                          <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                          Étape 3 — Domaine personnalisé & DNS TXT
+                    {/* Checklist avant publication en 14 points */}
+                    <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Checklist avant publication ({qualityReport.checklist.length} contrôles)
                         </h3>
-                        <Badge variant="outline" className="text-[10px]">
-                          {domainsQuery.data && domainsQuery.data.length > 0
-                            ? `${domainsQuery.data.length} domaine(s)`
-                            : "Domaine non configuré"}
-                        </Badge>
+                        <span className="text-xs text-slate-500">
+                          La publication est bloquée uniquement si un point critique (Bloquant) échoue.
+                        </span>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {qualityReport.checklist.map((item) => (
+                          <div
+                            key={item.id}
+                            className={`flex items-start justify-between gap-2 rounded-lg border p-2.5 text-xs ${
+                              item.passed
+                                ? "border-emerald-200 bg-emerald-50/40"
+                                : item.blocking
+                                  ? "border-rose-300 bg-rose-50"
+                                  : "border-amber-300 bg-amber-50/70"
+                            }`}
+                          >
+                            <div>
+                              <strong className="text-[#172033]">
+                                {item.passed ? "✓ " : item.blocking ? "✕ " : "⚠ "}
+                                {item.label}
+                              </strong>
+                              <p className="mt-0.5 text-[11px] text-slate-600">{item.detail}</p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={`shrink-0 text-[10px] ${
+                                item.passed
+                                  ? "border-emerald-300 bg-white text-emerald-800"
+                                  : item.blocking
+                                    ? "border-rose-400 bg-white font-bold text-rose-900"
+                                    : "border-amber-400 bg-white text-amber-900"
+                              }`}
+                            >
+                              {item.passed
+                                ? "Validé"
+                                : item.blocking
+                                  ? "Bloquant"
+                                  : "Recommandation"}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Contrôle Accessibilité (3 niveaux : Bloquant / À corriger / Conseil) & Vérification Responsive */}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Contrôle Accessibilité (Contraste, Alt, Titres, Clavier, Formulaires)
+                          </h3>
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className="border-rose-300 bg-rose-50 text-[10px] text-rose-900">
+                              Bloquant : {qualityReport.accessibilityAudit.blockingCount}
+                            </Badge>
+                            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-900">
+                              À corriger : {qualityReport.accessibilityAudit.toFixCount}
+                            </Badge>
+                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-[10px] text-sky-900">
+                              Conseil : {qualityReport.accessibilityAudit.adviceCount}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                          {qualityReport.accessibilityAudit.issues.map((iss) => (
+                            <div
+                              key={iss.id}
+                              className={`rounded-lg border p-2.5 ${
+                                iss.level === "Bloquant"
+                                  ? "border-rose-300 bg-rose-50 text-rose-950"
+                                  : iss.level === "À corriger"
+                                    ? "border-amber-300 bg-amber-50 text-amber-950"
+                                    : "border-sky-200 bg-sky-50 text-sky-950"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <strong>{iss.category} ({iss.pageSlug})</strong>
+                                <Badge variant="outline" className="bg-white text-[10px] font-bold">
+                                  {iss.level}
+                                </Badge>
+                              </div>
+                              <p className="mt-0.5 text-[11px]">{iss.message}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
-                      <p className="text-xs text-slate-600">
-                        Rattachez votre propre nom de domaine (ex.{" "}
-                        <code>association-ath-vahloul.org</code>). Un domaine n’est jamais marqué actif sans preuve réelle de l’enregistrement DNS TXT.
-                      </p>
-
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={customDomainInput}
-                          onChange={(e) => setCustomDomainInput(e.target.value)}
-                          placeholder="Ex. association-ath-vahloul.org"
-                          className="h-8 flex-1 rounded border border-slate-300 px-2.5 text-xs"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
-                          disabled={!selectedSiteId || !customDomainInput.trim()}
-                          onClick={() => {
-                            if (!selectedSiteId) return;
-                            addDomainMutation.mutate({
-                              siteId: selectedSiteId,
-                              hostname: customDomainInput.trim(),
-                            });
-                          }}
-                        >
-                          Rattacher ce domaine
-                        </Button>
-                      </div>
-
-                      {!selectedSiteId && (
-                        <p className="text-[11px] text-amber-800">
-                          Enregistrez d’abord votre site une première fois pour rattacher un nom de domaine personnalisé.
-                        </p>
-                      )}
-
-                      {domainsQuery.data && domainsQuery.data.length > 0 ? (
-                        <div className="space-y-2 pt-1">
-                          {domainsQuery.data.map((dom) => {
-                            const statusLabel =
-                              dom.verificationStatus === "active" && dom.sslStatus === "active"
-                                ? "SSL actif"
-                                : dom.verificationStatus === "verified"
-                                  ? "Vérifié (SSL en attente)"
-                                  : "En attente de DNS TXT";
-                            return (
+                      <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Vérification Responsive (Desktop, Tablette, Mobile, 320px)
+                          </h3>
+                          <Badge
+                            variant="outline"
+                            className={
+                              qualityReport.responsiveAudit.criticalCount === 0
+                                ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                                : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
+                            }
+                          >
+                            {qualityReport.responsiveAudit.criticalCount === 0 &&
+                            qualityReport.responsiveAudit.warningCount === 0
+                              ? "Tous formats validés"
+                              : `${qualityReport.responsiveAudit.issues.length} alerte(s)`}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 text-[11px]">
+                          {qualityReport.responsiveAudit.checkedViewports.map((vp) => (
+                            <Badge key={vp.id} variant="outline">
+                              {vp.label} : {vp.passed ? "✓" : "⚠"}
+                            </Badge>
+                          ))}
+                        </div>
+                        {qualityReport.responsiveAudit.issues.length === 0 ? (
+                          <p className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5 text-xs text-emerald-950">
+                            ✓ Aucun débordement horizontal, aucune image trop large ni texte coupé détecté sur desktop, tablette, mobile et 320px.
+                          </p>
+                        ) : (
+                          <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                            {qualityReport.responsiveAudit.issues.map((ri) => (
                               <div
-                                key={dom.id}
-                                className="rounded-lg border border-slate-200 bg-[#faf8f5] p-3 text-xs"
+                                key={ri.id}
+                                className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-amber-950"
                               >
-                                <div className="flex items-center justify-between gap-2">
-                                  <strong className="text-[#172033]">{dom.hostname}</strong>
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      dom.verificationStatus === "verified" ||
-                                      dom.verificationStatus === "active"
-                                        ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
-                                        : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
-                                    }
-                                  >
-                                    {statusLabel}
+                                <div className="flex items-center justify-between">
+                                  <strong>{ri.category} ({ri.pageSlug})</strong>
+                                  <Badge variant="outline" className="bg-white text-[10px]">
+                                    {ri.severity}
                                   </Badge>
                                 </div>
-
-                                <div className="mt-2 rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-700">
-                                  <p className="font-semibold text-[#172033]">
-                                    Instructions DNS simples (chez votre bureau d’enregistrement) :
-                                  </p>
-                                  <p className="mt-1">
-                                    1. Créez un enregistrement de type <strong>TXT</strong>
-                                  </p>
-                                  <p>
-                                    2. Nom / Hôte :{" "}
-                                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
-                                      {dom.dnsRecordName}
-                                    </code>
-                                  </p>
-                                  <p>
-                                    3. Valeur :{" "}
-                                    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
-                                      {dom.dnsRecordValue}
-                                    </code>
-                                  </p>
-                                </div>
-
-                                <div className="mt-2 flex items-center gap-3">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 border-emerald-600 bg-white text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
-                                    disabled={verifyDomainMutation.isPending}
-                                    onClick={() => {
-                                      if (!selectedSiteId) return;
-                                      verifyDomainMutation.mutate({
-                                        siteId: selectedSiteId,
-                                        domainId: dom.id,
-                                      });
-                                    }}
-                                  >
-                                    Vérifier DNS maintenant
-                                  </Button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!selectedSiteId) return;
-                                      setPendingConfirmAction({
-                                        title: `Supprimer le domaine ${dom.hostname} ?`,
-                                        description: `Le domaine personnalisé ${dom.hostname} sera détaché de ce site.`,
-                                        confirmLabel: "Supprimer le domaine",
-                                        variant: "danger",
-                                        onConfirm: () =>
-                                          removeDomainMutation.mutate({
-                                            siteId: selectedSiteId,
-                                            domainId: dom.id,
-                                          }),
-                                      });
-                                    }}
-                                    className="text-xs font-semibold text-rose-600 hover:underline"
-                                  >
-                                    Retirer ce domaine
-                                  </button>
-                                </div>
+                                <p className="mt-0.5 text-[11px]">{ri.message}</p>
                               </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
-                          Aucun domaine personnalisé rattaché pour le moment (état :{" "}
-                          <strong>Domaine non configuré</strong>). Votre site fonctionne déjà sur son adresse standard <code>/sites/{siteSlug}</code>.
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* ONGLET 3C : VERSIONS & HISTORIQUE (Chantier 6) */}
-                {activeInspectorTab === "versions" && (
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
-                        Créer un point de sauvegarde nommé
-                      </h3>
-                      <p className="text-xs text-slate-600">
-                        Créez une version numérotée avant d’effectuer des changements importants afin de pouvoir revenir en arrière à tout moment.
-                      </p>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={versionLabelInput}
-                          onChange={(e) => setVersionLabelInput(e.target.value)}
-                          placeholder="Nom de la version (ex. Avant refonte page accueil)"
-                          className="h-8 flex-1 rounded border border-slate-300 bg-white px-2.5 text-xs"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 bg-[#172033] text-xs text-white"
-                          disabled={!selectedSiteId || createVersionMutation.isPending}
-                          onClick={() => {
-                            if (!selectedSiteId) return;
-                            createVersionMutation.mutate({
-                              siteId: selectedSiteId,
-                              label: versionLabelInput || undefined,
-                            });
-                          }}
-                        >
-                          Créer une version
-                        </Button>
+                {/* ONGLET 3C : PUBLICATION, DÉPUBLICATION, JOURNAL, COLLABORATION CONTRÔLÉE & DOMAINE PERSONNALISÉ */}
+                {activeInspectorTab === "publication" && (
+                  <div className="space-y-6">
+                    <div className="grid gap-6 md:grid-cols-2">
+                      {/* Étapes 1 & 2 : Aperçu, Publication et Dépublication du site */}
+                      <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Étape 1 & 2 — Vérifier l’aperçu, publier ou dépublier
+                          </h3>
+                          <Badge
+                            variant="outline"
+                            className={
+                              siteStatus === "published"
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                                : "border-amber-400 bg-amber-50 text-amber-950"
+                            }
+                          >
+                            {siteStatus === "published" ? "Site en ligne (Publié)" : "En brouillon"}
+                          </Badge>
+                        </div>
+
+                        <p className="text-xs text-slate-600">
+                          Tant que votre site est en <strong>Brouillon</strong>, il n’apparaît jamais sur l’URL publique <code>/sites/{siteSlug}</code>. La publication vérifie la checklist en 14 points et demande une confirmation explicite.
+                        </p>
+
+                        <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                          <p className="font-semibold text-[#172033]">Adresses du site :</p>
+                          <p className="mt-1 text-slate-600">
+                            • Aperçu privé éditeur :{" "}
+                            <code className="text-[#9b563e]">
+                              /constructeur-sites/apercu/{siteSlug}
+                            </code>
+                          </p>
+                          <p className="mt-0.5 text-slate-600">
+                            • Adresse publique :{" "}
+                            <code className="text-emerald-700">/sites/{siteSlug}</code>
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Link
+                            href={`/constructeur-sites/apercu/${
+                              siteSlug || "association-familiale-ath-vahloul"
+                            }`}
+                          >
+                            <Button type="button" variant="outline" size="sm" className="text-xs">
+                              <Eye className="mr-1.5 h-3.5 w-3.5" />
+                              1. Ouvrir l’aperçu privé
+                            </Button>
+                          </Link>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="bg-[#172033] text-xs text-white hover:bg-[#24324f]"
+                            onClick={requestPublishCurrentSite}
+                            disabled={isBusySaving}
+                          >
+                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
+                            2. Publier le site maintenant
+                          </Button>
+                          {siteStatus === "published" && selectedSiteId && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="border-rose-300 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                              onClick={requestUnpublishCurrentSite}
+                              disabled={unpublishSiteMutation.isPending}
+                            >
+                              Dépublier (repasser en brouillon)
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Étape 3 : Domaine personnalisé & Vérification DNS TXT réelle */}
+                      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                            Étape 3 — Domaine personnalisé & DNS TXT
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            {domainsQuery.data && domainsQuery.data.length > 0
+                              ? `${domainsQuery.data.length} domaine(s)`
+                              : "Domaine non configuré"}
+                          </Badge>
+                        </div>
+
+                        <p className="text-xs text-slate-600">
+                          Rattachez votre propre nom de domaine (ex.{" "}
+                          <code>association-ath-vahloul.org</code>). Un domaine n’est jamais marqué actif sans preuve réelle de l’enregistrement DNS TXT.
+                        </p>
+
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={customDomainInput}
+                            onChange={(e) => setCustomDomainInput(e.target.value)}
+                            placeholder="Ex. association-ath-vahloul.org"
+                            className="h-8 flex-1 rounded border border-slate-300 px-2.5 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
+                            disabled={!selectedSiteId || !customDomainInput.trim()}
+                            onClick={() => {
+                              if (!selectedSiteId) return;
+                              addDomainMutation.mutate({
+                                siteId: selectedSiteId,
+                                hostname: customDomainInput.trim(),
+                              });
+                            }}
+                          >
+                            Rattacher ce domaine
+                          </Button>
+                        </div>
+
+                        {!selectedSiteId && (
+                          <p className="text-[11px] text-amber-800">
+                            Enregistrez d’abord votre site une première fois pour rattacher un nom de domaine personnalisé.
+                          </p>
+                        )}
+
+                        {domainsQuery.data && domainsQuery.data.length > 0 ? (
+                          <div className="space-y-2 pt-1">
+                            {domainsQuery.data.map((dom) => {
+                              const statusLabel =
+                                dom.verificationStatus === "active" && dom.sslStatus === "active"
+                                  ? "SSL actif"
+                                  : dom.verificationStatus === "verified"
+                                    ? "Vérifié (SSL en attente)"
+                                    : "En attente de DNS TXT";
+                              return (
+                                <div
+                                  key={dom.id}
+                                  className="rounded-lg border border-slate-200 bg-[#faf8f5] p-3 text-xs"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <strong className="text-[#172033]">{dom.hostname}</strong>
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        dom.verificationStatus === "verified" ||
+                                        dom.verificationStatus === "active"
+                                          ? "border-emerald-300 bg-emerald-50 text-[10px] text-emerald-900"
+                                          : "border-amber-300 bg-amber-50 text-[10px] text-amber-900"
+                                      }
+                                    >
+                                      {statusLabel}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="mt-2 rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-700">
+                                    <p className="font-semibold text-[#172033]">
+                                      Instructions DNS simples (chez votre bureau d’enregistrement) :
+                                    </p>
+                                    <p className="mt-1">
+                                      1. Créez un enregistrement de type <strong>TXT</strong>
+                                    </p>
+                                    <p>
+                                      2. Nom / Hôte :{" "}
+                                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
+                                        {dom.dnsRecordName}
+                                      </code>
+                                    </p>
+                                    <p>
+                                      3. Valeur :{" "}
+                                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px]">
+                                        {dom.dnsRecordValue}
+                                      </code>
+                                    </p>
+                                  </div>
+
+                                  <div className="mt-2 flex items-center gap-3">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 border-emerald-600 bg-white text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                                      disabled={verifyDomainMutation.isPending}
+                                      onClick={() => {
+                                        if (!selectedSiteId) return;
+                                        verifyDomainMutation.mutate({
+                                          siteId: selectedSiteId,
+                                          domainId: dom.id,
+                                        });
+                                      }}
+                                    >
+                                      Vérifier DNS maintenant
+                                    </Button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!selectedSiteId) return;
+                                        setPendingConfirmAction({
+                                          title: `Supprimer le domaine ${dom.hostname} ?`,
+                                          description: `Le domaine personnalisé ${dom.hostname} sera détaché de ce site.`,
+                                          confirmLabel: "Supprimer le domaine",
+                                          variant: "danger",
+                                          onConfirm: () =>
+                                            removeDomainMutation.mutate({
+                                              siteId: selectedSiteId,
+                                              domainId: dom.id,
+                                            }),
+                                        });
+                                      }}
+                                      className="text-xs font-semibold text-rose-600 hover:underline"
+                                    >
+                                      Retirer ce domaine
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
+                            Aucun domaine personnalisé rattaché pour le moment (état :{" "}
+                            <strong>Domaine non configuré</strong>). Votre site fonctionne déjà sur son adresse standard <code>/sites/{siteSlug}</code>.
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
-                        Historique des versions du site ({versionsQuery.data?.length ?? 0})
-                      </h3>
-                      {versionsQuery.data && versionsQuery.data.length > 0 ? (
-                        <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
-                          {versionsQuery.data.map((ver) => (
-                            <div
-                              key={ver.id}
-                              className="flex items-center justify-between rounded-lg border border-slate-200 bg-[#faf8f5] px-3 py-2 text-xs"
-                            >
-                              <div>
-                                <strong className="text-[#172033]">v{ver.versionNumber}</strong> —{" "}
-                                <span>{ver.label}</span>
-                                <span className="ml-2 text-[10px] text-slate-500">
-                                  ({new Date(ver.createdAt).toLocaleDateString("fr-FR")})
-                                </span>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs font-semibold text-[#9b563e]"
-                                onClick={() => {
-                                  if (!selectedSiteId) return;
-                                  setPendingConfirmAction({
-                                    title: `Restaurer la version v${ver.versionNumber} (« ${ver.label} ») ?`,
-                                    description:
-                                      "Les pages actuelles seront remplacées par celles enregistrées dans cette version (une nouvelle entrée d’historique sera également créée).",
-                                    confirmLabel: "Restaurer cette version",
-                                    variant: "primary",
-                                    onConfirm: () =>
-                                      restoreVersionMutation.mutate({
-                                        siteId: selectedSiteId,
-                                        versionId: ver.id,
-                                      }),
-                                  });
-                                }}
-                              >
-                                Restaurer
-                              </Button>
-                            </div>
-                          ))}
+                    {/* Collaboration contrôlée (Partage d'aperçu privé en lecture seule) & Journal de publication */}
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Collaboration contrôlée — Aperçu privé en lecture seule
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            Lecture seule · Sans accès aux autres projets
+                          </Badge>
                         </div>
-                      ) : (
-                        <p className="text-xs text-slate-500">
-                          Enregistrez votre projet pour générer automatiquement la version initiale v1.
+                        <p className="text-xs text-slate-600">
+                          Invitez un collaborateur à relire l’aperçu privé du site avant publication. Aucune modification n’est autorisée et l’accès peut être révoqué à tout moment.
                         </p>
-                      )}
+                        <div className="flex flex-wrap gap-1.5">
+                          <input
+                            type="text"
+                            value={collabLabelInput}
+                            onChange={(e) => setCollabLabelInput(e.target.value)}
+                            placeholder="Nom ou e-mail du collaborateur (ex. Membre bureau)"
+                            className="h-8 flex-1 rounded border border-slate-300 px-2.5 text-xs"
+                          />
+                          <select
+                            aria-label="Durée de validité du lien collaborateur"
+                            value={collabExpiresHours}
+                            onChange={(e) => setCollabExpiresHours(Number(e.target.value))}
+                            className="h-8 rounded border border-slate-300 bg-white px-2 text-xs"
+                          >
+                            <option value={24}>Expire dans 24h</option>
+                            <option value={72}>Expire dans 3 jours</option>
+                            <option value={168}>Expire dans 7 jours</option>
+                          </select>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#172033] text-xs text-white"
+                            disabled={
+                              !selectedSiteId ||
+                              !collabLabelInput.trim() ||
+                              createCollaboratorShareMutation.isPending
+                            }
+                            onClick={() => {
+                              if (!selectedSiteId) return;
+                              createCollaboratorShareMutation.mutate({
+                                siteId: selectedSiteId,
+                                collaboratorLabel: collabLabelInput.trim(),
+                                expiresInHours: collabExpiresHours,
+                              });
+                            }}
+                          >
+                            Créer un lien d’aperçu
+                          </Button>
+                        </div>
+
+                        {collaboratorSharesQuery.data && collaboratorSharesQuery.data.length > 0 ? (
+                          <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                            {collaboratorSharesQuery.data.map((share) => (
+                              <div
+                                key={share.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-[#faf8f5] p-2.5"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <strong className="text-[#172033]">
+                                    {share.collaboratorLabel}
+                                  </strong>{" "}
+                                  <span className="text-[10px] text-slate-500">
+                                    ({share.revokedAt ? "Révoqué" : `Expire le ${new Date(share.expiresAt).toLocaleDateString("fr-FR")}`})
+                                  </span>
+                                  {!share.revokedAt && (
+                                    <code className="mt-0.5 block truncate rounded bg-white px-1.5 py-0.5 text-[10px] text-[#9b563e]">
+                                      {share.previewPath}
+                                    </code>
+                                  )}
+                                </div>
+                                {!share.revokedAt && selectedSiteId && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 border-rose-300 bg-white text-[11px] text-rose-700 hover:bg-rose-50"
+                                    onClick={() =>
+                                      revokeCollaboratorShareMutation.mutate({
+                                        siteId: selectedSiteId,
+                                        shareId: share.id,
+                                      })
+                                    }
+                                  >
+                                    Révoquer l’accès
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">
+                            Aucun partage d’aperçu collaborateur actif pour ce site.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Journal de publication lisible */}
+                      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Journal de publication & Dépublication ({publicationLogsQuery.data?.length ?? 0})
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            Traçabilité complète
+                          </Badge>
+                        </div>
+                        {publicationLogsQuery.data && publicationLogsQuery.data.length > 0 ? (
+                          <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                            {publicationLogsQuery.data.map((log) => (
+                              <div
+                                key={log.id}
+                                className="rounded-lg border border-slate-200 bg-[#faf8f5] p-2.5"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <strong className="text-[#172033]">
+                                    {log.action === "publish"
+                                      ? "Publication en ligne"
+                                      : log.action === "unpublish"
+                                        ? "Dépublication (retour brouillon)"
+                                        : "Restauration / Import"}
+                                  </strong>
+                                  <span className="text-[10px] text-slate-500">
+                                    {new Date(log.createdAt).toLocaleString("fr-FR")} · {log.authorLabel}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-[11px] text-slate-600">
+                                  {log.summary}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            Aucune opération de publication enregistrée pour ce projet pour le moment.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ONGLET 3D : VERSIONS, APERÇU DE VERSION & IMPORT / EXPORT JSON CONTRÔLÉ */}
+                {activeInspectorTab === "versions" && (
+                  <div className="space-y-6">
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <div className="space-y-3 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Créer un point de sauvegarde nommé
+                        </h3>
+                        <p className="text-xs text-slate-600">
+                          Une version est créée automatiquement lors des sauvegardes importantes. Vous pouvez aussi créer une version nommée manuellement. Aucune suppression irréversible n’est activée par défaut.
+                        </p>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={versionLabelInput}
+                            onChange={(e) => setVersionLabelInput(e.target.value)}
+                            placeholder="Libellé facultatif (ex. Avant refonte accueil)"
+                            className="h-8 flex-1 rounded border border-slate-300 bg-white px-2.5 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#172033] text-xs text-white"
+                            disabled={!selectedSiteId || createVersionMutation.isPending}
+                            onClick={() => {
+                              if (!selectedSiteId) return;
+                              createVersionMutation.mutate({
+                                siteId: selectedSiteId,
+                                label: versionLabelInput || undefined,
+                              });
+                            }}
+                          >
+                            Créer une version
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                          Historique des versions ({versionsQuery.data?.length ?? 0})
+                        </h3>
+                        {versionsQuery.data && versionsQuery.data.length > 0 ? (
+                          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                            {versionsQuery.data.map((ver) => {
+                              const isPreviewing = previewedVersionId === ver.id;
+                              const verPreview = isPreviewing
+                                ? buildIndependentVersionPreview(ver, pages)
+                                : null;
+                              return (
+                                <div
+                                  key={ver.id}
+                                  className="space-y-1.5 rounded-lg border border-slate-200 bg-[#faf8f5] p-2.5 text-xs"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <strong className="text-[#172033]">
+                                        v{ver.versionNumber}
+                                      </strong>{" "}
+                                      — <span>{ver.label}</span>
+                                      <span className="ml-2 text-[10px] text-slate-500">
+                                        ({new Date(ver.createdAt).toLocaleString("fr-FR")} · Auteur : Propriétaire #{ver.ownerUserId})
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-[11px]"
+                                        onClick={() =>
+                                          setPreviewedVersionId(isPreviewing ? null : ver.id)
+                                        }
+                                      >
+                                        {isPreviewing ? "Masquer l’aperçu" : "Aperçu"}
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs font-semibold text-[#9b563e]"
+                                        onClick={() => {
+                                          if (!selectedSiteId) return;
+                                          setPendingConfirmAction({
+                                            title: `Restaurer la version v${ver.versionNumber} (« ${ver.label} ») ?`,
+                                            description:
+                                              "La restauration ne remplace jamais silencieusement votre travail : une nouvelle entrée d’historique de sauvegarde sera créée avant d’appliquer cette version.",
+                                            confirmLabel: "Confirmer la restauration",
+                                            variant: "primary",
+                                            onConfirm: () =>
+                                              restoreVersionMutation.mutate({
+                                                siteId: selectedSiteId,
+                                                versionId: ver.id,
+                                              }),
+                                          });
+                                        }}
+                                      >
+                                        Restaurer
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {verPreview && (
+                                    <div className="rounded border border-slate-300 bg-white p-2 text-[11px] text-slate-700">
+                                      <p className="font-semibold text-[#172033]">
+                                        Aperçu v{verPreview.versionNumber} ({verPreview.pageCount}{" "}
+                                        page(s) · {verPreview.authorLabel}) :
+                                      </p>
+                                      <ul className="mt-1 space-y-0.5">
+                                        {verPreview.pageTitles.map((pt) => (
+                                          <li key={pt}>• {pt}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            Enregistrez votre projet pour générer automatiquement la version initiale v1.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Import & Export JSON contrôlé et sécurisé */}
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Exporter le projet (JSON propre et versionné)
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            Sans secret ni paiement
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          Génère un export JSON portable contenant uniquement les pages, blocs, styles et métadonnées SEO du site (aucune clé API, aucun secret, aucune commande).
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs font-semibold"
+                          onClick={handleExportProjectJson}
+                        >
+                          Générer l’export JSON du projet
+                        </Button>
+                        {exportedJsonText && (
+                          <textarea
+                            readOnly
+                            rows={6}
+                            value={exportedJsonText}
+                            aria-label="Export JSON du projet"
+                            className="mt-2 w-full rounded border border-slate-300 bg-[#faf8f5] p-2 font-mono text-[11px]"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+                            Importer un projet JSON (avec validation & aperçu)
+                          </h3>
+                          <Badge variant="outline" className="text-[10px]">
+                            Sanitation HTML/CSS
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          Collez un export JSON pour vérifier sa structure, rejeter tout script dangereux et prévisualiser son contenu avant confirmation.
+                        </p>
+                        <textarea
+                          rows={4}
+                          value={importJsonRawInput}
+                          onChange={(e) => setImportJsonRawInput(e.target.value)}
+                          placeholder='Collez ici un JSON au format "mazigho-independent-site-export"...'
+                          aria-label="JSON à importer"
+                          className="w-full rounded border border-slate-300 p-2 font-mono text-[11px]"
+                        />
+                        {importValidationPreview && (
+                          <div
+                            className={`rounded-lg border p-2.5 text-xs ${
+                              importValidationPreview.valid
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                                : "border-rose-300 bg-rose-50 text-rose-950"
+                            }`}
+                          >
+                            {importValidationPreview.valid && importValidationPreview.preview ? (
+                              <div>
+                                <strong>
+                                  ✓ Aperçu avant import : « {importValidationPreview.preview.title} »
+                                </strong>
+                                <p className="mt-0.5 text-[11px]">
+                                  Type : {importValidationPreview.preview.siteType} · Mode :{" "}
+                                  {importValidationPreview.preview.projectMode} ·{" "}
+                                  {importValidationPreview.preview.pageCount} page(s) (
+                                  {importValidationPreview.preview.pageTitles.join(", ")})
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <strong>✕ Import refusé :</strong>
+                                <p className="mt-0.5 text-[11px]">
+                                  {importValidationPreview.error}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
+                            disabled={!importValidationPreview?.valid}
+                            onClick={() => requestImportProjectJson(true)}
+                          >
+                            Importer dans ce projet (avec confirmation)
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            disabled={!importValidationPreview?.valid}
+                            onClick={() => requestImportProjectJson(false)}
+                          >
+                            Créer comme nouveau projet
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

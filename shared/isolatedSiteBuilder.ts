@@ -3156,6 +3156,7 @@ export function parseBuilderQueryParams(search: string): {
   siteId: number | null;
   slug: string | null;
   pageSlug: string | null;
+  previewToken?: string | null;
 } {
   const cleanSearch = (search || "").startsWith("?") ? search.slice(1) : search || "";
   const params = new URLSearchParams(cleanSearch);
@@ -3163,9 +3164,1692 @@ export function parseBuilderQueryParams(search: string): {
   const parsedId = rawSiteId && /^\d+$/.test(rawSiteId) ? Number(rawSiteId) : null;
   const rawSlug = params.get("slug");
   const rawPage = params.get("page");
-  return {
+  const rawToken = params.get("previewToken") || params.get("shareToken");
+  const baseResult: {
+    siteId: number | null;
+    slug: string | null;
+    pageSlug: string | null;
+    previewToken?: string | null;
+  } = {
     siteId: parsedId && parsedId > 0 ? parsedId : null,
     slug: rawSlug ? slugifyIndependentSite(rawSlug) : null,
     pageSlug: rawPage ? normalizeIndependentPageSlug(rawPage) : null,
+  };
+  if (rawToken) {
+    baseResult.previewToken = sanitizeBuilderText(rawToken, 128);
+  }
+  return baseResult;
+}
+
+// ---------------------------------------------------------------------------
+// 10. PHASE 2 — Historique & Versions, Duplication, Import/Export JSON,
+//     Checklist Publication, Audit SEO / Accessibilité / Responsive,
+//     Médias enrichis, Modèles Navigation & Footer, Collaboration contrôlée,
+//     Journal de Publication, Protection Contenu Démo & Qualité du Site
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. HISTORIQUE ET VERSIONS — Aperçu détaillé d'une version et détection de sauvegarde importante
+ */
+export interface IndependentVersionPreviewSummary {
+  versionNumber: number;
+  label: string;
+  authorLabel: string;
+  createdAt: string;
+  pageCount: number;
+  pageTitles: string[];
+  reusableBlockCount: number;
+  diffWithCurrent: {
+    addedPages: string[];
+    removedPages: string[];
+    modifiedPages: string[];
+    hasDifferences: boolean;
+  };
+}
+
+export function shouldAutoCreateVersionOnSave(
+  previousPages: ReadonlyArray<IndependentSitePage>,
+  nextPages: ReadonlyArray<IndependentSitePage>,
+  previousTitle: string,
+  nextTitle: string
+): { shouldCreate: boolean; autoLabel: string } {
+  if (previousPages.length !== nextPages.length) {
+    return {
+      shouldCreate: true,
+      autoLabel: `Sauvegarde automatique (${nextPages.length} pages)`,
+    };
+  }
+  if (previousTitle.trim() !== nextTitle.trim()) {
+    return {
+      shouldCreate: true,
+      autoLabel: `Renommage du site (« ${sanitizeBuilderText(nextTitle, 80)} »)`,
+    };
+  }
+  let changedPagesCount = 0;
+  let significantHtmlDelta = 0;
+  for (let i = 0; i < nextPages.length; i += 1) {
+    const prev = previousPages[i];
+    const next = nextPages[i];
+    if (!prev || prev.slug !== next.slug || prev.title !== next.title) {
+      changedPagesCount += 1;
+    } else if (prev.html !== next.html || prev.css !== next.css) {
+      changedPagesCount += 1;
+      significantHtmlDelta += Math.abs((next.html || "").length - (prev.html || "").length);
+    }
+  }
+  if (changedPagesCount > 0 && (significantHtmlDelta >= 120 || changedPagesCount >= 1)) {
+    return {
+      shouldCreate: true,
+      autoLabel: `Sauvegarde importante (${changedPagesCount} page(s) modifiée(s))`,
+    };
+  }
+  return {
+    shouldCreate: false,
+    autoLabel: "",
+  };
+}
+
+export function buildIndependentVersionPreview(
+  version: {
+    versionNumber: number;
+    label: string;
+    ownerUserId?: number;
+    authorName?: string;
+    createdAt: string;
+    snapshot: {
+      title: string;
+      pages: ReadonlyArray<IndependentSitePage>;
+      reusableBlocks?: ReadonlyArray<IndependentSiteReusableBlock>;
+    };
+  },
+  currentPages: ReadonlyArray<IndependentSitePage>
+): IndependentVersionPreviewSummary {
+  const verPages = version.snapshot.pages || [];
+  const currentBySlug = new Map(currentPages.map((p) => [p.slug, p]));
+  const versionBySlug = new Map(verPages.map((p) => [p.slug, p]));
+
+  const addedPages: string[] = [];
+  const removedPages: string[] = [];
+  const modifiedPages: string[] = [];
+
+  for (const vp of verPages) {
+    const curr = currentBySlug.get(vp.slug);
+    if (!curr) {
+      addedPages.push(`${vp.title} (${vp.slug})`);
+    } else if (curr.html !== vp.html || curr.css !== vp.css || curr.title !== vp.title) {
+      modifiedPages.push(`${vp.title} (${vp.slug})`);
+    }
+  }
+  for (const cp of currentPages) {
+    if (!versionBySlug.has(cp.slug)) {
+      removedPages.push(`${cp.title} (${cp.slug})`);
+    }
+  }
+
+  return {
+    versionNumber: version.versionNumber,
+    label: version.label || `Version v${version.versionNumber}`,
+    authorLabel:
+      version.authorName ||
+      (version.ownerUserId ? `Propriétaire #${version.ownerUserId}` : "Propriétaire du site"),
+    createdAt: version.createdAt,
+    pageCount: verPages.length,
+    pageTitles: verPages.map((p) => `${p.title} (${p.slug})`),
+    reusableBlockCount: version.snapshot.reusableBlocks?.length ?? 0,
+    diffWithCurrent: {
+      addedPages,
+      removedPages,
+      modifiedPages,
+      hasDifferences:
+        addedPages.length > 0 || removedPages.length > 0 || modifiedPages.length > 0,
+    },
+  };
+}
+
+/**
+ * 2. DUPLICATION — Page, Bloc réutilisable et Génération de slug unique
+ */
+export function generateUniquePageSlug(
+  desiredSlugOrTitle: string,
+  existingPages: ReadonlyArray<Pick<IndependentSitePage, "slug">>
+): string {
+  const existingSet = new Set(existingPages.map((p) => normalizeIndependentPageSlug(p.slug)));
+  const rawBase = normalizeIndependentPageSlug(desiredSlugOrTitle);
+  const baseSlug = rawBase === "/" ? "/accueil-copie" : rawBase;
+  if (!existingSet.has(baseSlug)) {
+    return baseSlug;
+  }
+  let counter = 2;
+  while (existingSet.has(`${baseSlug}-${counter}`)) {
+    counter += 1;
+  }
+  return `${baseSlug}-${counter}`;
+}
+
+export function duplicateIndependentPageInList(
+  pages: ReadonlyArray<IndependentSitePage>,
+  sourcePageId: string,
+  requestedNewTitle?: string
+): { pages: IndependentSitePage[]; duplicatedPage: IndependentSitePage } {
+  const safeList = ensureNonEmptyIndependentPages(pages);
+  const source = safeList.find((p) => p.id === sourcePageId);
+  if (!source) {
+    throw new Error("INDEPENDENT_SITE_PAGE_NOT_FOUND");
+  }
+
+  const baseTitle = sanitizeBuilderText(
+    requestedNewTitle?.trim() || `${source.title} (copie)`,
+    140
+  );
+  const uniqueSlug = generateUniquePageSlug(
+    requestedNewTitle?.trim() ? requestedNewTitle : `${source.slug === "/" ? "accueil" : source.slug}-copie`,
+    safeList
+  );
+  const duplicatedPage: IndependentSitePage = {
+    ...JSON.parse(JSON.stringify(source)),
+    id: `page-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    title: baseTitle,
+    slug: uniqueSlug,
+    menuOrder: safeList.length + 1,
+    seoTitle: sanitizeBuilderText(`${baseTitle}`, 180),
+    html: sanitizeIndependentHtml(source.html),
+    css: sanitizeIndependentCss(source.css),
+  };
+
+  return {
+    pages: [...safeList, duplicatedPage],
+    duplicatedPage,
+  };
+}
+
+export function duplicateIndependentReusableBlockInList(
+  blocks: ReadonlyArray<IndependentSiteReusableBlock>,
+  sourceBlockId: string,
+  requestedNewName?: string
+): {
+  reusableBlocks: IndependentSiteReusableBlock[];
+  duplicatedBlock: IndependentSiteReusableBlock;
+} {
+  const source = blocks.find((b) => b.id === sourceBlockId);
+  if (!source) {
+    throw new Error("INDEPENDENT_SITE_REUSABLE_BLOCK_NOT_FOUND");
+  }
+  const cleanName = sanitizeBuilderText(
+    requestedNewName?.trim() || `${source.name} (copie)`,
+    140
+  );
+  const duplicatedBlock: IndependentSiteReusableBlock = {
+    id: `reusable-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: cleanName,
+    category: sanitizeBuilderText(source.category || "Mes blocs", 80),
+    html: sanitizeIndependentHtml(source.html),
+    createdAt: new Date().toISOString(),
+  };
+  return {
+    reusableBlocks: [duplicatedBlock, ...blocks],
+    duplicatedBlock,
+  };
+}
+
+/**
+ * 3. IMPORT ET EXPORT CONTRÔLÉ JSON VERSIONNÉ
+ */
+export const INDEPENDENT_SITE_EXPORT_FORMAT = "mazigho-independent-site-export" as const;
+export const INDEPENDENT_SITE_EXPORT_SCHEMA_VERSION = 1 as const;
+export const INDEPENDENT_SITE_EXPORT_MAX_BYTES = 1_500_000; // 1.5 MB max
+
+export interface IndependentSiteExportPackageV1 {
+  format: typeof INDEPENDENT_SITE_EXPORT_FORMAT;
+  schemaVersion: typeof INDEPENDENT_SITE_EXPORT_SCHEMA_VERSION;
+  exportedAt: string;
+  demoNotice: string;
+  project: {
+    title: string;
+    slug: string;
+    siteType: IndependentSiteType;
+    projectMode: IndependentProjectMode;
+    templateId: string | null;
+    theme: IndependentSiteThemeConfig;
+    navigation: IndependentSiteMenuItem[];
+    pages: IndependentSitePage[];
+    reusableBlocks: IndependentSiteReusableBlock[];
+  };
+}
+
+export function exportIndependentSiteProjectToJson(input: {
+  title: string;
+  slug: string;
+  siteType: IndependentSiteType;
+  projectMode?: IndependentProjectMode | null;
+  templateId?: string | null;
+  theme?: IndependentSiteThemeConfig | null;
+  navigation?: ReadonlyArray<IndependentSiteMenuItem> | null;
+  pages: ReadonlyArray<IndependentSitePage>;
+  reusableBlocks?: ReadonlyArray<IndependentSiteReusableBlock> | null;
+  exportedAt?: string;
+}): IndependentSiteExportPackageV1 {
+  assertNoSecretsInIndependentSite(input);
+  assertZeroEcommerceInIndependentSite(input);
+
+  const safeTitle = sanitizeBuilderText(input.title || "Mon Site Indépendant", 160);
+  const safeSlug = slugifyIndependentSite(input.slug || safeTitle);
+  const safePages = ensureNonEmptyIndependentPages(input.pages, safeTitle);
+  const safeBlocks: IndependentSiteReusableBlock[] = (input.reusableBlocks ?? []).map((b, idx) => ({
+    id: sanitizeBuilderText(b.id || `rb-${idx + 1}`, 80),
+    name: sanitizeBuilderText(b.name || `Bloc #${idx + 1}`, 140),
+    category: sanitizeBuilderText(b.category || "Mes blocs", 80),
+    html: sanitizeIndependentHtml(b.html),
+    createdAt: b.createdAt || new Date().toISOString(),
+  }));
+
+  const defaultTheme: IndependentSiteThemeConfig = {
+    primaryColor: "#172033",
+    accentColor: "#9b563e",
+    backgroundColor: "#faf8f5",
+    headingFont: "Georgia, serif",
+    bodyFont: "Inter, system-ui, sans-serif",
+  };
+
+  return {
+    format: INDEPENDENT_SITE_EXPORT_FORMAT,
+    schemaVersion: INDEPENDENT_SITE_EXPORT_SCHEMA_VERSION,
+    exportedAt: input.exportedAt || new Date().toISOString(),
+    demoNotice:
+      "Archive JSON versionnée de site indépendant MAZIGHO — Export éditorial autonome et nettoyé.",
+    project: {
+      title: safeTitle,
+      slug: safeSlug,
+      siteType: input.siteType || "vitrine",
+      projectMode: resolveIndependentProjectMode(input.siteType, input.projectMode),
+      templateId: input.templateId ?? null,
+      theme: input.theme ? { ...defaultTheme, ...input.theme } : defaultTheme,
+      navigation:
+        input.navigation && input.navigation.length > 0
+          ? JSON.parse(JSON.stringify(input.navigation))
+          : buildNavigationFromPages(safePages),
+      pages: safePages,
+      reusableBlocks: safeBlocks,
+    },
+  };
+}
+
+export function validateAndSanitizeIndependentSiteImport(
+  rawPayload: string | unknown
+): {
+  valid: boolean;
+  error?: string;
+  warnings: string[];
+  preview?: {
+    title: string;
+    slug: string;
+    siteType: IndependentSiteType;
+    projectMode: IndependentProjectMode;
+    pageCount: number;
+    pageTitles: string[];
+    reusableBlockCount: number;
+  };
+  sanitizedPackage?: IndependentSiteExportPackageV1;
+} {
+  const warnings: string[] = [];
+  let parsed: unknown = rawPayload;
+
+  if (typeof rawPayload === "string") {
+    const byteLength = Buffer.byteLength(rawPayload, "utf8");
+    if (byteLength > INDEPENDENT_SITE_EXPORT_MAX_BYTES) {
+      return {
+        valid: false,
+        error: `INDEPENDENT_SITE_IMPORT_TOO_LARGE: Le fichier dépasse la taille maximale autorisée (${Math.round(
+          INDEPENDENT_SITE_EXPORT_MAX_BYTES / 1024
+        )} Ko).`,
+        warnings,
+      };
+    }
+    if (/<script\b|javascript:|onload\s*=|onerror\s*=/i.test(rawPayload)) {
+      warnings.push(
+        "Des balises ou attributs exécutables ont été détectés dans le fichier importé et neutralisés automatiquement."
+      );
+    }
+    try {
+      parsed = JSON.parse(rawPayload);
+    } catch {
+      return {
+        valid: false,
+        error: "INDEPENDENT_SITE_IMPORT_INVALID_JSON: Le fichier fourni n’est pas un JSON valide.",
+        warnings,
+      };
+    }
+  } else {
+    const serialized = JSON.stringify(rawPayload ?? {});
+    if (Buffer.byteLength(serialized, "utf8") > INDEPENDENT_SITE_EXPORT_MAX_BYTES) {
+      return {
+        valid: false,
+        error: "INDEPENDENT_SITE_IMPORT_TOO_LARGE: Le contenu importé dépasse la limite de taille.",
+        warnings,
+      };
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return {
+      valid: false,
+      error: "INDEPENDENT_SITE_IMPORT_INVALID_FORMAT: Structure d’import absente ou invalide.",
+      warnings,
+    };
+  }
+
+  try {
+    assertNoSecretsInIndependentSite(parsed);
+    assertZeroEcommerceInIndependentSite(parsed);
+  } catch (err) {
+    return {
+      valid: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "INDEPENDENT_SITE_IMPORT_FORBIDDEN_CONTENT: Secret ou donnée e-commerce détecté.",
+      warnings,
+    };
+  }
+
+  const candidate = parsed as Partial<IndependentSiteExportPackageV1>;
+  if (
+    candidate.format !== INDEPENDENT_SITE_EXPORT_FORMAT ||
+    candidate.schemaVersion !== INDEPENDENT_SITE_EXPORT_SCHEMA_VERSION ||
+    !candidate.project ||
+    typeof candidate.project !== "object"
+  ) {
+    return {
+      valid: false,
+      error:
+        "INDEPENDENT_SITE_IMPORT_UNSUPPORTED_SCHEMA: Format ou version de schéma JSON non reconnu.",
+      warnings,
+    };
+  }
+
+  const proj = candidate.project;
+  if (!Array.isArray(proj.pages) || proj.pages.length === 0) {
+    return {
+      valid: false,
+      error: "INDEPENDENT_SITE_IMPORT_EMPTY_PAGES: Le fichier importé ne contient aucune page.",
+      warnings,
+    };
+  }
+
+  const allowedTypes = new Set(INDEPENDENT_SITE_TYPE_OPTIONS.map((t) => t.value));
+  const safeSiteType: IndependentSiteType = allowedTypes.has(proj.siteType)
+    ? proj.siteType
+    : "vitrine";
+
+  const sanitizedPackage = exportIndependentSiteProjectToJson({
+    title: proj.title || "Site Importé",
+    slug: proj.slug || proj.title || "site-importe",
+    siteType: safeSiteType,
+    projectMode: proj.projectMode,
+    templateId: proj.templateId ?? null,
+    theme: proj.theme,
+    navigation: proj.navigation,
+    pages: proj.pages,
+    reusableBlocks: proj.reusableBlocks,
+    exportedAt: candidate.exportedAt || new Date().toISOString(),
+  });
+
+  return {
+    valid: true,
+    warnings,
+    preview: {
+      title: sanitizedPackage.project.title,
+      slug: sanitizedPackage.project.slug,
+      siteType: sanitizedPackage.project.siteType,
+      projectMode: sanitizedPackage.project.projectMode,
+      pageCount: sanitizedPackage.project.pages.length,
+      pageTitles: sanitizedPackage.project.pages.map((p) => `${p.title} (${p.slug})`),
+      reusableBlockCount: sanitizedPackage.project.reusableBlocks.length,
+    },
+    sanitizedPackage,
+  };
+}
+
+/**
+ * 12. CONTENU DE DÉMONSTRATION — Identification et protection explicite
+ */
+export const DEMO_CONTENT_NOTICE_LABEL = "Démonstration à personnaliser" as const;
+
+const DEMO_CONTENT_MARKERS: ReadonlyArray<RegExp> = [
+  /Démonstration à personnaliser/i,
+  /exemple@/i,
+  /contact@exemple/i,
+  /00\s*00\s*00\s*00/i,
+  /lorem ipsum/i,
+  /\[À personnaliser\]/i,
+  /association-ath-vahloul\.org/i,
+  /contact@association-ath-vahloul\.org/i,
+];
+
+export interface IndependentDemoContentStatus {
+  isDemoTemplate: boolean;
+  isStaticAthVahloulException: boolean;
+  badgeLabel: typeof DEMO_CONTENT_NOTICE_LABEL | "Contenu personnalisé";
+  detectedMarkers: string[];
+  hasUnchangedDemoMarkers: boolean;
+  noticeMessage: string;
+}
+
+export function detectIndependentDemoContentStatus(input: {
+  slug: string;
+  title: string;
+  templateId?: string | null;
+  pages: ReadonlyArray<IndependentSitePage>;
+}): IndependentDemoContentStatus {
+  const normalizedSlug = slugifyIndependentSite(input.slug || input.title);
+  const isStaticAthVahloulException =
+    normalizedSlug === "association-familiale-ath-vahloul" ||
+    input.templateId === ATH_VAHLOUL_DEMO_TEMPLATE_ID;
+  const isDemoTemplate =
+    Boolean(input.templateId) ||
+    INDEPENDENT_SITE_TEMPLATES.some(
+      (t) => t.id === input.templateId || t.name.toLowerCase() === (input.title || "").toLowerCase()
+    );
+
+  const detectedMarkers: string[] = [];
+  for (const page of input.pages || []) {
+    const combined = `${page.title} ${page.seoDescription} ${page.html}`;
+    for (const marker of DEMO_CONTENT_MARKERS) {
+      const m = combined.match(marker);
+      if (m && m[0]) {
+        const label = `${page.title} : « ${m[0]} »`;
+        if (!detectedMarkers.includes(label)) {
+          detectedMarkers.push(label);
+        }
+      }
+    }
+  }
+
+  const hasUnchangedDemoMarkers = isDemoTemplate || detectedMarkers.length > 0;
+  return {
+    isDemoTemplate,
+    isStaticAthVahloulException,
+    badgeLabel: hasUnchangedDemoMarkers ? DEMO_CONTENT_NOTICE_LABEL : "Contenu personnalisé",
+    detectedMarkers,
+    hasUnchangedDemoMarkers,
+    noticeMessage: isStaticAthVahloulException
+      ? "Modèle officiel Association familiale ATH VAHLOUL — Démonstration à personnaliser avant mise en ligne d’un nouveau site."
+      : hasUnchangedDemoMarkers
+        ? "Démonstration à personnaliser : certains textes, coordonnées ou exemples proviennent d’un modèle de départ fictif."
+        : "Contenu personnalisé prêt pour vérification.",
+  };
+}
+
+/**
+ * 5. CONTRÔLE SEO PAR PAGE — Distinction erreurs bloquantes vs recommandations
+ */
+export type AuditIssueSeverity = "bloquant" | "a_corriger" | "conseil";
+
+export interface PageSeoAuditIssue {
+  id: string;
+  severity: AuditIssueSeverity;
+  message: string;
+}
+
+export interface PageSeoDetailedAudit {
+  pageId: string;
+  pageTitle: string;
+  slug: string;
+  canonicalUrl: string;
+  robotsDirective: "index, follow" | "noindex, nofollow";
+  displayTitle: string;
+  displayDescription: string;
+  h1Count: number;
+  primaryHeadingText: string | null;
+  imagesTotal: number;
+  imagesMissingAlt: number;
+  isContentEmpty: boolean;
+  blockingErrors: PageSeoAuditIssue[];
+  warningsToFix: PageSeoAuditIssue[];
+  recommendations: PageSeoAuditIssue[];
+  score100: number;
+}
+
+export function auditIndependentPageSeo(
+  page: IndependentSitePage,
+  siteSlug: string,
+  customHostname?: string | null
+): PageSeoDetailedAudit {
+  const basePreview = buildPageSeoPreview(page, siteSlug, customHostname);
+  const html = page.html || "";
+  const textContent = html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const isContentEmpty = textContent.length < 20;
+
+  const h1Matches = Array.from(html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi));
+  const h1Count = h1Matches.length;
+  const primaryHeadingText = h1Matches[0]
+    ? h1Matches[0][1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    : null;
+
+  const blockingErrors: PageSeoAuditIssue[] = [];
+  const warningsToFix: PageSeoAuditIssue[] = [];
+  const recommendations: PageSeoAuditIssue[] = [];
+
+  if (!page.title || !page.title.trim()) {
+    blockingErrors.push({
+      id: "seo-missing-page-title",
+      severity: "bloquant",
+      message: "Le titre de la page est vide.",
+    });
+  }
+  if (!page.slug || !page.slug.startsWith("/")) {
+    blockingErrors.push({
+      id: "seo-invalid-slug",
+      severity: "bloquant",
+      message: "Le slug de la page doit commencer par « / ».",
+    });
+  }
+  if (isContentEmpty) {
+    blockingErrors.push({
+      id: "seo-empty-content",
+      severity: "bloquant",
+      message: "Le contenu textuel de la page est vide ou quasi vide (moins de 20 caractères).",
+    });
+  }
+
+  const seoTitleLen = (page.seoTitle || page.title || "").trim().length;
+  if (seoTitleLen === 0) {
+    blockingErrors.push({
+      id: "seo-missing-seo-title",
+      severity: "bloquant",
+      message: "Le titre SEO est manquant.",
+    });
+  } else if (seoTitleLen < 15 || seoTitleLen > 70) {
+    recommendations.push({
+      id: "seo-title-length",
+      severity: "conseil",
+      message: `Longueur du titre SEO (${seoTitleLen} caractères) : visez entre 30 et 60 caractères.`,
+    });
+  }
+
+  const seoDescLen = (page.seoDescription || "").trim().length;
+  if (seoDescLen === 0) {
+    warningsToFix.push({
+      id: "seo-missing-description",
+      severity: "a_corriger",
+      message: "La description SEO est vide : ajoutez un résumé de 80 à 160 caractères.",
+    });
+  } else if (seoDescLen < 50 || seoDescLen > 170) {
+    recommendations.push({
+      id: "seo-description-length",
+      severity: "conseil",
+      message: `Description SEO (${seoDescLen} caractères) : idéalement entre 80 et 160 caractères.`,
+    });
+  }
+
+  if (h1Count === 0) {
+    warningsToFix.push({
+      id: "seo-missing-h1",
+      severity: "a_corriger",
+      message: "Aucun titre principal <h1> détecté sur cette page.",
+    });
+  } else if (h1Count > 1) {
+    recommendations.push({
+      id: "seo-multiple-h1",
+      severity: "conseil",
+      message: `${h1Count} titres <h1> détectés : privilégiez un seul titre principal <h1> par page.`,
+    });
+  }
+
+  if (basePreview.imagesMissingAlt > 0) {
+    warningsToFix.push({
+      id: "seo-images-missing-alt",
+      severity: "a_corriger",
+      message: `${basePreview.imagesMissingAlt} image(s) sur ${basePreview.imagesTotal} n’ont pas de texte alternatif (alt).`,
+    });
+  }
+
+  let score100 = 100;
+  score100 -= blockingErrors.length * 30;
+  score100 -= warningsToFix.length * 12;
+  score100 -= recommendations.length * 4;
+  score100 = Math.max(0, Math.min(100, score100));
+
+  return {
+    pageId: page.id,
+    pageTitle: page.title,
+    slug: page.slug,
+    canonicalUrl: basePreview.canonicalUrl,
+    robotsDirective: basePreview.robotsDirective,
+    displayTitle: basePreview.displayTitle,
+    displayDescription: basePreview.displayDescription,
+    h1Count,
+    primaryHeadingText,
+    imagesTotal: basePreview.imagesTotal,
+    imagesMissingAlt: basePreview.imagesMissingAlt,
+    isContentEmpty,
+    blockingErrors,
+    warningsToFix,
+    recommendations,
+    score100,
+  };
+}
+
+/**
+ * 6. CONTRÔLE ACCESSIBILITÉ — 3 niveaux en français : Bloquant, À corriger, Conseil
+ */
+export type AccessibilityLevelLabel = "Bloquant" | "À corriger" | "Conseil";
+
+export interface AccessibilityAuditIssue {
+  id: string;
+  level: AccessibilityLevelLabel;
+  severity: AuditIssueSeverity;
+  category:
+    | "contraste"
+    | "texte_alternatif"
+    | "liens"
+    | "boutons_clavier"
+    | "titres"
+    | "focus"
+    | "formulaires";
+  pageSlug: string;
+  message: string;
+}
+
+export interface AccessibilityAuditReport {
+  issues: AccessibilityAuditIssue[];
+  blockingCount: number;
+  toFixCount: number;
+  adviceCount: number;
+  score100: number;
+}
+
+function parseHexLuminance(hex: string): number | null {
+  const clean = (hex || "").trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  const full =
+    clean.length === 3
+      ? clean
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : clean;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+export function computeColorContrastRatio(hexA: string, hexB: string): number | null {
+  const lumA = parseHexLuminance(hexA);
+  const lumB = parseHexLuminance(hexB);
+  if (lumA === null || lumB === null) return null;
+  const brightest = Math.max(lumA, lumB);
+  const darkest = Math.min(lumA, lumB);
+  return Number(((brightest + 0.05) / (darkest + 0.05)).toFixed(2));
+}
+
+export function auditIndependentSiteAccessibility(
+  pages: ReadonlyArray<IndependentSitePage>,
+  theme?: IndependentSiteThemeConfig | null
+): AccessibilityAuditReport {
+  const issues: AccessibilityAuditIssue[] = [];
+
+  if (theme?.primaryColor && theme?.backgroundColor) {
+    const ratio = computeColorContrastRatio(theme.primaryColor, theme.backgroundColor);
+    if (ratio !== null && ratio < 3.0) {
+      issues.push({
+        id: "a11y-theme-contrast-blocking",
+        level: "Bloquant",
+        severity: "bloquant",
+        category: "contraste",
+        pageSlug: "/",
+        message: `Contraste insuffisant (${ratio}:1) entre la couleur principale (${theme.primaryColor}) et le fond (${theme.backgroundColor}). Minimum requis : 4.5:1.`,
+      });
+    } else if (ratio !== null && ratio < 4.5) {
+      issues.push({
+        id: "a11y-theme-contrast-warn",
+        level: "À corriger",
+        severity: "a_corriger",
+        category: "contraste",
+        pageSlug: "/",
+        message: `Contraste modéré (${ratio}:1) entre le texte principal et le fond. Visez au moins 4.5:1 pour une lecture confortable.`,
+      });
+    }
+  }
+
+  for (const page of pages) {
+    const html = page.html || "";
+
+    // 1. Images sans texte alternatif
+    const imgs = extractImagesFromPageHtml(html);
+    const missingAltCount = imgs.filter((i) => !i.hasAlt).length;
+    if (missingAltCount > 0) {
+      issues.push({
+        id: `a11y-img-alt-${page.id}`,
+        level: "À corriger",
+        severity: "a_corriger",
+        category: "texte_alternatif",
+        pageSlug: page.slug,
+        message: `Page « ${page.title} » : ${missingAltCount} image(s) sans texte alternatif descriptif (attribut alt).`,
+      });
+    }
+
+    // 2. Liens sans intitulé compréhensible
+    const linkMatches = Array.from(html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi));
+    for (const m of linkMatches) {
+      const attrs = m[1] || "";
+      const innerText = (m[2] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const hasAriaLabel = /\baria-label\s*=\s*(?:"[^"]+"|'[^']+')/i.test(attrs);
+      if (!innerText && !hasAriaLabel) {
+        issues.push({
+          id: `a11y-empty-link-${page.id}`,
+          level: "Bloquant",
+          severity: "bloquant",
+          category: "liens",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : un lien <a> ne comporte aucun intitulé lisible ni aria-label.`,
+        });
+        break;
+      } else if (/^(cliquez ici|ici|lien|plus)$/i.test(innerText)) {
+        issues.push({
+          id: `a11y-vague-link-${page.id}`,
+          level: "Conseil",
+          severity: "conseil",
+          category: "liens",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : évitez les intitulés de liens trop vagues comme « ${innerText} ».`,
+        });
+        break;
+      }
+    }
+
+    // 3. Boutons accessibles au clavier
+    const buttonMatches = Array.from(html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi));
+    for (const b of buttonMatches) {
+      const attrs = b[1] || "";
+      const innerText = (b[2] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const hasAriaLabel = /\baria-label\s*=\s*(?:"[^"]+"|'[^']+')/i.test(attrs);
+      if (!innerText && !hasAriaLabel) {
+        issues.push({
+          id: `a11y-empty-button-${page.id}`,
+          level: "Bloquant",
+          severity: "bloquant",
+          category: "boutons_clavier",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : un bouton <button> n’a aucun texte ni libellé accessible aux lecteurs d’écran.`,
+        });
+        break;
+      }
+      if (/tabindex\s*=\s*["']-\d+["']/i.test(attrs)) {
+        issues.push({
+          id: `a11y-negative-tabindex-${page.id}`,
+          level: "À corriger",
+          severity: "a_corriger",
+          category: "boutons_clavier",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : un bouton possède un tabindex négatif qui empêche la navigation au clavier.`,
+        });
+        break;
+      }
+    }
+
+    // 4. Ordre logique des titres (h1 -> h2 -> h3)
+    const headingLevels = Array.from(html.matchAll(/<h([1-6])\b[^>]*>/gi)).map((m) =>
+      Number(m[1])
+    );
+    if (headingLevels.length === 0) {
+      issues.push({
+        id: `a11y-no-headings-${page.id}`,
+        level: "À corriger",
+        severity: "a_corriger",
+        category: "titres",
+        pageSlug: page.slug,
+        message: `Page « ${page.title} » : aucun titre structurant (<h1>, <h2>…) n’est présent.`,
+      });
+    } else {
+      for (let i = 1; i < headingLevels.length; i += 1) {
+        if (headingLevels[i] - headingLevels[i - 1] > 1) {
+          issues.push({
+            id: `a11y-heading-skip-${page.id}`,
+            level: "Conseil",
+            severity: "conseil",
+            category: "titres",
+            pageSlug: page.slug,
+            message: `Page « ${page.title} » : saut de niveau de titre détecté (h${headingLevels[i - 1]} vers h${headingLevels[i]}). Respectez l’ordre h1 → h2 → h3.`,
+          });
+          break;
+        }
+      }
+    }
+
+    // 5. Focus visible (détection de outline:none sans remplacement)
+    const combinedStyle = `${page.css || ""} ${html}`;
+    if (/outline\s*:\s*(?:none|0)\b/i.test(combinedStyle) && !/focus-visible/i.test(combinedStyle)) {
+      issues.push({
+        id: `a11y-focus-suppressed-${page.id}`,
+        level: "À corriger",
+        severity: "a_corriger",
+        category: "focus",
+        pageSlug: page.slug,
+        message: `Page « ${page.title} » : une règle « outline: none » masque l’indicateur de focus clavier.`,
+      });
+    }
+
+    // 6. Champs de formulaire avec libellés
+    const inputMatches = Array.from(
+      html.matchAll(/<(?:input|textarea|select)\b([^>]*)>/gi)
+    );
+    for (const inp of inputMatches) {
+      const attrs = inp[1] || "";
+      if (/type\s*=\s*["'](?:hidden|submit|button)["']/i.test(attrs)) continue;
+      const hasLabelOrAria =
+        /\baria-label\s*=\s*(?:"[^"]+"|'[^']+')/i.test(attrs) ||
+        /\bplaceholder\s*=\s*(?:"[^"]+"|'[^']+')/i.test(attrs) ||
+        /<label\b/i.test(html);
+      if (!hasLabelOrAria) {
+        issues.push({
+          id: `a11y-unlabeled-input-${page.id}`,
+          level: "À corriger",
+          severity: "a_corriger",
+          category: "formulaires",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : un champ de formulaire ne possède ni balise <label> associée ni attribut aria-label.`,
+        });
+        break;
+      }
+    }
+  }
+
+  const blockingCount = issues.filter((i) => i.severity === "bloquant").length;
+  const toFixCount = issues.filter((i) => i.severity === "a_corriger").length;
+  const adviceCount = issues.filter((i) => i.severity === "conseil").length;
+
+  let score100 = 100 - blockingCount * 28 - toFixCount * 10 - adviceCount * 3;
+  score100 = Math.max(0, Math.min(100, score100));
+
+  return {
+    issues,
+    blockingCount,
+    toFixCount,
+    adviceCount,
+    score100,
+  };
+}
+
+/**
+ * 7. VÉRIFICATION RESPONSIVE — Ordinateur, Tablette, Mobile, Largeurs très étroites (320px)
+ */
+export interface ResponsiveAuditIssue {
+  id: string;
+  severity: AuditIssueSeverity;
+  viewportTarget: "desktop" | "tablet" | "mobile" | "narrow-320";
+  category:
+    | "debordement_horizontal"
+    | "image_trop_large"
+    | "texte_coupe"
+    | "bouton_inatteignable"
+    | "menu_trop_long";
+  pageSlug: string;
+  message: string;
+}
+
+export interface ResponsiveAuditReport {
+  issues: ResponsiveAuditIssue[];
+  criticalCount: number;
+  warningCount: number;
+  checkedViewports: ReadonlyArray<{ id: string; label: string; widthPx: number; passed: boolean }>;
+  score100: number;
+}
+
+export function auditIndependentSiteResponsive(
+  pages: ReadonlyArray<IndependentSitePage>,
+  navigation?: ReadonlyArray<IndependentSiteMenuItem> | null
+): ResponsiveAuditReport {
+  const issues: ResponsiveAuditIssue[] = [];
+  const navItems = navigation ?? buildNavigationFromPages(pages);
+
+  // Menu principal trop long
+  if (navItems.length > 7) {
+    issues.push({
+      id: "resp-menu-too-long",
+      severity: "a_corriger",
+      viewportTarget: "tablet",
+      category: "menu_trop_long",
+      pageSlug: "/",
+      message: `Le menu principal comporte ${navItems.length} entrées de premier niveau : au-delà de 7 liens, regroupez certaines pages en sous-menus pour éviter tout chevauchement sur tablette.`,
+    });
+  }
+
+  for (const page of pages) {
+    const combined = `${page.html || ""} ${page.css || ""}`;
+
+    // Détection de largeurs fixes provoquant un débordement horizontal sur mobile (320px / 414px)
+    const fixedWidthMatches = Array.from(
+      combined.matchAll(/(?:^|[;{"'\s])(?:width|min-width)\s*:\s*(\d{3,4})px/gi)
+    );
+    for (const m of fixedWidthMatches) {
+      const px = Number(m[1]);
+      if (px > 420) {
+        issues.push({
+          id: `resp-overflow-width-${page.id}-${px}`,
+          severity: px >= 600 ? "bloquant" : "a_corriger",
+          viewportTarget: "narrow-320",
+          category: "debordement_horizontal",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : une largeur fixe de ${px}px provoque un débordement horizontal sur mobile étroit (320px). Utilisez max-width: 100% ou un pourcentage.`,
+        });
+        break;
+      }
+    }
+
+    // Détection d'images trop larges
+    const imgWidthMatches = Array.from(
+      (page.html || "").matchAll(/<img\b[^>]*\bwidth\s*=\s*["']?(\d{3,4})["']?[^>]*>/gi)
+    );
+    for (const im of imgWidthMatches) {
+      const px = Number(im[1]);
+      if (px > 500) {
+        issues.push({
+          id: `resp-wide-img-${page.id}`,
+          severity: "a_corriger",
+          viewportTarget: "mobile",
+          category: "image_trop_large",
+          pageSlug: page.slug,
+          message: `Page « ${page.title} » : une image définit une largeur fixe de ${px}px. Le style responsive de base la contraindra à 100%, mais préférez des dimensions fluides.`,
+        });
+        break;
+      }
+    }
+
+    // Détection de textes coupés (white-space: nowrap sur de longs blocs ou overflow-x: visible forcé)
+    if (/white-space\s*:\s*nowrap/i.test(combined)) {
+      issues.push({
+        id: `resp-text-clipped-${page.id}`,
+        severity: "conseil",
+        viewportTarget: "narrow-320",
+        category: "texte_coupe",
+        pageSlug: page.slug,
+        message: `Page « ${page.title} » : « white-space: nowrap » détecté, vérifiez que les titres longs ne sont pas tronqués sur un écran de 320px.`,
+      });
+    }
+
+    // Détection de boutons inatteignables (position fixe hors écran ou hauteur/police minuscule)
+    if (/(?:left|right)\s*:\s*-\d{3,}px/i.test(combined)) {
+      issues.push({
+        id: `resp-unreachable-button-${page.id}`,
+        severity: "bloquant",
+        viewportTarget: "mobile",
+        category: "bouton_inatteignable",
+        pageSlug: page.slug,
+        message: `Page « ${page.title} » : un élément est positionné hors de l’écran avec un décalage négatif supérieur à 100px.`,
+      });
+    }
+  }
+
+  const criticalCount = issues.filter((i) => i.severity === "bloquant").length;
+  const warningCount = issues.filter((i) => i.severity !== "bloquant").length;
+
+  const checkedViewports = [
+    { id: "desktop", label: "Ordinateur (1440px)", widthPx: 1440, passed: true },
+    {
+      id: "tablet",
+      label: "Tablette (768px - 1024px)",
+      widthPx: 768,
+      passed: !issues.some((i) => i.viewportTarget === "tablet" && i.severity === "bloquant"),
+    },
+    {
+      id: "mobile",
+      label: "Mobile standard (414px)",
+      widthPx: 414,
+      passed: !issues.some((i) => i.viewportTarget === "mobile" && i.severity === "bloquant"),
+    },
+    {
+      id: "narrow-320",
+      label: "Mobile très étroit (320px)",
+      widthPx: 320,
+      passed: !issues.some((i) => i.viewportTarget === "narrow-320" && i.severity === "bloquant"),
+    },
+  ];
+
+  let score100 = 100 - criticalCount * 35 - warningCount * 10;
+  score100 = Math.max(0, Math.min(100, score100));
+
+  return {
+    issues,
+    criticalCount,
+    warningCount,
+    checkedViewports,
+    score100,
+  };
+}
+
+/**
+ * 8. MÉDIAS — Recherche, filtre par type, poids, dimensions, remplacement sans casser les références
+ */
+export const INDEPENDENT_MEDIA_WARN_BYTES = 500 * 1024; // 500 Ko : avertissement fichier lourd
+export const INDEPENDENT_MEDIA_MAX_BYTES = 5 * 1024 * 1024; // 5 Mo : rejet sécurité
+
+export type IndependentMediaTypeFilter = "all" | "image/webp" | "image/svg+xml" | "image/jpeg" | "image/png";
+
+export interface IndependentMediaMetadataAssessment {
+  estimatedBytes: number;
+  formattedSize: string;
+  dimensionsLabel: string;
+  isTooHeavyWarning: boolean;
+  isRejectedTooLarge: boolean;
+  hasValidAltText: boolean;
+  warningMessage: string | null;
+}
+
+export function assessIndependentMediaItem(input: {
+  url: string;
+  altText?: string | null;
+  mimeType?: string | null;
+  widthPx?: number | null;
+  heightPx?: number | null;
+  fileSizeBytes?: number | null;
+}): IndependentMediaMetadataAssessment {
+  const url = (input.url || "").trim();
+  const estimatedBytes =
+    typeof input.fileSizeBytes === "number" && input.fileSizeBytes > 0
+      ? input.fileSizeBytes
+      : url.startsWith("data:")
+        ? Math.round((url.length * 3) / 4)
+        : 120 * 1024;
+
+  const kb = Math.max(1, Math.round(estimatedBytes / 1024));
+  const formattedSize = kb >= 1024 ? `${(kb / 1024).toFixed(2)} Mo` : `${kb} Ko`;
+  const dimensionsLabel =
+    input.widthPx && input.heightPx
+      ? `${input.widthPx} × ${input.heightPx} px`
+      : "Dimensions adaptatives (auto)";
+
+  const isRejectedTooLarge = estimatedBytes > INDEPENDENT_MEDIA_MAX_BYTES;
+  const isTooHeavyWarning = estimatedBytes > INDEPENDENT_MEDIA_WARN_BYTES;
+  const hasValidAltText = Boolean(input.altText && input.altText.trim().length >= 3);
+
+  let warningMessage: string | null = null;
+  if (isRejectedTooLarge) {
+    warningMessage = `Fichier trop volumineux (${formattedSize}) : la limite maximale est de 5 Mo.`;
+  } else if (isTooHeavyWarning) {
+    warningMessage = `Fichier lourd (${formattedSize}) : privilégiez une image WebP ou SVG inférieure à 500 Ko pour accélérer le chargement.`;
+  } else if (!hasValidAltText) {
+    warningMessage =
+      "Texte alternatif manquant ou trop court : décrivez l’image pour l’accessibilité et le référencement.";
+  }
+
+  return {
+    estimatedBytes,
+    formattedSize,
+    dimensionsLabel,
+    isTooHeavyWarning,
+    isRejectedTooLarge,
+    hasValidAltText,
+    warningMessage,
+  };
+}
+
+export function filterIndependentMediaItems<
+  T extends {
+    label: string;
+    altText: string;
+    url: string;
+    mimeType: string;
+  },
+>(
+  items: ReadonlyArray<T>,
+  options?: {
+    search?: string;
+    mimeTypeFilter?: IndependentMediaTypeFilter | string;
+  }
+): T[] {
+  const q = normalizeSearchQuery(options?.search);
+  const mime =
+    options?.mimeTypeFilter && options.mimeTypeFilter !== "all"
+      ? options.mimeTypeFilter.toLowerCase()
+      : null;
+
+  return items.filter((item) => {
+    if (mime && !(item.mimeType || "").toLowerCase().includes(mime.replace("image/", ""))) {
+      return false;
+    }
+    return matchesNormalizedSearch(q, [item.label, item.altText, item.mimeType, item.url]);
+  });
+}
+
+export function replaceMediaUrlAcrossPages(
+  pages: ReadonlyArray<IndependentSitePage>,
+  oldUrl: string,
+  newUrl: string,
+  newAltText?: string
+): { pages: IndependentSitePage[]; replacedCount: number } {
+  const cleanOld = (oldUrl || "").trim();
+  const safeNewUrl = sanitizeBuilderImageSrc(newUrl);
+  if (!cleanOld) {
+    return { pages: [...pages], replacedCount: 0 };
+  }
+
+  let replacedCount = 0;
+  const updatedPages = pages.map((page) => {
+    let pageHtml = page.html || "";
+    if (pageHtml.includes(cleanOld)) {
+      const parts = pageHtml.split(cleanOld);
+      replacedCount += parts.length - 1;
+      pageHtml = parts.join(safeNewUrl);
+    }
+    const nextSocial =
+      page.socialImageUrl === cleanOld ? safeNewUrl : page.socialImageUrl;
+    return {
+      ...page,
+      html: sanitizeIndependentHtml(pageHtml),
+      socialImageUrl: nextSocial,
+      ...(newAltText ? {} : {}),
+    };
+  });
+
+  return {
+    pages: updatedPages,
+    replacedCount,
+  };
+}
+
+/**
+ * 9. NAVIGATION ET FOOTER — Modèles prêts à l’emploi, limitation de profondeur des sous-menus & vérification des liens
+ */
+export const MAX_INDEPENDENT_SUBMENU_DEPTH = 2 as const;
+
+export interface IndependentNavAndFooterPreset {
+  id: string;
+  kind: "header_navigation" | "footer_complet";
+  label: string;
+  description: string;
+  features: string[];
+  html: string;
+}
+
+export const INDEPENDENT_NAV_AND_FOOTER_PRESETS: ReadonlyArray<IndependentNavAndFooterPreset> = [
+  {
+    id: "nav-preset-classique-cta",
+    kind: "header_navigation",
+    label: "Menu principal accessible avec sous-menu & bouton d’action",
+    description:
+      "En-tête responsive avec navigation principale, sous-menu déroulant accessible au clavier, menu mobile repliable et bouton d’appel à l’action.",
+    features: ["Menu principal", "Sous-menu (max 2 niveaux)", "Menu mobile <details>", "Bouton CTA"],
+    html: `<header data-site-block="header-nav-accessible" style="background:#172033;color:#ffffff;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.12)">
+  <div style="max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+    <a href="/" style="color:#ffffff;text-decoration:none;font-weight:700;font-size:1.125rem">Mon Site Indépendant</a>
+    <nav aria-label="Menu principal" style="display:flex;flex-wrap:wrap;align-items:center;gap:20px">
+      <a href="/" style="color:#f8fafc;text-decoration:none;font-size:0.95rem">Accueil</a>
+      <details style="position:relative">
+        <summary style="cursor:pointer;color:#f5b98f;font-size:0.95rem;font-weight:600">Découvrir ▾</summary>
+        <div style="background:#1e293b;padding:10px 14px;border-radius:8px;margin-top:6px;display:flex;flex-direction:column;gap:8px">
+          <a href="/notre-famille" style="color:#ffffff;text-decoration:none;font-size:0.875rem">Présentation</a>
+          <a href="/evenements" style="color:#ffffff;text-decoration:none;font-size:0.875rem">Événements</a>
+        </div>
+      </details>
+      <a href="/contact" style="color:#f8fafc;text-decoration:none;font-size:0.95rem">Contact</a>
+      <a href="/contact" style="background:#9b563e;color:#ffffff;padding:9px 18px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem">Nous écrire</a>
+    </nav>
+  </div>
+</header>`,
+  },
+  {
+    id: "footer-preset-complet-legal-social",
+    kind: "footer_complet",
+    label: "Pied de page complet (Coordonnées, Liens légaux, Réseaux & CTA)",
+    description:
+      "Footer structuré sur 3 colonnes comprenant présentation, liens de navigation, liens sociaux, mentions légales/confidentialité et bouton d’appel à l’action.",
+    features: ["Coordonnées", "Liens sociaux", "Liens légaux", "Bouton d’appel à l’action"],
+    html: `<footer data-site-block="footer-complet-accessible" style="background:#172033;color:#e2e8f0;padding:48px 24px;margin-top:40px">
+  <div style="max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:32px">
+    <div>
+      <h2 style="color:#ffffff;font-size:1.15rem;margin:0 0 10px 0">Notre Organisation</h2>
+      <p style="font-size:0.9rem;line-height:1.6;color:#cbd5e1;margin:0 0 16px 0">Site indépendant d’information, de rencontres et de partage. Démonstration à personnaliser avec vos coordonnées.</p>
+      <a href="/contact" style="display:inline-block;background:#f5b98f;color:#172033;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:0.875rem">Prendre contact</a>
+    </div>
+    <nav aria-label="Navigation pied de page">
+      <h3 style="color:#f5b98f;font-size:0.95rem;margin:0 0 12px 0">Rubriques & Liens légaux</h3>
+      <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;font-size:0.875rem">
+        <li><a href="/" style="color:#e2e8f0;text-decoration:none">Accueil</a></li>
+        <li><a href="/contact" style="color:#e2e8f0;text-decoration:none">Mentions légales & Confidentialité</a></li>
+        <li><a href="/contact" style="color:#e2e8f0;text-decoration:none">Accessibilité & Contact</a></li>
+      </ul>
+    </nav>
+    <div>
+      <h3 style="color:#f5b98f;font-size:0.95rem;margin:0 0 12px 0">Réseaux & Contact direct</h3>
+      <p style="font-size:0.875rem;color:#cbd5e1;margin:0 0 10px 0">Email : contact@exemple.org · Tél : +41 22 000 00 00</p>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.85rem">
+        <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" style="color:#f5b98f;text-decoration:underline">LinkedIn</a>
+        <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram" style="color:#f5b98f;text-decoration:underline">Instagram</a>
+        <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" aria-label="Facebook" style="color:#f5b98f;text-decoration:underline">Facebook</a>
+      </div>
+    </div>
+  </div>
+</footer>`,
+  },
+] as const;
+
+export function reorderIndependentPagesMenu(
+  pages: ReadonlyArray<IndependentSitePage>,
+  pageId: string,
+  direction: "up" | "down",
+  newParentPageId?: string | null
+): IndependentSitePage[] {
+  const cloned: IndependentSitePage[] = JSON.parse(JSON.stringify(pages));
+  const target = cloned.find((p) => p.id === pageId);
+  if (!target) return cloned;
+
+  if (newParentPageId !== undefined) {
+    if (newParentPageId === null || newParentPageId === "") {
+      target.parentPageId = null;
+    } else if (newParentPageId !== target.id) {
+      const parentCandidate = cloned.find((p) => p.id === newParentPageId);
+      // Limitation stricte à 2 niveaux (Menu principal -> Sous-menu) : un sous-menu ne peut pas avoir d'enfant
+      if (parentCandidate && !parentCandidate.parentPageId) {
+        const targetHasChildren = cloned.some((c) => c.parentPageId === target.id);
+        if (!targetHasChildren) {
+          target.parentPageId = parentCandidate.id;
+        }
+      }
+    }
+  }
+
+  const siblings = cloned
+    .filter((p) => (p.parentPageId ?? null) === (target.parentPageId ?? null))
+    .sort((a, b) => a.menuOrder - b.menuOrder);
+
+  const idx = siblings.findIndex((s) => s.id === target.id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (idx >= 0 && swapIdx >= 0 && swapIdx < siblings.length) {
+    const tempOrder = siblings[idx].menuOrder;
+    siblings[idx].menuOrder = siblings[swapIdx].menuOrder;
+    siblings[swapIdx].menuOrder = tempOrder;
+  }
+
+  return cloned.sort((a, b) => a.menuOrder - b.menuOrder);
+}
+
+export interface BrokenInternalLinkIssue {
+  fromPageTitle: string;
+  fromPageSlug: string;
+  targetHref: string;
+  linkText: string;
+}
+
+export function verifyIndependentInternalLinks(
+  pages: ReadonlyArray<IndependentSitePage>
+): {
+  valid: boolean;
+  brokenLinks: BrokenInternalLinkIssue[];
+  checkedLinksCount: number;
+} {
+  const knownSlugs = new Set(pages.map((p) => normalizeIndependentPageSlug(p.slug)));
+  const brokenLinks: BrokenInternalLinkIssue[] = [];
+  let checkedLinksCount = 0;
+
+  for (const page of pages) {
+    const html = page.html || "";
+    const matches = Array.from(
+      html.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)
+    );
+    for (const m of matches) {
+      const rawHref = (m[1] ?? m[2] ?? "").trim();
+      const linkText = (m[3] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || rawHref;
+      if (!rawHref || rawHref.startsWith("#") || rawHref.startsWith("mailto:") || rawHref.startsWith("tel:")) {
+        continue;
+      }
+      if (/^https?:\/\//i.test(rawHref)) {
+        checkedLinksCount += 1;
+        continue;
+      }
+      if (rawHref.startsWith("/")) {
+        checkedLinksCount += 1;
+        const pathOnly = rawHref.split("#")[0].split("?")[0] || "/";
+        const normalizedTarget = normalizeIndependentPageSlug(pathOnly);
+        if (!knownSlugs.has(normalizedTarget)) {
+          brokenLinks.push({
+            fromPageTitle: page.title,
+            fromPageSlug: page.slug,
+            targetHref: rawHref,
+            linkText,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    valid: brokenLinks.length === 0,
+    brokenLinks,
+    checkedLinksCount,
+  };
+}
+
+/**
+ * 4. CHECKLIST AVANT PUBLICATION & 13. QUALITÉ DU PROJET (SCORE EXPLICABLE)
+ */
+export interface PrePublishChecklistItem {
+  id: string;
+  label: string;
+  passed: boolean;
+  blocking: boolean;
+  detail: string;
+}
+
+export interface IndependentSiteQualityReport {
+  overallScore100: number;
+  scoreBreakdown: {
+    seoScore100: number;
+    accessibilityScore100: number;
+    responsiveScore100: number;
+    navigationScore100: number;
+    mediaScore100: number;
+    securityScore100: number;
+  };
+  scoreExplanation: string;
+  canPublish: boolean;
+  blockingIssuesCount: number;
+  recommendationsCount: number;
+  checklist: PrePublishChecklistItem[];
+  pageSeoAudits: PageSeoDetailedAudit[];
+  accessibilityAudit: AccessibilityAuditReport;
+  responsiveAudit: ResponsiveAuditReport;
+  brokenLinksReport: ReturnType<typeof verifyIndependentInternalLinks>;
+  demoStatus: IndependentDemoContentStatus;
+  publicationStatusLabel: "Brouillon" | "Publié" | "Archivé";
+}
+
+export function evaluateIndependentSiteQualityAndChecklist(input: {
+  title: string;
+  slug: string;
+  siteType: IndependentSiteType;
+  projectMode?: IndependentProjectMode | null;
+  status: IndependentSiteStatus;
+  templateId?: string | null;
+  theme?: IndependentSiteThemeConfig | null;
+  navigation?: ReadonlyArray<IndependentSiteMenuItem> | null;
+  pages: ReadonlyArray<IndependentSitePage>;
+  mediaItems?: ReadonlyArray<{
+    label: string;
+    altText: string;
+    url: string;
+    mimeType: string;
+  }>;
+}): IndependentSiteQualityReport {
+  const pages = input.pages || [];
+  const cleanTitle = (input.title || "").trim();
+  const cleanSlug = slugifyIndependentSite(input.slug || cleanTitle);
+  const mode = resolveIndependentProjectMode(input.siteType, input.projectMode);
+
+  // 1. Vérification sécurité (secrets & e-commerce)
+  let noSecretsPassed = true;
+  try {
+    assertNoSecretsInIndependentSite(input);
+  } catch {
+    noSecretsPassed = false;
+  }
+
+  let noForbiddenEcommercePassed = true;
+  try {
+    assertZeroEcommerceInIndependentSite(input);
+  } catch {
+    noForbiddenEcommercePassed = false;
+  }
+  if (mode === "site_vitrine") {
+    for (const p of pages) {
+      if (/data-mazigho-dynamic\s*=\s*["']catalogue["']|panier-ecommerce|checkout-stripe/i.test(p.html || "")) {
+        noForbiddenEcommercePassed = false;
+      }
+    }
+  }
+
+  // 2. Audits détaillés par domaine
+  const pageSeoAudits = pages.map((p) => auditIndependentPageSeo(p, cleanSlug));
+  const accessibilityAudit = auditIndependentSiteAccessibility(pages, input.theme);
+  const responsiveAudit = auditIndependentSiteResponsive(pages, input.navigation);
+  const brokenLinksReport = verifyIndependentInternalLinks(pages);
+  const demoStatus = detectIndependentDemoContentStatus({
+    slug: cleanSlug,
+    title: cleanTitle,
+    templateId: input.templateId,
+    pages,
+  });
+
+  const hasHomePage = pages.some((p) => normalizeIndependentPageSlug(p.slug) === "/");
+  const allPagesNonEmptyHtml =
+    pages.length > 0 &&
+    pages.every((p) => {
+      const txt = (p.html || "").replace(/<[^>]+>/g, " ").trim();
+      return txt.length >= 10;
+    });
+  const allCssValidOrClean = pages.every(
+    (p) => !/javascript:|expression\s*\(|@import\s+url\s*\(\s*['"]?javascript:/i.test(p.css || "")
+  );
+
+  const totalImages = pageSeoAudits.reduce((acc, a) => acc + a.imagesTotal, 0);
+  const missingAltImages = pageSeoAudits.reduce((acc, a) => acc + a.imagesMissingAlt, 0);
+  const allImagesHaveAlt = missingAltImages === 0;
+
+  // Vérification de cohérence des informations de contact
+  const contactPage = pages.find(
+    (p) => /contact/i.test(p.slug) || /contact/i.test(p.title)
+  );
+  const fullSiteHtml = pages.map((p) => p.html || "").join("\n");
+  const hasCoherentContactInfo =
+    Boolean(contactPage) ||
+    /mailto:|tel:|@[a-z0-9.-]+\.[a-z]{2,}|contact|nous écrire/i.test(fullSiteHtml);
+
+  const navItems = input.navigation ?? buildNavigationFromPages(pages);
+  const hasCoherentNavigation =
+    pages.length > 0 &&
+    navItems.length > 0 &&
+    pages.every((p) => {
+      if (!p.parentPageId) return true;
+      const parent = pages.find((cand) => cand.id === p.parentPageId);
+      return Boolean(parent && !parent.parentPageId);
+    });
+
+  // 14 points obligatoires de la checklist avant publication
+  const checklist: PrePublishChecklistItem[] = [
+    {
+      id: "check-title",
+      label: "Titre du site présent",
+      passed: cleanTitle.length >= 2,
+      blocking: true,
+      detail: cleanTitle.length >= 2 ? `Titre : « ${cleanTitle} »` : "Le titre du site est manquant.",
+    },
+    {
+      id: "check-slug",
+      label: "Slug valide",
+      passed: /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cleanSlug),
+      blocking: true,
+      detail: `Adresse publique : /sites/${cleanSlug}`,
+    },
+    {
+      id: "check-homepage",
+      label: "Page d’accueil présente (/)",
+      passed: hasHomePage,
+      blocking: true,
+      detail: hasHomePage
+        ? "La page d’accueil (/) est bien configurée."
+        : "Aucune page n’utilise le chemin racine « / ».",
+    },
+    {
+      id: "check-navigation",
+      label: "Navigation cohérente (menus & sous-menus ≤ 2 niveaux)",
+      passed: hasCoherentNavigation,
+      blocking: true,
+      detail: hasCoherentNavigation
+        ? `${navItems.length} entrée(s) principale(s) dans le menu.`
+        : "Le menu est vide ou comporte une hiérarchie de sous-menu invalide.",
+    },
+    {
+      id: "check-broken-links",
+      label: "Aucun lien interne cassé",
+      passed: brokenLinksReport.valid,
+      blocking: !demoStatus.isStaticAthVahloulException,
+      detail: brokenLinksReport.valid
+        ? `${brokenLinksReport.checkedLinksCount} lien(s) vérifié(s), aucun lien cassé.`
+        : `${brokenLinksReport.brokenLinks.length} lien(s) interne(s) pointent vers une page inexistante (${brokenLinksReport.brokenLinks
+            .map((b) => b.targetHref)
+            .join(", ")}).`,
+    },
+    {
+      id: "check-non-empty-html",
+      label: "HTML non vide sur chaque page",
+      passed: allPagesNonEmptyHtml,
+      blocking: true,
+      detail: allPagesNonEmptyHtml
+        ? `${pages.length} page(s) contiennent du contenu éditorial.`
+        : "Une ou plusieurs pages sont vides.",
+    },
+    {
+      id: "check-clean-css",
+      label: "CSS valide ou nettoyé",
+      passed: allCssValidOrClean,
+      blocking: true,
+      detail: "Feuille de style vérifiée et nettoyée.",
+    },
+    {
+      id: "check-images-alt",
+      label: "Images avec texte alternatif (alt)",
+      passed: allImagesHaveAlt,
+      blocking: false,
+      detail: allImagesHaveAlt
+        ? `${totalImages} image(s) vérifiée(s) avec texte alternatif.`
+        : `${missingAltImages} image(s) sur ${totalImages} n’ont pas encore d’attribut alt.`,
+    },
+    {
+      id: "check-responsive",
+      label: "Responsive vérifié (ordinateur, tablette, mobile, 320px)",
+      passed: responsiveAudit.criticalCount === 0,
+      blocking: !demoStatus.isStaticAthVahloulException,
+      detail:
+        responsiveAudit.criticalCount === 0
+          ? "Aucun débordement horizontal ni blocage responsive critique détecté."
+          : `${responsiveAudit.criticalCount} problème(s) responsive critique(s) détecté(s).`,
+    },
+    {
+      id: "check-demo-content",
+      label: "Contenu de démonstration signalé",
+      passed: !demoStatus.hasUnchangedDemoMarkers || demoStatus.isStaticAthVahloulException,
+      blocking: false,
+      detail: demoStatus.noticeMessage,
+    },
+    {
+      id: "check-contact-info",
+      label: "Informations de contact cohérentes",
+      passed: hasCoherentContactInfo,
+      blocking: false,
+      detail: hasCoherentContactInfo
+        ? "Une page ou section de contact est présente sur le site."
+        : "Conseil : ajoutez une page ou un pied de page avec vos coordonnées de contact.",
+    },
+    {
+      id: "check-no-sensitive-data",
+      label: "Aucune donnée sensible exposée",
+      passed: noSecretsPassed,
+      blocking: true,
+      detail: noSecretsPassed
+        ? "Aucune donnée personnelle sensible ou clé privée détectée."
+        : "Donnée sensible détectée dans le contenu.",
+    },
+    {
+      id: "check-no-secrets",
+      label: "Aucun secret ni jeton API",
+      passed: noSecretsPassed,
+      blocking: true,
+      detail: noSecretsPassed
+        ? "Aucun secret ou clé API présent."
+        : "Clé API ou secret détecté : publication bloquée.",
+    },
+    {
+      id: "check-no-ecommerce",
+      label: "Aucun élément e-commerce interdit dans un site vitrine",
+      passed: noForbiddenEcommercePassed,
+      blocking: true,
+      detail: noForbiddenEcommercePassed
+        ? "Séparation 100 % respectée : aucun panier, commande, paiement ou stock."
+        : "Élément e-commerce interdit détecté : publication bloquée.",
+    },
+  ];
+
+  const seoScore100 =
+    pageSeoAudits.length > 0
+      ? Math.round(
+          pageSeoAudits.reduce((sum, item) => sum + item.score100, 0) / pageSeoAudits.length
+        )
+      : 0;
+  const accessibilityScore100 = accessibilityAudit.score100;
+  const responsiveScore100 = responsiveAudit.score100;
+  const navigationScore100 =
+    hasCoherentNavigation && brokenLinksReport.valid
+      ? 100
+      : brokenLinksReport.valid
+        ? 70
+        : Math.max(20, 100 - brokenLinksReport.brokenLinks.length * 30);
+  const mediaScore100 =
+    totalImages === 0
+      ? 100
+      : Math.max(0, Math.round(((totalImages - missingAltImages) / totalImages) * 100));
+  const securityScore100 = noSecretsPassed && noForbiddenEcommercePassed ? 100 : 0;
+
+  const overallScore100 = Math.round(
+    seoScore100 * 0.2 +
+      accessibilityScore100 * 0.2 +
+      responsiveScore100 * 0.2 +
+      navigationScore100 * 0.15 +
+      mediaScore100 * 0.1 +
+      securityScore100 * 0.15
+  );
+
+  const blockingChecklistFailed = checklist.filter((c) => c.blocking && !c.passed);
+  const nonBlockingChecklistFailed = checklist.filter((c) => !c.blocking && !c.passed);
+
+  const blockingIssuesCount =
+    blockingChecklistFailed.length +
+    pageSeoAudits.reduce((s, a) => s + a.blockingErrors.length, 0) +
+    accessibilityAudit.blockingCount +
+    responsiveAudit.criticalCount;
+
+  const recommendationsCount =
+    nonBlockingChecklistFailed.length +
+    pageSeoAudits.reduce((s, a) => s + a.warningsToFix.length + a.recommendations.length, 0) +
+    accessibilityAudit.toFixCount +
+    accessibilityAudit.adviceCount +
+    responsiveAudit.warningCount;
+
+  const canPublish = blockingChecklistFailed.length === 0 && securityScore100 === 100;
+
+  const publicationStatusLabel: "Brouillon" | "Publié" | "Archivé" =
+    input.status === "published"
+      ? "Publié"
+      : input.status === "archived"
+        ? "Archivé"
+        : "Brouillon";
+
+  const scoreExplanation = `Score calculé sur 6 critères explicables : SEO (${seoScore100}/100, poids 20 %), Accessibilité (${accessibilityScore100}/100, poids 20 %), Responsive (${responsiveScore100}/100, poids 20 %), Navigation & Liens (${navigationScore100}/100, poids 15 %), Sécurité & Isolation (${securityScore100}/100, poids 15 %) et Médias (${mediaScore100}/100, poids 10 %).`;
+
+  return {
+    overallScore100,
+    scoreBreakdown: {
+      seoScore100,
+      accessibilityScore100,
+      responsiveScore100,
+      navigationScore100,
+      mediaScore100,
+      securityScore100,
+    },
+    scoreExplanation,
+    canPublish,
+    blockingIssuesCount,
+    recommendationsCount,
+    checklist,
+    pageSeoAudits,
+    accessibilityAudit,
+    responsiveAudit,
+    brokenLinksReport,
+    demoStatus,
+    publicationStatusLabel,
   };
 }
