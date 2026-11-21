@@ -193,6 +193,28 @@ img, video, figure { max-width: 100%; }
 [data-site-card-grid-items="true"] { display: grid !important; gap: 20px !important; }
 [data-site-card-grid-items="true"] > article { min-width: 0 !important; overflow: hidden !important; background: #ffffff !important; border: 1px solid #e8e2d9 !important; border-radius: 16px !important; box-shadow: 0 10px 24px rgba(23,32,51,.08) !important; }
 [data-site-card-grid-items="true"] img { display: block !important; width: 100% !important; height: 220px !important; object-fit: cover !important; }
+[data-site-block^="ath-"] { width: 100% !important; overflow: hidden !important; }
+[data-site-block^="ath-"] > div { width: 100% !important; }
+[data-site-block^="ath-"] h2, [data-site-block^="ath-"] h3 { letter-spacing: -0.015em !important; }
+[data-site-block="ath-events-overview"] > div > div:last-child,
+[data-site-block="ath-family-guidance"] > div,
+[data-site-block="ath-organisation"] > div > div:last-child,
+[data-site-block="ath-assemblies-reports"] > div > div:last-child,
+[data-site-block="ath-announcements-types"] > div > div:last-child { display: grid !important; gap: 18px !important; }
+[data-site-block="ath-events-overview"] article,
+[data-site-block="ath-family-guidance"] article,
+[data-site-block="ath-organisation"] article,
+[data-site-block="ath-assemblies-reports"] article,
+[data-site-block="ath-announcements-types"] article { min-width: 0 !important; height: 100% !important; }
+[data-site-block="ath-access-levels"] table { width: 100% !important; min-width: 680px !important; border-collapse: collapse !important; }
+[data-site-block="ath-access-levels"] th { font-weight: 800 !important; }
+[data-site-block="ath-access-levels"] td, [data-site-block="ath-access-levels"] th { vertical-align: top !important; }
+[data-site-block="footer"], [data-site-block="footer-complet-accessible"] { background: #172033 !important; color: #ffffff !important; }
+[data-site-block="footer"] > div, [data-site-block="footer-complet-accessible"] > div { max-width: 1160px !important; margin: 0 auto !important; }
+[data-site-block="footer"] a, [data-site-block="footer-complet-accessible"] a { color: #ffffff !important; text-decoration: none !important; }
+[data-site-block="footer"] a:hover, [data-site-block="footer-complet-accessible"] a:hover { color: #f5b98f !important; }
+[data-site-block="footer"] h2, [data-site-block="footer"] h3, [data-site-block="footer-complet-accessible"] h2, [data-site-block="footer-complet-accessible"] h3 { color: #ffffff !important; }
+[data-site-block="footer"] p, [data-site-block="footer-complet-accessible"] p { color: #cbd2dc !important; }
 @media (max-width: 900px) {
   [data-site-block="header-ath-vahloul"] > div {
     display: grid !important;
@@ -212,7 +234,9 @@ img, video, figure { max-width: 100%; }
   [data-site-block] > div[style*="grid-template-columns"],
   [data-site-module] > div[style*="grid-template-columns"],
   [data-site-module] div[style*="grid-template-columns:repeat(3"],
-  [data-site-block] div[style*="grid-template-columns:repeat(4"] {
+  [data-site-block] div[style*="grid-template-columns:repeat(4"],
+  [data-site-block="footer"] > div > div,
+  [data-site-block="footer-complet-accessible"] > div {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
@@ -223,9 +247,17 @@ img, video, figure { max-width: 100%; }
   }
   [data-site-block] div[style*="grid-template-columns"],
   [data-site-module] div[style*="grid-template-columns"],
-  [data-site-card-grid-items="true"] {
+  [data-site-card-grid-items="true"],
+  [data-site-block="footer"] > div > div,
+  [data-site-block="footer-complet-accessible"] > div {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+  [data-site-block="ath-access-levels"] { padding-left: 16px !important; padding-right: 16px !important; }
+  [data-site-block="ath-access-levels"] > div { overflow-x: auto !important; }
+  [data-site-block="ath-access-levels"] table { font-size: 13px !important; }
+  [data-site-block="ath-access-levels"] td, [data-site-block="ath-access-levels"] th { padding: 12px !important; }
+  [data-site-card-grid="true"] { padding-left: 16px !important; padding-right: 16px !important; }
+  [data-site-card-grid-items="true"] img { height: 190px !important; }
   [data-site-block="header"] nav,
   [data-site-block="header-submenus"] nav,
   [data-site-block="header-ath-vahloul"] nav {
