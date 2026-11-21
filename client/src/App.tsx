@@ -400,12 +400,14 @@ function Router() {
   const isStudioHost = currentHostname === "studio.mazigho.com" || currentHostname === "studio.mazigho.ch";
   const isSaasLandingHost = currentHostname === "pro.mazigho.com" || currentHostname === "pro.mazigho.ch";
   const isPrimaryMazighoHost = currentHostname === "mazigho.ch" || currentHostname === "www.mazigho.ch";
+  const isIndependentSitesHost = currentHostname.includes("mazigho-independent-sites");
   const isPublicSaasLanding =
     path === "/mazigho-saas" ||
     path.startsWith("/creation-boutique") ||
     path === "/constructeur-sites" ||
     path.startsWith("/constructeur-sites/") ||
     path.startsWith("/sites/") ||
+    isIndependentSitesHost ||
     isSaasLandingHost;
   const isPrivateSetupOwnerPanel = typeof window !== "undefined" && isPrivateSetupOwnerPanelPath(path, window.location.search);
   const STAFF_ROLES = ["admin", "catalog_editor", "order_operator", "support_agent"];
@@ -437,6 +439,9 @@ function Router() {
   }
   if (isPrimaryMazighoHost && path.startsWith("/admin/studio")) {
     return <ExternalLocationRedirect href={`https://studio.mazigho.com${location}`} />;
+  }
+  if (isIndependentSitesHost && path === "/") {
+    return <Redirect to="/sites/association-familiale-ath-vahloul" replace />;
   }
   if (isSupportImpersonating && path !== "/gestion-boutique") {
     return <ExternalLocationRedirect href="/gestion-boutique" />;
