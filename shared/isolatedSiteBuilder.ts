@@ -184,6 +184,21 @@ img, video, figure { max-width: 100%; }
 [data-site-block="hero-ath-vahloul"] a { text-decoration: none !important; }
 [data-site-block="hero-ath-vahloul"] > div { max-width: 1120px !important; margin: 0 auto !important; display: grid !important; grid-template-columns: 1.2fr .8fr !important; gap: 38px !important; align-items: center !important; }
 @media (max-width: 900px) {
+  [data-site-block="header-ath-vahloul"] > div {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 14px 18px !important;
+  }
+  [data-site-block="header-ath-vahloul"] > div > nav {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+    gap: 10px 14px !important;
+  }
+  [data-site-block="header-ath-vahloul"] > div > nav a {
+    white-space: nowrap !important;
+  }
   [data-site-block] > div[style*="grid-template-columns"],
   [data-site-module] > div[style*="grid-template-columns"],
   [data-site-module] div[style*="grid-template-columns:repeat(3"],
