@@ -972,8 +972,7 @@ export default function IndependentSiteBuilderPage() {
       );
     }
     if (editorRef.current && targetPage) {
-      editorRef.current.setComponents(targetPage.html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${targetPage.css}`);
+      syncCanvasPage(editorRef.current, targetPage);
       refreshLayersFromEditor(editorRef.current);
     }
 
@@ -984,6 +983,32 @@ export default function IndependentSiteBuilderPage() {
       setPendingSafetySnapshot(candidateSafety);
     } else {
       setPendingSafetySnapshot(null);
+    }
+  }
+
+  function syncCanvasPage(editor: Editor, page: IndependentSitePage) {
+    const css = `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${page.css || ""}`;
+    editor.setComponents(page.html || "");
+    editor.setStyle(css);
+
+    // GrapesJS may receive the project before its iframe document has finished
+    // loading. Keep a named stylesheet in the iframe head as a final source of
+    // truth so the private canvas cannot fall back to unstyled raw HTML.
+    try {
+      const canvasDocument = editor.Canvas.getDocument();
+      if (canvasDocument?.head) {
+        let styleElement = canvasDocument.head.querySelector<HTMLStyleElement>(
+          "style[data-independent-canvas-style]",
+        );
+        if (!styleElement) {
+          styleElement = canvasDocument.createElement("style");
+          styleElement.dataset.independentCanvasStyle = "true";
+          canvasDocument.head.appendChild(styleElement);
+        }
+        styleElement.textContent = css;
+      }
+    } catch {
+      // The canvas:load handler retries after the iframe is ready.
     }
   }
 
@@ -1052,8 +1077,7 @@ export default function IndependentSiteBuilderPage() {
     // Le projet arrive après l'initialisation de GrapesJS : resynchroniser ici
     // garantit que le canvas privé reflète la vitrine, styles compris, au lieu
     // d'afficher uniquement le HTML brut.
-    editor.setComponents(activePage.html);
-    editor.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
+    syncCanvasPage(editor, activePage);
     refreshLayersFromEditor(editor);
   }, [activePage?.id, activePage?.html, activePage?.css]);
 
@@ -4529,9 +4553,16 @@ export default function IndependentSiteBuilderPage() {
                         });
                       });
                       if (activePage) {
-                        editor.setComponents(activePage.html);
-                        editor.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
+                        syncCanvasPage(editor, activePage);
                       }
+                      editor.on("load", () => {
+                        if (activePage) syncCanvasPage(editor, activePage);
+                        refreshLayersFromEditor(editor);
+                      });
+                      editor.on("canvas:load", () => {
+                        if (activePage) syncCanvasPage(editor, activePage);
+                        refreshLayersFromEditor(editor);
+                      });
                       editor.on("component:update", () => {
                         setHasUnsavedChanges(true);
                       });
