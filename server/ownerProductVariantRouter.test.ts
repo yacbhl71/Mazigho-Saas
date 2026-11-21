@@ -61,8 +61,8 @@ vi.mock("./db", () => ({
   createStorefrontThemeSnapshot: vi.fn(async () => undefined),
   setStoreSettingValue: vi.fn(async () => undefined),
   updateDesignProfile: vi.fn(async (input) => input),
-  getStorefrontThemeAccess: vi.fn(async () => ({ themeIds: ["coffee", "marketExpress", "gallerySignature", "studioFlux", "glamourNoir"], source: "selected" })),
-  isStorefrontThemeAllowedForStore: vi.fn(async (_storeId, themeId) => ["coffee", "marketExpress", "gallerySignature", "studioFlux", "glamourNoir"].includes(themeId)),
+  getStorefrontThemeAccess: vi.fn(async () => ({ themeIds: ["coffee", "marketExpress", "mazighoShop", "gallerySignature", "studioFlux", "glamourNoir"], source: "selected" })),
+  isStorefrontThemeAllowedForStore: vi.fn(async (_storeId, themeId) => ["coffee", "marketExpress", "mazighoShop", "gallerySignature", "studioFlux", "glamourNoir"].includes(themeId)),
   applyStorefrontThemeCategoryImages: vi.fn(async () => ({ updatedCategoryIds: [31, 32, 33] })),
   importOwnerCatalogueProducts: vi.fn(async () => ({ imported: 2, updated: 1 })),
   createProduct: vi.fn(async () => ({ id: 108 })),
@@ -295,6 +295,30 @@ describe("owner product variant routes", () => {
       "https://files.manuscdn.com/user_upload_by_module/session_file/310519663209309444/WaMbgzmrIlHmcPBr.webp",
       "https://files.manuscdn.com/user_upload_by_module/session_file/310519663209309444/cnAowZRkPshafOHJ.webp",
       "https://files.manuscdn.com/user_upload_by_module/session_file/310519663209309444/MXImLWcePpQzSEtj.webp",
+    ]));
+  });
+
+  it("applies MAZIGOSHOP with the original orange multi-universe storefront content", async () => {
+    state.membership = { role: "owner", status: "active" };
+
+    await expect(callerFor().owner.applyStorefrontTheme({ themeId: "mazighoShop" })).resolves.toMatchObject({
+      themeId: "mazighoShop",
+      heroApplied: true,
+      categoryImageCount: 3,
+    });
+    expect(db.updateDesignProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      brandName: "MAZIGOSHOP",
+      headerLayout: "market",
+      customPrimary: "#1F2329",
+      customAccent: "#F97316",
+      shopPageCopyCustomized: true,
+      newArrivalsTitle: "Les nouveautés MAZIGOSHOP",
+      homeOrder: ["featured", "text:mazighoshop-welcome", "discovery", "text:mazighoshop-service", "story", "editorial", "reassurance", "testimonials"],
+    }), 77);
+    expect(db.applyStorefrontThemeCategoryImages).toHaveBeenLastCalledWith(77, expect.arrayContaining([
+      "/assets/themes/mazighoshop/high-tech-card.webp",
+      "/assets/themes/mazighoshop/home-card.webp",
+      "/assets/themes/mazighoshop/beauty-card.webp",
     ]));
   });
 
