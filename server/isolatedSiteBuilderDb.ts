@@ -58,6 +58,28 @@ export interface IndependentSiteProjectDto {
   updatedAt: string;
 }
 
+function filterPublicPagesAndNavigation(
+  pages: IndependentSitePage[],
+  navigation: IndependentSiteMenuItem[]
+): { pages: IndependentSitePage[]; navigation: IndependentSiteMenuItem[] } {
+  const publicPages = pages.filter((page) => page.visibility === "public");
+  const publicPageIds = new Set(publicPages.map((page) => page.id));
+
+  const filterItems = (items: IndependentSiteMenuItem[]): IndependentSiteMenuItem[] =>
+    items.flatMap((item) => {
+      if (item.pageId && !publicPageIds.has(item.pageId)) return [];
+      const children = item.children ? filterItems(item.children) : undefined;
+      return [
+        {
+          ...item,
+          ...(children && children.length > 0 ? { children } : { children: undefined }),
+        },
+      ];
+    });
+
+  return { pages: publicPages, navigation: filterItems(navigation) };
+}
+
 export interface IndependentSiteVersionDto {
   id: number;
   siteId: number;
@@ -249,6 +271,10 @@ export async function getPublicIndependentSiteBySlug(
     project.ownerUserId === options.allowDraftForOwnerUserId;
 
   if (project.status === "published" && project.publishedSnapshot) {
+    const publicContent = filterPublicPagesAndNavigation(
+      project.publishedSnapshot.pages,
+      project.publishedSnapshot.navigation
+    );
     return {
       id: project.id,
       slug: project.slug,
@@ -256,8 +282,8 @@ export async function getPublicIndependentSiteBySlug(
       siteType: project.publishedSnapshot.siteType,
       status: project.status,
       theme: project.publishedSnapshot.theme,
-      navigation: project.publishedSnapshot.navigation,
-      pages: project.publishedSnapshot.pages,
+      navigation: publicContent.navigation,
+      pages: publicContent.pages,
       publishedAt: project.publishedAt,
     };
   }

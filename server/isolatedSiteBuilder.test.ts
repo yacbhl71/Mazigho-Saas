@@ -520,7 +520,13 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
 
     const publicAfter = await getPublicIndependentSiteBySlug(demo.slug);
     expect(publicAfter?.title).toBe("Association familiale ATH VAHLOUL");
-    expect(publicAfter?.pages).toHaveLength(7);
+    expect(publicAfter?.pages).toHaveLength(5);
+    expect(publicAfter?.pages.every((page) => page.visibility === "public")).toBe(true);
+    expect(publicAfter?.pages.map((page) => page.id)).not.toEqual(
+      expect.arrayContaining(["page-annonces", "page-assemblees"])
+    );
+    expect(JSON.stringify(publicAfter?.navigation)).not.toContain("page-annonces");
+    expect(JSON.stringify(publicAfter?.navigation)).not.toContain("page-assemblees");
 
     // Archivage
     const archived = await updateIndependentSiteStatus(ownerId, demo.id, "archived");
