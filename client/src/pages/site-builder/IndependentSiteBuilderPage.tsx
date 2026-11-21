@@ -9,10 +9,12 @@ import {
   DEFAULT_IMAGE_TRANSFORMS,
   INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
+  INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
   INDEPENDENT_MODULE_CATEGORIES,
   INDEPENDENT_PAGE_SOCLES,
+  INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
@@ -21,26 +23,36 @@ import {
   VISUAL_CARD_USE_CASE_PRESETS,
   addCardToVisualCardGrid,
   applyVisualCardUseCasePreset,
+  buildEditorPreviewUrl,
   buildImageTransformCss,
+  buildLocalSafetyStorageKey,
   buildNavigationFromPages,
   buildPageSeoPreview,
+  computeIndependentProjectWorkflowState,
   createDefaultVisualCardItem,
+  createLocalSafetySnapshot,
   duplicateCardInVisualCardGrid,
+  ensureNonEmptyIndependentPages,
   extractImagesFromPageHtml,
   filterIndependentBlocks,
   filterIndependentModules,
   filterIndependentSocles,
   filterIndependentTemplates,
+  formatIndependentBuilderErrorMessage,
   normalizeIndependentPageSlug,
+  parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
   setVisualCardGridTextPlacement,
+  shouldOfferLocalSafetyRestore,
   updateCardInVisualCardGrid,
   updateImageAltInPageHtml,
   type IndependentBuilderLibraryTab,
+  type IndependentBuilderLocalSafetySnapshot,
   type IndependentImageTransforms,
+  type IndependentProjectMode,
   type IndependentSitePage,
   type IndependentSiteReusableBlock,
   type IndependentSiteStatus,
@@ -71,6 +83,7 @@ import {
   FlipVertical,
   FolderKanban,
   Globe,
+  HelpCircle,
   History,
   ImagePlus,
   Laptop,
@@ -79,8 +92,10 @@ import {
   Lock,
   Move,
   Palette,
+  Pencil,
   Plus,
   Redo2,
+  RefreshCw,
   RotateCw,
   Save,
   Search,
@@ -184,9 +199,12 @@ const LIBRARY_TAB_META: Record<
 export default function IndependentSiteBuilderPage() {
   const utils = trpc.useUtils();
   const editorRef = useRef<Editor | null>(null);
+  const saveInFlightRef = useRef<boolean>(false);
+  const requestedPageSlugRef = useRef<string | null>(null);
 
-  // Affichage repliable de l’espace "Mes sites & projets" pour garder un constructeur aéré
+  // Affichage repliable de l’espace "Mes sites & projets" et du guide d’aide utilisateur
   const [showProjectsDrawer, setShowProjectsDrawer] = useState<boolean>(false);
+  const [showHelpGuideDrawer, setShowHelpGuideDrawer] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<IndependentSiteStatus | "all">("all");
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
 
@@ -213,6 +231,8 @@ export default function IndependentSiteBuilderPage() {
   const [pendingConfirmAction, setPendingConfirmAction] = useState<PendingConfirmAction | null>(
     null
   );
+  const [pendingSafetySnapshot, setPendingSafetySnapshot] =
+    useState<IndependentBuilderLocalSafetySnapshot | null>(null);
 
   // Formulaire de création d’un nouveau site indépendant
   const [newSiteTitle, setNewSiteTitle] = useState("Association familiale ATH VAHLOUL");
@@ -223,6 +243,7 @@ export default function IndependentSiteBuilderPage() {
   const [siteTitle, setSiteTitle] = useState("Association familiale ATH VAHLOUL");
   const [siteSlug, setSiteSlug] = useState("association-familiale-ath-vahloul");
   const [siteType, setSiteType] = useState<IndependentSiteType>("familial");
+  const [projectMode, setProjectMode] = useState<IndependentProjectMode>("site_vitrine");
   const [siteStatus, setSiteStatus] = useState<IndependentSiteStatus>("draft");
   const [pages, setPages] = useState<IndependentSitePage[]>(() =>
     JSON.parse(JSON.stringify(INDEPENDENT_SITE_TEMPLATES[0].pages))
@@ -289,9 +310,21 @@ export default function IndependentSiteBuilderPage() {
   const [versionLabelInput, setVersionLabelInput] = useState("");
   const [reusableBlockNameInput, setReusableBlockNameInput] = useState("");
 
-  // Avertissement navigateur si l'utilisateur quitte avec des modifications non enregistrées
+  // Restauration du contexte de projet et de page lors du retour depuis la prévisualisation (?siteId=&page=)
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (typeof window === "undefined") return;
+    const parsed = parseBuilderQueryParams(window.location.search);
+    if (parsed.siteId) {
+      setSelectedSiteId(parsed.siteId);
+    }
+    if (parsed.pageSlug) {
+      requestedPageSlugRef.current = parsed.pageSlug;
+    }
+  }, []);
+
+  // Avertissement navigateur si l'utilisateur quitte avec des modifications non enregistrées ou pendant une sauvegarde
+  useEffect(() => {
+    if (!hasUnsavedChanges && !saveInFlightRef.current) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
@@ -299,6 +332,61 @@ export default function IndependentSiteBuilderPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  // Filet de sécurité local temporaire (uniquement lorsqu'il y a des modifications non enregistrées)
+  useEffect(() => {
+    if (!hasUnsavedChanges || typeof window === "undefined") return;
+    try {
+      const storageKey = buildLocalSafetyStorageKey(selectedSiteId, siteSlug);
+      const snapshot = createLocalSafetySnapshot({
+        siteId: selectedSiteId,
+        slug: siteSlug,
+        title: siteTitle,
+        siteType,
+        projectMode,
+        pages,
+        reusableBlocks,
+        activePageId,
+      });
+      window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
+    } catch {
+      // Ignorer silencieusement si localStorage est indisponible ou contient un secret rejeté
+    }
+  }, [
+    hasUnsavedChanges,
+    selectedSiteId,
+    siteSlug,
+    siteTitle,
+    siteType,
+    projectMode,
+    pages,
+    reusableBlocks,
+    activePageId,
+  ]);
+
+  function clearLocalSafetySnapshotForProject(siteId: number | null, slug?: string) {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(buildLocalSafetyStorageKey(siteId, slug));
+    } catch {
+      // Ignorer si localStorage est restreint
+    }
+    setPendingSafetySnapshot(null);
+  }
+
+  function readLocalSafetySnapshotForProject(
+    siteId: number | null,
+    slug?: string
+  ): IndependentBuilderLocalSafetySnapshot | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(buildLocalSafetyStorageKey(siteId, slug));
+      if (!raw) return null;
+      return JSON.parse(raw) as IndependentBuilderLocalSafetySnapshot;
+    } catch {
+      return null;
+    }
+  }
 
   // Filtrage déterministe des 7 espaces de la bibliothèque
   const filteredBlocks = useMemo(
@@ -374,16 +462,29 @@ export default function IndependentSiteBuilderPage() {
 
   const createProjectMutation = trpc.independentSiteBuilder.createProject.useMutation({
     onSuccess: async (created) => {
+      saveInFlightRef.current = false;
       await utils.independentSiteBuilder.listProjects.invalidate();
+      clearLocalSafetySnapshotForProject(null, siteSlug);
+      clearLocalSafetySnapshotForProject(created.id, created.slug);
       setSelectedSiteId(created.id);
       loadProjectIntoWorkspace(created);
       setHasUnsavedChanges(false);
-      setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setLastSavedAt(
+        new Date().toLocaleString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
       setErrorBanner(null);
-      setStatusBanner(`Site « ${created.title} » créé et enregistré dans votre espace.`);
+      setStatusBanner(`Site « ${created.title} » créé et sauvegardé dans votre espace.`);
     },
     onError: (err) => {
-      setErrorBanner(err.message || "Impossible de créer le site.");
+      saveInFlightRef.current = false;
+      setErrorBanner(formatIndependentBuilderErrorMessage(err));
     },
   });
 
@@ -393,28 +494,50 @@ export default function IndependentSiteBuilderPage() {
       setSelectedSiteId(demo.id);
       loadProjectIntoWorkspace(demo);
       setHasUnsavedChanges(false);
+      setLastSavedAt(
+        new Date(demo.updatedAt).toLocaleString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
       setErrorBanner(null);
       setStatusBanner(
         "Modèle complet « Association familiale ATH VAHLOUL » chargé avec ses 6 pages associatives et familiales (100 % sans boutique)."
       );
     },
     onError: (err) => {
-      setErrorBanner(err.message || "Impossible de charger le modèle de démonstration.");
+      setErrorBanner(formatIndependentBuilderErrorMessage(err));
     },
   });
 
   const saveProjectMutation = trpc.independentSiteBuilder.saveProject.useMutation({
     onSuccess: async (saved) => {
+      saveInFlightRef.current = false;
       await utils.independentSiteBuilder.listProjects.invalidate();
       await utils.independentSiteBuilder.listVersions.invalidate({ siteId: saved.id });
+      clearLocalSafetySnapshotForProject(saved.id, saved.slug);
       setSiteStatus(saved.status);
       setHasUnsavedChanges(false);
-      setLastSavedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      const formattedNow = new Date().toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      setLastSavedAt(formattedNow);
       setErrorBanner(null);
-      setStatusBanner(`Modifications enregistrées avec succès pour « ${saved.title} ».`);
+      setStatusBanner(
+        `Sauvegarde confirmée (${formattedNow}) : toutes les modifications de « ${saved.title} » sont enregistrées.`
+      );
     },
     onError: (err) => {
-      setErrorBanner(err.message || "Échec de l’enregistrement du brouillon.");
+      saveInFlightRef.current = false;
+      setErrorBanner(formatIndependentBuilderErrorMessage(err));
     },
   });
 
@@ -569,22 +692,95 @@ export default function IndependentSiteBuilderPage() {
     status: IndependentSiteStatus;
     pages: IndependentSitePage[];
     reusableBlocks: IndependentSiteReusableBlock[];
+    updatedAt?: string | null;
   }) {
     setSiteTitle(project.title);
     setSiteSlug(project.slug);
     setSiteType(project.siteType);
     setSiteStatus(project.status);
-    const nextPages = project.pages.length
-      ? project.pages
-      : JSON.parse(JSON.stringify(INDEPENDENT_SITE_TEMPLATES[0].pages));
+    const nextPages = ensureNonEmptyIndependentPages(project.pages, project.title);
     setPages(nextPages);
-    setActivePageId(nextPages[0].id);
+    const requestedSlug = requestedPageSlugRef.current;
+    const matchedRequestedPage = requestedSlug
+      ? nextPages.find((p) => p.slug === requestedSlug)
+      : null;
+    const targetPage = matchedRequestedPage ?? nextPages[0];
+    setActivePageId(targetPage.id);
+    requestedPageSlugRef.current = null;
     setReusableBlocks(project.reusableBlocks || []);
-    if (editorRef.current && nextPages[0]) {
-      editorRef.current.setComponents(nextPages[0].html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${nextPages[0].css}`);
+    if (project.updatedAt) {
+      setLastSavedAt(
+        new Date(project.updatedAt).toLocaleString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
+    }
+    if (editorRef.current && targetPage) {
+      editorRef.current.setComponents(targetPage.html);
+      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${targetPage.css}`);
       refreshLayersFromEditor(editorRef.current);
     }
+
+    // Vérifier s'il existe un filet de sécurité local non sauvegardé pour ce projet
+    // (ne jamais remplacer automatiquement ni silencieusement un projet sauvegardé)
+    const candidateSafety = readLocalSafetySnapshotForProject(project.id, project.slug);
+    if (shouldOfferLocalSafetyRestore(candidateSafety, project)) {
+      setPendingSafetySnapshot(candidateSafety);
+    } else {
+      setPendingSafetySnapshot(null);
+    }
+  }
+
+  function requestRestoreLocalSafetySnapshot() {
+    if (!pendingSafetySnapshot) return;
+    const snap = pendingSafetySnapshot;
+    setPendingConfirmAction({
+      title: `Restaurer le brouillon local de secours pour « ${snap.title} » ?`,
+      description: `Ce filet de sécurité local a été enregistré le ${new Date(snap.savedAtIso).toLocaleString("fr-FR")} (${snap.pages.length} page(s)). Il remplacera l’état affiché dans l’éditeur sans écraser votre sauvegarde serveur tant que vous ne cliquez pas sur « Enregistrer ».`,
+      confirmLabel: "Restaurer ce brouillon local",
+      variant: "primary",
+      onConfirm: () => {
+        const restoredPages = ensureNonEmptyIndependentPages(snap.pages, snap.title);
+        setSiteTitle(snap.title);
+        setSiteType(snap.siteType);
+        setProjectMode(snap.projectMode);
+        setPages(restoredPages);
+        const restoredActive =
+          restoredPages.find((p) => p.id === snap.activePageId) ?? restoredPages[0];
+        setActivePageId(restoredActive.id);
+        setReusableBlocks(snap.reusableBlocks || []);
+        setHasUnsavedChanges(true);
+        setPendingSafetySnapshot(null);
+        if (editorRef.current && restoredActive) {
+          editorRef.current.setComponents(restoredActive.html);
+          editorRef.current.setStyle(
+            `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${restoredActive.css}`
+          );
+          refreshLayersFromEditor(editorRef.current);
+        }
+        setStatusBanner(
+          `Filet de sécurité local restauré pour « ${snap.title} ». Vérifiez vos pages puis cliquez sur « Enregistrer » pour valider.`
+        );
+      },
+    });
+  }
+
+  function requestSwitchProjectWithGuard(actionLabel: string, onProceed: () => void) {
+    if (!hasUnsavedChanges) {
+      onProceed();
+      return;
+    }
+    setPendingConfirmAction({
+      title: "Des modifications non enregistrées sont en cours",
+      description: `Vous avez des modifications non sauvegardées sur « ${siteTitle} ». Voulez-vous vraiment ${actionLabel} sans enregistrer d’abord ?`,
+      confirmLabel: "Continuer sans enregistrer",
+      variant: "danger",
+      onConfirm: onProceed,
+    });
   }
 
   useEffect(() => {
@@ -912,7 +1108,22 @@ export default function IndependentSiteBuilderPage() {
   }
 
   function handleSaveCurrentProject(versionLabel?: string) {
-    const syncedPages = syncCurrentEditorToPageState();
+    // Prévention synchrone contre les doubles clics sur Sauvegarder
+    if (
+      saveInFlightRef.current ||
+      saveProjectMutation.isPending ||
+      createProjectMutation.isPending ||
+      publishSiteMutation.isPending
+    ) {
+      return;
+    }
+    saveInFlightRef.current = true;
+    setErrorBanner(null);
+
+    const syncedPages = ensureNonEmptyIndependentPages(
+      syncCurrentEditorToPageState(),
+      siteTitle
+    );
     const nav = buildNavigationFromPages(syncedPages);
     if (!selectedSiteId) {
       createProjectMutation.mutate({
@@ -945,7 +1156,10 @@ export default function IndependentSiteBuilderPage() {
           handleSaveCurrentProject("Avant publication");
           return;
         }
-        const syncedPages = syncCurrentEditorToPageState();
+        const syncedPages = ensureNonEmptyIndependentPages(
+          syncCurrentEditorToPageState(),
+          siteTitle
+        );
         const nav = buildNavigationFromPages(syncedPages);
         saveProjectMutation.mutate(
           {
@@ -989,12 +1203,48 @@ export default function IndependentSiteBuilderPage() {
     createProjectMutation.isPending ||
     publishSiteMutation.isPending;
 
+  const workflowSummary = useMemo(
+    () =>
+      computeIndependentProjectWorkflowState({
+        projectId: selectedSiteId,
+        title: siteTitle,
+        siteType,
+        projectMode,
+        status: siteStatus,
+        hasUnsavedChanges,
+        isSaving: isBusySaving,
+        lastSavedAt,
+        saveError: errorBanner,
+      }),
+    [
+      selectedSiteId,
+      siteTitle,
+      siteType,
+      projectMode,
+      siteStatus,
+      hasUnsavedChanges,
+      isBusySaving,
+      lastSavedAt,
+      errorBanner,
+    ]
+  );
+
+  const privatePreviewHref = useMemo(
+    () =>
+      buildEditorPreviewUrl({
+        slug: siteSlug || "association-familiale-ath-vahloul",
+        siteId: selectedSiteId,
+        pageSlug: activePage?.slug || "/",
+      }),
+    [siteSlug, selectedSiteId, activePage?.slug]
+  );
+
   return (
     <div className="min-h-screen bg-[#f6f3ee] text-[#172033]">
       {/* EN-TÊTE PRINCIPAL DU PRODUIT INDÉPENDANT */}
       <header className="sticky top-0 z-40 border-b border-[#e2dad0] bg-white/95 px-4 py-3 shadow-2xs backdrop-blur md:px-6">
         <div className="mx-auto flex max-w-[1640px] flex-wrap items-center justify-between gap-3">
-          {/* Identité & Statut clair du site */}
+          {/* 1. État clair du projet : Nom, Type (Site vitrine / Boutique hybride), Statut (Brouillon / Sauvegardé / Publié), Date de dernière sauvegarde, Indicateur de modifications non enregistrées */}
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#172033] text-white shadow-2xs">
               <Globe className="h-5 w-5 text-[#f5b98f]" />
@@ -1005,47 +1255,74 @@ export default function IndependentSiteBuilderPage() {
                   Constructeur de Sites Internet Indépendant
                 </h1>
                 <Badge className="bg-emerald-100 text-emerald-950 hover:bg-emerald-100">
-                  100 % indépendant · Sans boutique
+                  Séparé de Studio MAZIGHO
                 </Badge>
+
+                {/* Sélecteur / Badge du Type de projet : Site vitrine ou Boutique hybride */}
+                <div className="inline-flex items-center gap-1 rounded-lg border border-[#e2dad0] bg-[#faf8f5] px-2 py-0.5 text-xs">
+                  <span className="font-semibold text-slate-600">Type :</span>
+                  <select
+                    aria-label="Type de projet (Site vitrine ou Boutique hybride)"
+                    value={projectMode}
+                    onChange={(e) => {
+                      setProjectMode(e.target.value as IndependentProjectMode);
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="bg-transparent font-bold text-[#172033] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                  >
+                    {INDEPENDENT_PROJECT_MODE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Badge de statut clair : Brouillon / Sauvegardé / Publié / Archivé */}
                 <Badge
                   variant="outline"
                   className={
-                    siteStatus === "published"
+                    workflowSummary.workflowStatus === "publie"
                       ? "border-emerald-400 bg-emerald-50 font-semibold text-emerald-900"
-                      : siteStatus === "archived"
-                        ? "border-slate-300 bg-slate-100 text-slate-700"
-                        : "border-amber-400 bg-amber-50 font-semibold text-amber-950"
+                      : workflowSummary.workflowStatus === "sauvegarde"
+                        ? "border-sky-400 bg-sky-50 font-semibold text-sky-900"
+                        : workflowSummary.workflowStatus === "archive"
+                          ? "border-slate-300 bg-slate-100 text-slate-700"
+                          : "border-amber-400 bg-amber-50 font-semibold text-amber-950"
                   }
                 >
-                  Statut :{" "}
-                  {siteStatus === "published"
-                    ? "Publié"
-                    : siteStatus === "archived"
-                      ? "Archivé"
-                      : "Brouillon"}
+                  Statut : {workflowSummary.workflowStatusLabel}
                 </Badge>
-                {hasUnsavedChanges ? (
+
+                {/* Indicateur explicite des modifications non enregistrées & date de dernière sauvegarde */}
+                {workflowSummary.hasUnsavedChanges ? (
                   <Badge
                     variant="outline"
-                    className="border-amber-400 bg-amber-50/90 text-[11px] font-medium text-amber-900"
+                    className="border-amber-400 bg-amber-50/90 text-[11px] font-semibold text-amber-900"
                   >
-                    ● Modifications non enregistrées
+                    ● {workflowSummary.unsavedIndicatorLabel}
                   </Badge>
                 ) : (
-                  <span className="text-[11px] text-slate-500">
-                    {lastSavedAt ? `Enregistré à ${lastSavedAt}` : "Prêt à éditer"}
-                  </span>
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-300 bg-emerald-50/60 text-[11px] font-medium text-emerald-900"
+                  >
+                    ✓ {workflowSummary.unsavedIndicatorLabel}
+                  </Badge>
                 )}
               </div>
-              <p className="text-xs text-slate-600">
-                Projet actif : <strong className="text-[#172033]">{siteTitle}</strong> · Page :{" "}
-                <strong className="text-[#9b563e]">{activePage?.title}</strong> (
+
+              <p className="mt-0.5 text-xs text-slate-600">
+                Projet : <strong className="text-[#172033]">{workflowSummary.projectTitle}</strong>{" "}
+                ({workflowSummary.projectModeLabel}) · {workflowSummary.statusDetailLabel} ·{" "}
+                <span className="text-slate-500">{workflowSummary.lastSavedLabel}</span> · Page
+                active : <strong className="text-[#9b563e]">{activePage?.title}</strong> (
                 <code>{activePage?.slug}</code>)
               </p>
             </div>
           </div>
 
-          {/* Contrôles Responsive + Undo/Redo + Actions principales (Prévisualiser, Enregistrer, Publier) */}
+          {/* Contrôles Responsive + Undo/Redo + Parcours distinct : 1. Modifier | 2. Prévisualiser | 3. Sauvegarder | 4. Publier */}
           <div className="flex flex-wrap items-center gap-2">
             <div
               role="group"
@@ -1055,6 +1332,7 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("desktop")}
+                aria-pressed={viewport === "desktop"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                   viewport === "desktop"
                     ? "bg-[#172033] text-white shadow-2xs"
@@ -1067,6 +1345,7 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("tablet")}
+                aria-pressed={viewport === "tablet"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                   viewport === "tablet"
                     ? "bg-[#172033] text-white shadow-2xs"
@@ -1079,6 +1358,7 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("mobile")}
+                aria-pressed={viewport === "mobile"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                   viewport === "mobile"
                     ? "bg-[#172033] text-white shadow-2xs"
@@ -1130,41 +1410,73 @@ export default function IndependentSiteBuilderPage() {
               </Button>
             </div>
 
-            <Link
-              href={`/constructeur-sites/apercu/${siteSlug || "association-familiale-ath-vahloul"}`}
+            {/* Étape 1 : Modifier (mode actif dans l'éditeur) */}
+            <span
+              title="Vous êtes actuellement dans l’éditeur visuel"
+              className="hidden items-center gap-1 rounded-md border border-[#172033]/20 bg-[#172033]/5 px-2.5 py-1 text-xs font-bold text-[#172033] md:inline-flex"
             >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 border-[#e2dad0] bg-white text-xs font-semibold text-[#172033] hover:bg-[#faf8f5] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
-              >
-                <Eye className="mr-1.5 h-3.5 w-3.5 text-[#9b563e]" />
-                Prévisualiser
-              </Button>
-            </Link>
+              <Pencil className="h-3.5 w-3.5 text-[#9b563e]" />
+              1. Modifier (actif)
+            </span>
 
+            {/* Action Sauvegarder avec prévention des doubles clics */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => handleSaveCurrentProject()}
-              disabled={isBusySaving}
+              disabled={isBusySaving || !workflowSummary.canTriggerSave}
+              title={INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.sauvegarder.description}
               className="h-8 border-[#9b563e] bg-[#faf8f5] text-xs font-semibold text-[#9b563e] hover:bg-[#f3ece2] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
               <Save className="mr-1.5 h-3.5 w-3.5" />
-              {saveProjectMutation.isPending ? "Enregistrement…" : "Enregistrer"}
+              {saveProjectMutation.isPending || createProjectMutation.isPending
+                ? "Sauvegarde en cours…"
+                : "Sauvegarder"}
             </Button>
 
+            {/* Étape 2 : Prévisualiser (Aperçu privé distinct de la publication) */}
+            <Link href={privatePreviewHref}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title={INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.previsualiser.description}
+                className="h-8 border-[#e2dad0] bg-white text-xs font-semibold text-[#172033] hover:bg-[#faf8f5] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+              >
+                <Eye className="mr-1.5 h-3.5 w-3.5 text-[#9b563e]" />
+                2. Prévisualiser (Privé)
+              </Button>
+            </Link>
+
+            {/* Étape 3 : Publier en ligne */}
             <Button
               type="button"
               size="sm"
+              title={INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.publier.description}
               className="h-8 bg-[#172033] text-xs font-semibold text-white hover:bg-[#24324f] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
               onClick={requestPublishCurrentSite}
               disabled={isBusySaving}
             >
               <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
-              {publishSiteMutation.isPending ? "Publication…" : "Publier"}
+              {publishSiteMutation.isPending ? "Publication…" : "3. Publier"}
+            </Button>
+
+            {/* Bouton Aide contextuelle non intrusive */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHelpGuideDrawer((prev) => !prev)}
+              aria-expanded={showHelpGuideDrawer}
+              className={`h-8 text-xs font-semibold focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                showHelpGuideDrawer
+                  ? "border-[#172033] bg-[#172033] text-white"
+                  : "border-[#e2dad0] bg-white text-[#172033] hover:bg-[#faf8f5]"
+              }`}
+            >
+              <HelpCircle className="mr-1 h-3.5 w-3.5 text-[#9b563e]" />
+              Aide & Repères
             </Button>
           </div>
         </div>
@@ -1181,7 +1493,7 @@ export default function IndependentSiteBuilderPage() {
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#e2dad0] bg-[#faf8f5] px-2.5 py-1 text-xs font-semibold text-[#172033] transition hover:border-[#9b563e] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
               <Plus className="h-3.5 w-3.5 text-[#9b563e]" />
-              Créer un site
+              Créer un site / Mes sites
               {showProjectsDrawer ? (
                 <ChevronUp className="h-3 w-3 text-slate-500" />
               ) : (
@@ -1255,7 +1567,11 @@ export default function IndependentSiteBuilderPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => ensureAthVahloulMutation.mutate()}
+              onClick={() =>
+                requestSwitchProjectWithGuard("charger la démonstration ATH VAHLOUL", () =>
+                  ensureAthVahloulMutation.mutate()
+                )
+              }
               disabled={ensureAthVahloulMutation.isPending}
               className="h-7 border-amber-300 bg-amber-50/90 text-xs font-semibold text-amber-950 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
@@ -1265,10 +1581,23 @@ export default function IndependentSiteBuilderPage() {
           </div>
         </div>
 
-        {/* Bandeau de confirmation / statut */}
+        {/* Message visible pendant la sauvegarde */}
+        {workflowSummary.savingInProgressMessage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mx-auto mt-2 flex max-w-[1640px] items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-950"
+          >
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-sky-700 motion-reduce:animate-none" />
+            <span>{workflowSummary.savingInProgressMessage}</span>
+          </div>
+        )}
+
+        {/* Bandeau de confirmation claire après sauvegarde / statut */}
         {statusBanner && (
           <div
             role="status"
+            aria-live="polite"
             className="mx-auto mt-2 flex max-w-[1640px] items-center justify-between rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950"
           >
             <span className="flex items-center gap-2">
@@ -1285,27 +1614,87 @@ export default function IndependentSiteBuilderPage() {
           </div>
         )}
 
-        {/* Bandeau d'erreur explicite */}
+        {/* Bandeau d'erreur compréhensible en cas d'échec avec bouton Réessayer */}
         {errorBanner && (
           <div
             role="alert"
-            className="mx-auto mt-2 flex max-w-[1640px] items-center justify-between rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-950"
+            className="mx-auto mt-2 flex max-w-[1640px] flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-950"
           >
             <span className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-rose-700" />
               {errorBanner}
             </span>
-            <button
-              type="button"
-              onClick={() => setErrorBanner(null)}
-              className="ml-4 font-semibold text-rose-800 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-700"
-            >
-              Fermer
-            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isBusySaving}
+                onClick={() => handleSaveCurrentProject()}
+                className="h-7 border-rose-400 bg-white text-xs font-semibold text-rose-900 hover:bg-rose-100"
+              >
+                <RefreshCw className="mr-1 h-3 w-3" />
+                Réessayer la sauvegarde
+              </Button>
+              <button
+                type="button"
+                onClick={() => setErrorBanner(null)}
+                className="font-semibold text-rose-800 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-700"
+              >
+                Fermer
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Dialogue de confirmation inline avant toute action destructive ou publication */}
+        {/* Bannière de restauration explicite et contrôlée du filet de sécurité local (jamais silencieuse) */}
+        {pendingSafetySnapshot && (
+          <div
+            role="region"
+            aria-label="Récupération contrôlée d'un brouillon local"
+            className="mx-auto mt-2.5 flex max-w-[1640px] flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400 bg-amber-50/95 p-3 text-xs text-amber-950"
+          >
+            <div>
+              <p className="font-bold text-[#172033]">
+                Filet de sécurité local détecté pour « {pendingSafetySnapshot.title} »
+              </p>
+              <p className="mt-0.5 text-slate-700">
+                Un état local non enregistré datant du{" "}
+                <strong>
+                  {new Date(pendingSafetySnapshot.savedAtIso).toLocaleString("fr-FR")}
+                </strong>{" "}
+                ({pendingSafetySnapshot.pages.length} page(s)) a été conservé temporairement. Votre
+                projet sauvegardé n’a pas été modifié automatiquement.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-slate-300 bg-white text-xs"
+                onClick={() =>
+                  clearLocalSafetySnapshotForProject(
+                    pendingSafetySnapshot.siteId,
+                    pendingSafetySnapshot.slug
+                  )
+                }
+              >
+                Ignorer et garder la version sauvegardée
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
+                onClick={requestRestoreLocalSafetySnapshot}
+              >
+                Restaurer ce brouillon local (avec confirmation)
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Dialogue de confirmation inline avant toute action destructive, restauration ou publication */}
         {pendingConfirmAction && (
           <div
             role="alertdialog"
@@ -1353,6 +1742,106 @@ export default function IndependentSiteBuilderPage() {
       </header>
 
       <div className="mx-auto max-w-[1640px] space-y-5 p-4 md:p-5">
+        {/* AIDE UTILISATEUR CONTEXTUELLE NON INTRUSIVE (5 repères clairs en français simple) */}
+        {showHelpGuideDrawer && (
+          <Card className="border-[#d9c3b0] bg-[#faf5ef] shadow-xs">
+            <CardHeader className="pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-sm font-bold text-[#172033]">
+                    <HelpCircle className="h-4 w-4 text-[#9b563e]" />
+                    Guide rapide & Repères du Constructeur Indépendant
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-700">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.separationNotice}
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowHelpGuideDrawer(false)}
+                  className="h-7 border-[#e2dad0] bg-white text-xs"
+                >
+                  Masquer l’aide
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs">
+              {/* 1. Différence entre un Bloc, un Module, un Socle et un Modèle */}
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#9b563e]">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.bloc.title}
+                  </strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.bloc.description}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#9b563e]">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.module.title}
+                  </strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.module.description}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-teal-800">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.socle.title}
+                  </strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.socle.description}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#172033]">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.modele.title}
+                  </strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.libraryRoles.modele.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Différence entre Sauvegarder, Prévisualiser et Publier + Modes Site vitrine / Boutique hybride */}
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#172033]">
+                    Sauvegarder vs Prévisualiser vs Publier
+                  </strong>
+                  <ul className="mt-1 space-y-1 text-slate-600">
+                    <li>
+                      • <strong>Sauvegarder</strong> :{" "}
+                      {INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.sauvegarder.description}
+                    </li>
+                    <li>
+                      • <strong>Prévisualiser</strong> :{" "}
+                      {INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.previsualiser.description}
+                    </li>
+                    <li>
+                      • <strong>Publier</strong> :{" "}
+                      {INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.publier.description}
+                    </li>
+                  </ul>
+                </div>
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#172033]">Mode « Site vitrine »</strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.projectModes.site_vitrine}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[#e2dad0] bg-white p-3">
+                  <strong className="text-[#172033]">Mode « Boutique hybride »</strong>
+                  <p className="mt-1 text-slate-600">
+                    {INDEPENDENT_BUILDER_HELP_GUIDES.projectModes.boutique_hybride}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* TIROIR REPLIABLE : ESPACE PROJETS & CRÉATION D'UN NOUVEAU SITE */}
         {showProjectsDrawer && (
           <Card className="border-[#e2dad0] bg-white shadow-xs">
@@ -1442,11 +1931,13 @@ export default function IndependentSiteBuilderPage() {
                     type="button"
                     className="h-9 flex-1 bg-[#9b563e] text-white hover:bg-[#824631]"
                     onClick={() =>
-                      createProjectMutation.mutate({
-                        title: newSiteTitle,
-                        siteType: newSiteType,
-                        templateId: newSiteTemplateId,
-                      })
+                      requestSwitchProjectWithGuard("créer un nouveau site", () =>
+                        createProjectMutation.mutate({
+                          title: newSiteTitle,
+                          siteType: newSiteType,
+                          templateId: newSiteTemplateId,
+                        })
+                      )
                     }
                     disabled={createProjectMutation.isPending}
                   >
@@ -1498,11 +1989,13 @@ export default function IndependentSiteBuilderPage() {
                           size="sm"
                           variant={selectedSiteId === proj.id ? "default" : "outline"}
                           className="h-7 text-xs"
-                          onClick={() => {
-                            setSelectedSiteId(proj.id);
-                            loadProjectIntoWorkspace(proj);
-                            setHasUnsavedChanges(false);
-                          }}
+                          onClick={() =>
+                            requestSwitchProjectWithGuard(`ouvrir le projet « ${proj.title} »`, () => {
+                              setSelectedSiteId(proj.id);
+                              loadProjectIntoWorkspace(proj);
+                              setHasUnsavedChanges(false);
+                            })
+                          }
                         >
                           Ouvrir
                         </Button>
@@ -1563,26 +2056,35 @@ export default function IndependentSiteBuilderPage() {
                   </Badge>
                 </div>
 
-                {/* Barre de recherche universelle de la bibliothèque */}
-                <label className="relative mt-2.5 block">
-                  <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                {/* Barre de recherche universelle de la bibliothèque avec effacement rapide */}
+                <div className="relative mt-2.5 flex items-center">
+                  <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="search"
                     value={librarySearch}
                     onChange={(event) => setLibrarySearch(event.target.value)}
                     placeholder="Rechercher un bloc, module, socle ou modèle…"
                     aria-label="Rechercher dans la bibliothèque du constructeur"
-                    className="h-8 w-full rounded-lg border border-slate-200 bg-[#faf8f5] pl-8 pr-3 text-xs outline-none transition focus:border-[#9b563e] focus:bg-white focus:ring-2 focus:ring-[#9b563e]/20"
+                    className="h-8 w-full rounded-lg border border-slate-200 bg-[#faf8f5] pl-8 pr-16 text-xs outline-none transition focus:border-[#9b563e] focus:bg-white focus:ring-2 focus:ring-[#9b563e]/20"
                   />
-                </label>
+                  {librarySearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLibrarySearch("")}
+                      className="absolute right-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#9b563e] hover:bg-slate-200/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
 
-                {/* Sélecteur des 7 onglets avec icône, compteur et sous-titre métier */}
+                {/* Sélecteur des 7 onglets avec icône, compteur, sous-titre métier et navigation clavier */}
                 <div
                   role="tablist"
                   aria-label="Espaces de la bibliothèque du constructeur"
                   className="mt-2.5 grid grid-cols-4 gap-1.5 sm:grid-cols-7 xl:grid-cols-4"
                 >
-                  {INDEPENDENT_BUILDER_LIBRARY_TABS.map((tab) => {
+                  {INDEPENDENT_BUILDER_LIBRARY_TABS.map((tab, tabIdx) => {
                     const meta = LIBRARY_TAB_META[tab.id];
                     const Icon = meta.icon;
                     const count =
@@ -1607,6 +2109,24 @@ export default function IndependentSiteBuilderPage() {
                         role="tab"
                         aria-selected={isSelected}
                         onClick={() => setActiveLibraryTab(tab.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowRight") {
+                            e.preventDefault();
+                            const nextTab =
+                              INDEPENDENT_BUILDER_LIBRARY_TABS[
+                                (tabIdx + 1) % INDEPENDENT_BUILDER_LIBRARY_TABS.length
+                              ];
+                            setActiveLibraryTab(nextTab.id);
+                          } else if (e.key === "ArrowLeft") {
+                            e.preventDefault();
+                            const prevTab =
+                              INDEPENDENT_BUILDER_LIBRARY_TABS[
+                                (tabIdx - 1 + INDEPENDENT_BUILDER_LIBRARY_TABS.length) %
+                                  INDEPENDENT_BUILDER_LIBRARY_TABS.length
+                              ];
+                            setActiveLibraryTab(prevTab.id);
+                          }
+                        }}
                         title={tab.description}
                         className={`group rounded-lg px-2 py-2 text-left text-xs font-bold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                           isSelected

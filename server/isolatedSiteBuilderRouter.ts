@@ -2,9 +2,11 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   INDEPENDENT_BUILDER_BLOCKS,
+  INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
   INDEPENDENT_PAGE_SOCLES,
+  INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_SITE_TEMPLATES,
   INDEPENDENT_SITE_TYPE_OPTIONS,
   RESPONSIVE_DEVICE_PRESETS,
@@ -115,6 +117,8 @@ const imageTransformsSchema = z.object({
 export const isolatedSiteBuilderRouter = router({
   getCatalog: publicProcedure.query(() => ({
     siteTypes: INDEPENDENT_SITE_TYPE_OPTIONS,
+    projectModes: INDEPENDENT_PROJECT_MODE_OPTIONS,
+    helpGuides: INDEPENDENT_BUILDER_HELP_GUIDES,
     libraryTabs: INDEPENDENT_BUILDER_LIBRARY_TABS,
     viewports: RESPONSIVE_VIEWPORTS,
     devicePresets: RESPONSIVE_DEVICE_PRESETS,
@@ -125,10 +129,15 @@ export const isolatedSiteBuilderRouter = router({
   })),
 
   getPublicSiteBySlug: publicProcedure
-    .input(z.object({ slug: z.string().min(1).max(120) }))
+    .input(
+      z.object({
+        slug: z.string().min(1).max(120),
+        previewMode: z.boolean().optional(),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const site = await getPublicIndependentSiteBySlug(input.slug, {
-        allowDraftForOwnerUserId: ctx.user?.id,
+        allowDraftForOwnerUserId: input.previewMode !== false ? ctx.user?.id : undefined,
       });
       if (!site) {
         throw new TRPCError({
