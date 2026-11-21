@@ -60,11 +60,13 @@ export default function IndependentSitePublicPreviewPage() {
     { retry: false, refetchOnWindowFocus: false }
   );
 
-  // En mode prévisualisation privée uniquement (/constructeur-sites/apercu/:slug),
-  // si le projet n'a pas encore été sauvegardé en base, on propose un aperçu de brouillon
-  // depuis le modèle correspondant — jamais sur la route publique finale (/sites/:slug).
+  // En mode prévisualisation privée (/constructeur-sites/apercu/:slug),
+  // si le projet n'a pas encore été sauvegardé en base, on propose un aperçu de brouillon.
+  // La seule exception publique est le template ATH VAHLOUL, qui est une démonstration
+  // statique et explicitement identifiée comme telle — aucun brouillon utilisateur n'est exposé.
   const fallbackDemoSite = useMemo(() => {
-    if (!isPreviewRoute) return null;
+    const isAthVahloulDemo = slug === "association-familiale-ath-vahloul";
+    if (!isPreviewRoute && !isAthVahloulDemo) return null;
 
     const matchedTemplate =
       INDEPENDENT_SITE_TEMPLATES.find(
@@ -154,6 +156,8 @@ export default function IndependentSitePublicPreviewPage() {
     slug: site.slug,
     pageSlug: activePage.slug,
   });
+
+  const isPublicAthVahloulDemo = !isPreviewRoute && slug === "association-familiale-ath-vahloul" && !siteQuery.data;
 
   return (
     <div className={isPreviewRoute ? "min-h-screen bg-[#111827] text-slate-100" : "min-h-screen bg-white text-slate-900"}>
@@ -382,6 +386,15 @@ export default function IndependentSitePublicPreviewPage() {
             </div>
           )}
         </header>
+      )}
+
+      {isPublicAthVahloulDemo && (
+        <div
+          role="status"
+          className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-900"
+        >
+          Démonstration ATH VAHLOUL — contenus imaginés à personnaliser avant toute mise en ligne réelle.
+        </div>
       )}
 
       {/* Cadre de rendu responsive */}
