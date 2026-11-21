@@ -971,6 +971,7 @@ export default function IndependentSiteBuilderPage() {
     reusableBlocks: IndependentSiteReusableBlock[];
     updatedAt?: string | null;
   }) {
+    setSelectedSiteId(project.id);
     setSiteTitle(project.title);
     setSiteSlug(project.slug);
     setSiteType(project.siteType);
