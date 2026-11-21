@@ -45,3 +45,11 @@ Ces éléments sont des références de contenu public, pas encore des données 
 Cette branche ne modifie pas `main`, `origin/main`, la production publique, Vercel, Hostinger, le DNS, les paiements, les commandes, les stocks ou les secrets. Aucun import Shopify et aucune reconnexion externe ne sont exécutés dans cette étape.
 
 La prochaine modification de code devra rester limitée à un environnement de test et être précédée d’un jeu de données clairement marqué comme reprise MAZIGOSHOP. La publication du domaine public ne pourra intervenir qu’après validation visuelle, fonctionnelle et commerciale séparée.
+
+## Vérification du storefront historique
+
+Le bundle public de `mazighoshop.com` embarque un client Supabase et référence les tables `products`, `product_variants`, `collections`, `collection_products` et `product_reviews`. Le code public filtre notamment les produits disponibles à la vente et charge leurs variantes séparément.
+
+Une lecture strictement publique et non destructive de ces tables a été tentée avec l’accès anonyme exposé par le frontend. Les quatre tables catalogue interrogées ont répondu correctement, mais sans ligne exploitable. Cela prouve l’existence de cette architecture Supabase dans le bundle, mais ne permet pas de récupérer le catalogue réel avec l’accès public actuel. Aucune tentative de contournement, d’authentification ou d’écriture n’a été effectuée.
+
+La reprise doit donc accepter une source autorisée supplémentaire : export catalogue, sauvegarde Supabase fournie par le propriétaire, ou export depuis le panneau d’administration de l’ancienne boutique.
