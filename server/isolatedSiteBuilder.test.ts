@@ -343,11 +343,12 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(demo.title).toBe("Association familiale ATH VAHLOUL");
     expect(demo.siteType).toBe("familial");
     expect(demo.templateId).toBe(ATH_VAHLOUL_DEMO_TEMPLATE_ID);
-    expect(demo.pages).toHaveLength(6);
+    expect(demo.pages).toHaveLength(7);
     expect(demo.pages.map((p) => p.slug)).toEqual([
       "/",
       "/notre-famille",
       "/evenements",
+      "/assemblees-rapports",
       "/entraide",
       "/annonces",
       "/contact",
@@ -368,6 +369,11 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     const evenementsMenu = nav.find((item) => item.href === "/evenements");
     expect(familleMenu?.children?.map((c) => c.href)).toContain("/annonces");
     expect(evenementsMenu?.children?.map((c) => c.href)).toContain("/entraide");
+    expect(evenementsMenu?.children?.map((c) => c.href)).toContain("/assemblees-rapports");
+    const assembliesPage = demo.pages.find((p) => p.slug === "/assemblees-rapports")!;
+    expect(assembliesPage.visibility).toBe("members");
+    expect(assembliesPage.indexable).toBe(false);
+    expect(String(assembliesPage.html)).toContain("aucun document réel ni donnée personnelle");
 
     // Création d'un site depuis les nouveaux modèles (ex. Association sportive, Restaurant sans e-commerce, Portfolio)
     for (const tplId of [
@@ -514,7 +520,7 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
 
     const publicAfter = await getPublicIndependentSiteBySlug(demo.slug);
     expect(publicAfter?.title).toBe("Association familiale ATH VAHLOUL");
-    expect(publicAfter?.pages).toHaveLength(6);
+    expect(publicAfter?.pages).toHaveLength(7);
 
     // Archivage
     const archived = await updateIndependentSiteStatus(ownerId, demo.id, "archived");
