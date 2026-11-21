@@ -173,6 +173,16 @@ export const INDEPENDENT_RESPONSIVE_BASE_CSS = `
 html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
 img, video, figure { max-width: 100%; }
 [data-site-card-grid-items="true"] { width: 100%; }
+[data-site-block="header-ath-vahloul"] { padding: 18px 28px !important; background: #ffffff !important; color: #172033 !important; border-bottom: 1px solid #e8e2d9 !important; }
+[data-site-block="header-ath-vahloul"] > div { max-width: 1160px !important; margin: 0 auto !important; display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 20px !important; flex-wrap: wrap !important; }
+[data-site-block="header-ath-vahloul"] nav { display: flex !important; align-items: center !important; gap: 18px !important; flex-wrap: wrap !important; }
+[data-site-block="header-ath-vahloul"] a { color: #172033 !important; text-decoration: none !important; }
+[data-site-block="header-ath-vahloul"] nav a { font-size: 14px !important; font-weight: 600 !important; }
+[data-site-block="header-ath-vahloul"] > div > a:last-child { display: inline-block !important; padding: 10px 18px !important; background: #9b563e !important; color: #ffffff !important; border-radius: 8px !important; font-size: 13px !important; font-weight: 700 !important; }
+[data-site-block="hero-ath-vahloul"] h1 { margin: 14px 0 18px !important; font-size: clamp(38px, 6vw, 64px) !important; line-height: 1.05 !important; }
+[data-site-block="hero-ath-vahloul"] p { line-height: 1.75 !important; }
+[data-site-block="hero-ath-vahloul"] a { text-decoration: none !important; }
+[data-site-block="hero-ath-vahloul"] > div { max-width: 1120px !important; margin: 0 auto !important; display: grid !important; grid-template-columns: 1.2fr .8fr !important; gap: 38px !important; align-items: center !important; }
 @media (max-width: 900px) {
   [data-site-block] > div[style*="grid-template-columns"],
   [data-site-module] > div[style*="grid-template-columns"],
@@ -197,6 +207,8 @@ img, video, figure { max-width: 100%; }
     width: 100%;
     gap: 10px !important;
   }
+  [data-site-block="header-ath-vahloul"] > div > a:last-child { margin-left: auto !important; }
+  [data-site-block="hero-ath-vahloul"] > div { grid-template-columns: minmax(0, 1fr) !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -135,6 +135,8 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(RESPONSIVE_DEVICE_PRESETS.map((p) => p.maxWidthPx)).toEqual([1440, 1024, 768, 414, 320]);
     expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain("prefers-reduced-motion");
     expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain("@media (max-width: 640px)");
+    expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain('[data-site-block="header-ath-vahloul"] nav');
+    expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain('[data-site-block="hero-ath-vahloul"] h1');
   });
 
   it("2. garantit l’absence totale de composants e-commerce dans les Blocs, Modules, Socles et les 10 Modèles complets", () => {
