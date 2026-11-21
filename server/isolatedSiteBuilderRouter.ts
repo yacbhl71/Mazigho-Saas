@@ -5,6 +5,7 @@ import {
   INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
+  INDEPENDENT_NAV_AND_FOOTER_PRESETS,
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_SITE_TEMPLATES,
@@ -16,13 +17,18 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
+  createIndependentCollaboratorPreviewShare,
   createIndependentSiteProject,
   createIndependentSiteVersion,
   deleteIndependentSiteMedia,
   duplicateIndependentSiteProject,
   ensureAthVahloulDemoProject,
+  exportIndependentSiteProjectJson,
   getIndependentSiteProject,
   getPublicIndependentSiteBySlug,
+  importIndependentSiteProjectJson,
+  listIndependentCollaboratorPreviewShares,
+  listIndependentPublicationLogs,
   listIndependentSiteDomains,
   listIndependentSiteMedia,
   listIndependentSiteProjects,
@@ -30,7 +36,10 @@ import {
   publishIndependentSiteProject,
   removeIndependentSiteDomain,
   restoreIndependentSiteVersion,
+  revokeIndependentCollaboratorPreviewShare,
   saveIndependentSiteProject,
+  unpublishIndependentSiteProject,
+  updateIndependentSiteMediaMetadata,
   updateIndependentSiteMediaTransforms,
   updateIndependentSiteStatus,
   verifyIndependentSiteDomain,
@@ -126,6 +135,7 @@ export const isolatedSiteBuilderRouter = router({
     modules: INDEPENDENT_BUILDER_MODULES,
     socles: INDEPENDENT_PAGE_SOCLES,
     templates: INDEPENDENT_SITE_TEMPLATES,
+    navAndFooterPresets: INDEPENDENT_NAV_AND_FOOTER_PRESETS,
   })),
 
   getPublicSiteBySlug: publicProcedure
@@ -133,11 +143,13 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         slug: z.string().min(1).max(120),
         previewMode: z.boolean().optional(),
+        previewToken: z.string().max(200).nullable().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
       const site = await getPublicIndependentSiteBySlug(input.slug, {
         allowDraftForOwnerUserId: input.previewMode !== false ? ctx.user?.id : undefined,
+        previewToken: input.previewMode !== false ? input.previewToken : undefined,
       });
       if (!site) {
         throw new TRPCError({
@@ -263,6 +275,89 @@ export const isolatedSiteBuilderRouter = router({
       }
     }),
 
+  unpublishSite: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        reason: z.string().max(140).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await unpublishIndependentSiteProject(ctx.user.id, input.siteId, input.reason);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Échec de la dépublication.",
+        });
+      }
+    }),
+
+  listPublicationLogs: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      return await listIndependentPublicationLogs(ctx.user.id, input.siteId);
+    }),
+
+  exportProjectJson: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      return await exportIndependentSiteProjectJson(ctx.user.id, input.siteId);
+    }),
+
+  importProjectJson: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive().nullable().optional(),
+        rawJson: z.string().min(2).max(2_000_000),
+        newTitle: z.string().max(160).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await importIndependentSiteProjectJson(ctx.user.id, input);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Import JSON refusé.",
+        });
+      }
+    }),
+
+  listCollaboratorShares: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      return await listIndependentCollaboratorPreviewShares(ctx.user.id, input.siteId);
+    }),
+
+  createCollaboratorShare: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        collaboratorLabel: z.string().min(1).max(120),
+        collaboratorEmail: z.string().max(160).nullable().optional(),
+        expiresInHours: z.number().int().min(1).max(720).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return await createIndependentCollaboratorPreviewShare(ctx.user.id, input);
+    }),
+
+  revokeCollaboratorShare: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        shareId: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return await revokeIndependentCollaboratorPreviewShare(
+        ctx.user.id,
+        input.siteId,
+        input.shareId
+      );
+    }),
+
   listVersions: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
@@ -310,6 +405,21 @@ export const isolatedSiteBuilderRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       return await addIndependentSiteMedia(ctx.user.id, input);
+    }),
+
+  updateMediaMetadata: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        mediaId: z.number().int().positive(),
+        label: z.string().min(1).max(160).optional(),
+        altText: z.string().min(1).max(240).optional(),
+        newUrl: z.string().min(1).optional(),
+        replaceInPages: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return await updateIndependentSiteMediaMetadata(ctx.user.id, input);
     }),
 
   updateMediaTransforms: protectedProcedure

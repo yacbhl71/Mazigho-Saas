@@ -45,6 +45,12 @@ export default function IndependentSitePublicPreviewPage() {
     []
   );
 
+  const previewToken = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("previewToken")?.trim() || null;
+  }, []);
+
   const [devicePresetId, setDevicePresetId] = useState<ResponsiveDevicePresetId>("desktop");
   const [activePageSlug, setActivePageSlug] = useState<string>(queryParams.pageSlug || "/");
   const [showSeoBanner, setShowSeoBanner] = useState<boolean>(false);
@@ -56,7 +62,7 @@ export default function IndependentSitePublicPreviewPage() {
   }, [queryParams.pageSlug]);
 
   const siteQuery = trpc.independentSiteBuilder.getPublicSiteBySlug.useQuery(
-    { slug, previewMode: isPreviewRoute },
+    { slug, previewMode: isPreviewRoute, previewToken: isPreviewRoute ? previewToken : undefined },
     { retry: false, refetchOnWindowFocus: false }
   );
 
@@ -171,10 +177,12 @@ export default function IndependentSitePublicPreviewPage() {
           >
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="bg-amber-400 font-bold text-[#172033] hover:bg-amber-400">
-                MODE PRÉVISUALISATION PRIVÉE
+                {previewToken ? "APERÇU COLLABORATEUR (LECTURE SEULE)" : "MODE PRÉVISUALISATION PRIVÉE"}
               </Badge>
               <span>
-                {INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.previsualiser.description}
+                {previewToken
+                  ? "Lien d’aperçu privé partagé en lecture seule. Aucune modification ni accès aux autres projets n’est autorisé."
+                  : INDEPENDENT_BUILDER_HELP_GUIDES.workflowActions.previsualiser.description}
               </span>
             </div>
             <span className="text-[11px] font-semibold text-amber-200">
@@ -187,16 +195,25 @@ export default function IndependentSitePublicPreviewPage() {
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
             {/* Repère visuel des 3 étapes : 1. Modifier | 2. Prévisualiser (actif) | 3. Publier */}
             <div className="flex flex-wrap items-center gap-2.5">
-              <Link href={editorReturnHref}>
-                <Button
+              {!previewToken ? (
+                <Link href={editorReturnHref}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-[#f5b98f] bg-slate-900 font-semibold text-[#f5b98f] hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-[#f5b98f]"
+                  >
+                    <ArrowLeft className="mr-1.5 h-4 w-4" />
+                    Retour à l’éditeur (Modifier)
+                  </Button>
+                </Link>
+              ) : (
+                <Badge
                   variant="outline"
-                  size="sm"
-                  className="border-[#f5b98f] bg-slate-900 font-semibold text-[#f5b98f] hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-[#f5b98f]"
+                  className="border-sky-400/50 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200"
                 >
-                  <ArrowLeft className="mr-1.5 h-4 w-4" />
-                  Retour à l’éditeur (Modifier)
-                </Button>
-              </Link>
+                  Accès invité en lecture seule
+                </Badge>
+              )}
 
               <div
                 aria-label="Parcours Modifier, Prévisualiser, Publier"
