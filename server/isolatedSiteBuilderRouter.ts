@@ -13,7 +13,7 @@ import {
   RESPONSIVE_DEVICE_PRESETS,
   RESPONSIVE_VIEWPORTS,
 } from "../shared/isolatedSiteBuilder";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
@@ -34,6 +34,7 @@ import {
   listIndependentSiteProjects,
   listIndependentSiteProjectsAccessible,
   listIndependentSiteAccess,
+  resolveIndependentSiteAccess,
   inviteIndependentSiteAccess,
   revokeIndependentSiteAccess,
   updateIndependentSiteAccessRole,
@@ -132,7 +133,7 @@ const imageTransformsSchema = z.object({
 });
 
 export const isolatedSiteBuilderRouter = router({
-  getCatalog: publicProcedure.query(() => ({
+  getCatalog: platformProcedure.query(() => ({
     siteTypes: INDEPENDENT_SITE_TYPE_OPTIONS,
     projectModes: INDEPENDENT_PROJECT_MODE_OPTIONS,
     helpGuides: INDEPENDENT_BUILDER_HELP_GUIDES,
@@ -202,11 +203,11 @@ export const isolatedSiteBuilderRouter = router({
       return project;
     }),
 
-  ensureAthVahloulDemo: protectedProcedure.mutation(async ({ ctx }) => {
+  ensureAthVahloulDemo: platformProcedure.mutation(async ({ ctx }) => {
     return await ensureAthVahloulDemoProject(ctx.user.id);
   }),
 
-  createProject: protectedProcedure
+  createProject: platformProcedure
     .input(
       z.object({
         title: z.string().min(1).max(160),
@@ -261,8 +262,13 @@ export const isolatedSiteBuilderRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
         return await duplicateIndependentSiteProject(
-          ctx.user.id,
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "admin",
+          ),
           input.siteId,
           input.newTitle,
         );
@@ -283,8 +289,13 @@ export const isolatedSiteBuilderRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
         return await updateIndependentSiteStatus(
-          ctx.user.id,
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "admin",
+          ),
           input.siteId,
           input.status,
         );
@@ -330,8 +341,13 @@ export const isolatedSiteBuilderRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
         return await unpublishIndependentSiteProject(
-          ctx.user.id,
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "admin",
+          ),
           input.siteId,
           input.reason,
         );
@@ -347,13 +363,21 @@ export const isolatedSiteBuilderRouter = router({
   listPublicationLogs: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await listIndependentPublicationLogs(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await listIndependentPublicationLogs(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input.siteId,
+      );
     }),
 
   exportProjectJson: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
       return await exportIndependentSiteProjectJson(
         await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
         input.siteId,
@@ -370,7 +394,21 @@ export const isolatedSiteBuilderRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await importIndependentSiteProjectJson(ctx.user.id, input);
+        if (!input.siteId) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Un import doit cibler un site autorisé.",
+          });
+        }
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+        return await importIndependentSiteProjectJson(
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "admin",
+          ),
+          input,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -422,6 +460,7 @@ export const isolatedSiteBuilderRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
       return await revokeIndependentCollaboratorPreviewShare(
         await resolveIndependentSiteOwnerUserId(
           ctx.user.id,
@@ -433,11 +472,26 @@ export const isolatedSiteBuilderRouter = router({
       );
     }),
 
+  getAccessRole: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const access = await resolveIndependentSiteAccess(
+        ctx.user.id,
+        input.siteId,
+      );
+      if (!access)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Accès limité à ce site.",
+        });
+      return { siteId: input.siteId, role: access.role };
+    }),
   listAccess: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
-    .query(({ ctx, input }) =>
-      listIndependentSiteAccess(ctx.user.id, input.siteId),
-    ),
+    .query(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "owner");
+      return listIndependentSiteAccess(ctx.user.id, input.siteId);
+    }),
   inviteAccess: protectedProcedure
     .input(
       z.object({

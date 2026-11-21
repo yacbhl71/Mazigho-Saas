@@ -522,7 +522,7 @@ export async function inviteIndependentSiteAccess(
   };
   if (!isTransactionalEmailConfigured()) return result;
   try {
-    const link = `${getPublicUrl()}/site-builder/invitation?token=${encodeURIComponent(token)}`;
+    const link = `${getPublicUrl()}/constructeur-sites/invitation/${encodeURIComponent(token)}`;
     const delivery = await sendTransactionalEmail({
       to: email,
       subject: "Invitation à collaborer sur un site indépendant",

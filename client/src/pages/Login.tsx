@@ -27,8 +27,9 @@ export default function Login() {
   const storeProjectIntent = params.get("intent") === "boutique";
   const candidateReturn = params.get("returnTo") || "";
   const setupOwnerReturnTo = getSafeSetupOwnerPanelReturnTo(candidateReturn);
+  const invitationReturnTo = candidateReturn.match(/^\/constructeur-sites\/invitation\/[A-Za-z0-9_-]{20,200}$/)?.[0] ?? "";
   const hasBoutiqueAccessIntent = storeProjectIntent || Boolean(setupOwnerReturnTo);
-  const returnTo = setupOwnerReturnTo || (candidateReturn.startsWith("/demarrer-boutique") ? candidateReturn : "/demarrer-boutique?plan=free");
+  const returnTo = invitationReturnTo || setupOwnerReturnTo || (candidateReturn.startsWith("/demarrer-boutique") ? candidateReturn : "/demarrer-boutique?plan=free");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -50,7 +51,9 @@ export default function Login() {
       window.location.assign("/gestion-boutique");
       return;
     }
-    const target = data.user.role === "admin"
+    const target = invitationReturnTo
+      ? invitationReturnTo
+      : data.user.role === "admin"
       ? (typeof window !== "undefined" &&
          (window.location.hostname.toLowerCase().includes("studio") ||
           window.location.hostname.toLowerCase() === "studio.mazigho.ch" ||

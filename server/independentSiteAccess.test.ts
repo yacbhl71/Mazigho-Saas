@@ -38,6 +38,13 @@ describe("independent site access isolation", () => {
       role: "editor",
       status: "active",
     });
+    await expect(
+      acceptIndependentSiteInvitation(
+        9303,
+        invitation.developmentOnlyToken!,
+        "EDITOR@example.test",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID");
     expect(await getIndependentSiteProject(9303, siteA.id)).toBeNull();
     await assertIndependentSiteAccess(9303, siteA.id, "editor");
     expect(await listIndependentSiteProjectsAccessible(9303)).toHaveLength(1);

@@ -128,6 +128,7 @@ const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
 const ShippingReturns = lazy(() => import("./pages/ShippingReturns"));
 const IndependentSiteBuilderPage = lazy(() => import("./pages/site-builder/IndependentSiteBuilderPage"));
+const SiteInvitationPage = lazy(() => import("./pages/site-builder/SiteInvitationPage"));
 const IndependentSitePublicPreviewPage = lazy(() => import("./pages/site-builder/IndependentSitePublicPreviewPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -493,6 +494,7 @@ function Router() {
       <Suspense fallback={null}>
         <Switch>
       <Route path={"/"} component={isSaasLandingHost ? MazighoSaasLanding : Home} />
+      <Route path={"/constructeur-sites/invitation/:token"} component={SiteInvitationPage} />
       <Route path={"/constructeur-sites/apercu/:slug"} component={IndependentSitePublicPreviewPage} />
       <Route path={"/constructeur-sites"} component={IndependentSiteBuilderPage} />
       <Route path={"/sites/:slug"} component={IndependentSitePublicPreviewPage} />

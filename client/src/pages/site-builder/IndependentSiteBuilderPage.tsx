@@ -482,10 +482,18 @@ export default function IndependentSiteBuilderPage() {
     { siteId: selectedSiteId ?? 0 },
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
   );
+  const accessRoleQuery = trpc.independentSiteBuilder.getAccessRole.useQuery(
+    { siteId: selectedSiteId ?? 0 },
+    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false },
+  );
+  const accessRole = accessRoleQuery.data?.role ?? "editor";
+  const canAdministerSite = accessRole === "admin" || accessRole === "owner";
+  const canManageAccess = accessRole === "owner";
+  const canManageDomains = accessRole === "owner";
 
   const versionsQuery = trpc.independentSiteBuilder.listVersions.useQuery(
     { siteId: selectedSiteId ?? 0 },
-    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+    { enabled: Boolean(selectedSiteId) && canAdministerSite, retry: false, refetchOnWindowFocus: false }
   );
 
   const mediaQuery = trpc.independentSiteBuilder.listMedia.useQuery(
@@ -495,7 +503,7 @@ export default function IndependentSiteBuilderPage() {
 
   const domainsQuery = trpc.independentSiteBuilder.listDomains.useQuery(
     { siteId: selectedSiteId ?? 0 },
-    { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
+    { enabled: Boolean(selectedSiteId) && canManageDomains, retry: false, refetchOnWindowFocus: false }
   );
 
   const publicationLogsQuery = trpc.independentSiteBuilder.listPublicationLogs.useQuery(
@@ -1627,6 +1635,11 @@ export default function IndependentSiteBuilderPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f3ee] text-[#172033]">
+      {selectedSiteId && (accessRole === "admin" || accessRole === "editor") && (
+        <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-semibold text-amber-950">
+          Espace client — accès limité à ce site
+        </div>
+      )}
       {/* EN-TÊTE PRINCIPAL DU PRODUIT INDÉPENDANT */}
       <header className="sticky top-0 z-40 border-b border-[#e2dad0] bg-white/95 px-4 py-3 shadow-2xs backdrop-blur md:px-6">
         <div className="mx-auto flex max-w-[1640px] flex-wrap items-center justify-between gap-3">
@@ -2430,6 +2443,7 @@ export default function IndependentSiteBuilderPage() {
                             className="h-7 text-xs"
                             onClick={() => {
                               const customTitle = duplicateProjectCustomTitle.trim();
+                              if (!canAdministerSite) return;
                               duplicateProjectMutation.mutate({
                                 siteId: proj.id,
                                 newTitle: customTitle || undefined,
@@ -2445,12 +2459,13 @@ export default function IndependentSiteBuilderPage() {
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs"
-                            onClick={() =>
+                            onClick={() => {
+                              if (!canAdministerSite) return;
                               updateStatusMutation.mutate({
                                 siteId: proj.id,
                                 status: proj.status === "archived" ? "draft" : "archived",
-                              })
-                            }
+                              });
+                            }}
                           >
                             <Archive className="mr-1 h-3 w-3" />
                             {proj.status === "archived" ? "Désarchiver" : "Archiver"}
@@ -4440,7 +4455,8 @@ export default function IndependentSiteBuilderPage() {
                       type="button"
                       role="tab"
                       aria-selected={activeInspectorTab === "publication"}
-                      onClick={() => setActiveInspectorTab("publication")}
+                      disabled={!canAdministerSite}
+                      onClick={() => canAdministerSite && setActiveInspectorTab("publication")}
                       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                         activeInspectorTab === "publication"
                           ? "bg-[#172033] text-white"
@@ -4454,7 +4470,8 @@ export default function IndependentSiteBuilderPage() {
                       type="button"
                       role="tab"
                       aria-selected={activeInspectorTab === "versions"}
-                      onClick={() => setActiveInspectorTab("versions")}
+                      disabled={!canAdministerSite}
+                      onClick={() => canAdministerSite && setActiveInspectorTab("versions")}
                       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
                         activeInspectorTab === "versions"
                           ? "bg-[#172033] text-white"
@@ -4464,7 +4481,7 @@ export default function IndependentSiteBuilderPage() {
                       <History className="h-3.5 w-3.5 text-[#f5b98f]" />
                       Versions & Import/Export ({versionsQuery.data?.length ?? 0})
                     </button>
-                    <button type="button" role="tab" aria-selected={activeInspectorTab === "access"} onClick={() => setActiveInspectorTab("access")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${activeInspectorTab === "access" ? "bg-[#172033] text-white" : "text-slate-700 hover:bg-slate-200/70"}`}>
+                    <button type="button" role="tab" aria-selected={activeInspectorTab === "access"} disabled={!canManageAccess} onClick={() => canManageAccess && setActiveInspectorTab("access")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${activeInspectorTab === "access" ? "bg-[#172033] text-white" : "text-slate-700 hover:bg-slate-200/70"}`}>
                       <Lock className="h-3.5 w-3.5 text-[#f5b98f]" /> Accès du site
                     </button>
                   </div>
@@ -5068,7 +5085,8 @@ export default function IndependentSiteBuilderPage() {
                             size="sm"
                             className="bg-[#172033] text-xs text-white hover:bg-[#24324f]"
                             onClick={requestPublishCurrentSite}
-                            disabled={isBusySaving}
+                            disabled={isBusySaving || !canAdministerSite}
+                            title={!canAdministerSite ? "Publication réservée aux administrateurs du site" : undefined}
                           >
                             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-[#f5b98f]" />
                             2. Publier le site maintenant
@@ -5080,7 +5098,8 @@ export default function IndependentSiteBuilderPage() {
                               variant="outline"
                               className="border-rose-300 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50"
                               onClick={requestUnpublishCurrentSite}
-                              disabled={unpublishSiteMutation.isPending}
+                              disabled={unpublishSiteMutation.isPending || !canAdministerSite}
+                              title={!canAdministerSite ? "Publication réservée aux administrateurs du site" : undefined}
                             >
                               Dépublier (repasser en brouillon)
                             </Button>
@@ -5119,7 +5138,7 @@ export default function IndependentSiteBuilderPage() {
                             type="button"
                             size="sm"
                             className="h-8 bg-[#9b563e] text-xs text-white hover:bg-[#824631]"
-                            disabled={!selectedSiteId || !customDomainInput.trim()}
+                            disabled={!selectedSiteId || !customDomainInput.trim() || !canManageDomains}
                             onClick={() => {
                               if (!selectedSiteId) return;
                               addDomainMutation.mutate({
@@ -5421,7 +5440,7 @@ export default function IndependentSiteBuilderPage() {
                             type="button"
                             size="sm"
                             className="h-8 bg-[#172033] text-xs text-white"
-                            disabled={!selectedSiteId || createVersionMutation.isPending}
+                            disabled={!selectedSiteId || !canAdministerSite || createVersionMutation.isPending}
                             onClick={() => {
                               if (!selectedSiteId) return;
                               createVersionMutation.mutate({
