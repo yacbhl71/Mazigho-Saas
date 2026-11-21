@@ -212,6 +212,7 @@ img, video, figure { max-width: 100%; }
 [data-site-block="footer"], [data-site-block="footer-complet-accessible"] { background: #172033 !important; color: #ffffff !important; }
 [data-site-block="footer"] > div, [data-site-block="footer-complet-accessible"] > div { max-width: 1160px !important; margin: 0 auto !important; }
 [data-site-block="footer"] a, [data-site-block="footer-complet-accessible"] a { color: #ffffff !important; text-decoration: none !important; }
+[data-site-block="footer"] a, [data-site-block="footer-complet-accessible"] a { display: block !important; margin-top: 8px !important; line-height: 1.5 !important; }
 [data-site-block="footer"] a:hover, [data-site-block="footer-complet-accessible"] a:hover { color: #f5b98f !important; }
 [data-site-block="footer"] h2, [data-site-block="footer"] h3, [data-site-block="footer-complet-accessible"] h2, [data-site-block="footer-complet-accessible"] h3 { color: #ffffff !important; }
 [data-site-block="footer"] p, [data-site-block="footer-complet-accessible"] p { color: #cbd2dc !important; }
@@ -257,7 +258,13 @@ img, video, figure { max-width: 100%; }
   [data-site-block="ath-access-levels"] table { font-size: 13px !important; }
   [data-site-block="ath-access-levels"] td, [data-site-block="ath-access-levels"] th { padding: 12px !important; }
   [data-site-card-grid="true"] { padding-left: 16px !important; padding-right: 16px !important; }
-  [data-site-card-grid-items="true"] img { height: 190px !important; }
+  [data-site-card-grid-items="true"] { gap: 14px !important; }
+  [data-site-card-grid-items="true"] > article { border-radius: 14px !important; }
+  [data-site-card-grid-items="true"] img { height: 150px !important; }
+  [data-site-card-grid-items="true"] [data-site-card-text] { padding: 14px 16px !important; }
+  [data-site-card-grid-items="true"] [data-site-card-text] h3 { margin: 6px 0 !important; font-size: 18px !important; }
+  [data-site-card-grid-items="true"] [data-site-card-text] p { font-size: 13px !important; line-height: 1.5 !important; }
+  [data-site-card-grid-items="true"] [data-site-card-text] a { display: inline-block !important; margin-top: 10px !important; }
   [data-site-block="header"] nav,
   [data-site-block="header-submenus"] nav,
   [data-site-block="header-ath-vahloul"] nav {
