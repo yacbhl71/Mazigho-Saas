@@ -140,7 +140,7 @@ interface PendingConfirmAction {
   onConfirm: () => void;
 }
 
-type InspectorTabId = "seo" | "qualite" | "publication" | "versions";
+type InspectorTabId = "seo" | "qualite" | "publication" | "versions" | "access";
 
 const LIBRARY_TAB_META: Record<
   IndependentBuilderLibraryTab,
@@ -503,6 +503,12 @@ export default function IndependentSiteBuilderPage() {
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
   );
 
+  const accessQuery = trpc.independentSiteBuilder.listAccess.useQuery({ siteId: selectedSiteId ?? 0 }, { enabled: Boolean(selectedSiteId), retry: false });
+  const inviteAccessMutation = trpc.independentSiteBuilder.inviteAccess.useMutation({ onSuccess: () => { void accessQuery.refetch(); setStatusBanner("Invitation préparée. Aucun e-mail n’est envoyé sans service configuré."); } });
+  const revokeAccessMutation = trpc.independentSiteBuilder.revokeAccess.useMutation({ onSuccess: () => void accessQuery.refetch() });
+  const updateAccessRoleMutation = trpc.independentSiteBuilder.updateAccessRole.useMutation({ onSuccess: () => void accessQuery.refetch() });
+  const [accessEmailInput, setAccessEmailInput] = useState("");
+  const [accessRoleInput, setAccessRoleInput] = useState<"admin" | "editor">("editor");
   const collaboratorSharesQuery = trpc.independentSiteBuilder.listCollaboratorShares.useQuery(
     { siteId: selectedSiteId ?? 0 },
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
@@ -4458,6 +4464,9 @@ export default function IndependentSiteBuilderPage() {
                       <History className="h-3.5 w-3.5 text-[#f5b98f]" />
                       Versions & Import/Export ({versionsQuery.data?.length ?? 0})
                     </button>
+                    <button type="button" role="tab" aria-selected={activeInspectorTab === "access"} onClick={() => setActiveInspectorTab("access")} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${activeInspectorTab === "access" ? "bg-[#172033] text-white" : "text-slate-700 hover:bg-slate-200/70"}`}>
+                      <Lock className="h-3.5 w-3.5 text-[#f5b98f]" /> Accès du site
+                    </button>
                   </div>
                 </div>
               </CardHeader>
@@ -5376,6 +5385,20 @@ export default function IndependentSiteBuilderPage() {
                 )}
 
                 {/* ONGLET 3D : VERSIONS, APERÇU DE VERSION & IMPORT / EXPORT JSON CONTRÔLÉ */}
+                {activeInspectorTab === "access" && (
+                  <div className="space-y-4 rounded-xl border border-[#e2dad0] bg-[#faf8f5] p-4">
+                    <p className="text-xs text-slate-600">Le constructeur MAZIGHO reste privé : un membre ne voit que le site qui lui est assigné, jamais le catalogue du constructeur ni les autres projets.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <input value={accessEmailInput} onChange={(e) => setAccessEmailInput(e.target.value)} placeholder="email@exemple.com" className="h-9 min-w-64 rounded-md border border-slate-300 bg-white px-3 text-sm" aria-label="Email du membre" />
+                      <select value={accessRoleInput} onChange={(e) => setAccessRoleInput(e.target.value as "admin" | "editor")} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm" aria-label="Rôle du membre"><option value="editor">Éditeur</option><option value="admin">Administrateur</option></select>
+                      <Button type="button" size="sm" disabled={!selectedSiteId || !accessEmailInput || inviteAccessMutation.isPending} onClick={() => selectedSiteId && inviteAccessMutation.mutate({ siteId: selectedSiteId, email: accessEmailInput, role: accessRoleInput })}>Inviter</Button>
+                    </div>
+                    <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+                      {(accessQuery.data ?? []).map((member) => <div key={member.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"><span><strong>{member.email}</strong><span className="ml-2 text-xs text-slate-500">{member.role} · {member.status}</span></span>{member.role !== "owner" && <span className="flex gap-2"><select value={member.role} onChange={(e) => selectedSiteId && updateAccessRoleMutation.mutate({ siteId: selectedSiteId, memberId: member.id, role: e.target.value as "admin" | "editor" })} className="h-8 rounded border border-slate-300 px-2 text-xs"><option value="editor">Éditeur</option><option value="admin">Administrateur</option></select><Button type="button" variant="outline" size="sm" onClick={() => selectedSiteId && window.confirm(`Révoquer l’accès de ${member.email} ?`) && revokeAccessMutation.mutate({ siteId: selectedSiteId, memberId: member.id })}>Révoquer</Button></span>}</div>)}
+                      {!accessQuery.isLoading && !(accessQuery.data?.length) && <p className="p-4 text-sm text-slate-500">Aucun membre supplémentaire.</p>}
+                    </div>
+                  </div>
+                )}
                 {activeInspectorTab === "versions" && (
                   <div className="space-y-6">
                     <div className="grid gap-6 md:grid-cols-2">

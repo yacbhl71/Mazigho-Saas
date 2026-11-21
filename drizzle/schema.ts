@@ -1250,3 +1250,40 @@ export const independentSiteDomains = mysqlTable("independentSiteDomains", {
 
 export type IndependentSiteDomainRow = typeof independentSiteDomains.$inferSelect;
 export type InsertIndependentSiteDomainRow = typeof independentSiteDomains.$inferInsert;
+
+// Accès par site : ces rôles ne modifient jamais users.role et n'ouvrent aucun accès
+// au catalogue MAZIGHO ni aux autres projets indépendants.
+export const independentSiteMembers = mysqlTable("independentSiteMembers", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  userId: int("userId"),
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["owner", "admin", "editor"]).default("editor").notNull(),
+  status: mysqlEnum("status", ["invited", "active", "blocked"]).default("invited").notNull(),
+  invitationTokenHash: varchar("invitationTokenHash", { length: 64 }),
+  invitationExpiresAt: timestamp("invitationExpiresAt"),
+  invitationUsedAt: timestamp("invitationUsedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  siteEmailUnique: uniqueIndex("independent_site_members_site_email_unique").on(table.siteId, table.email),
+  siteStatusIndex: index("independent_site_members_site_status_idx").on(table.siteId, table.status),
+  userIndex: index("independent_site_members_user_idx").on(table.userId),
+}));
+export type IndependentSiteMemberRow = typeof independentSiteMembers.$inferSelect;
+export type InsertIndependentSiteMemberRow = typeof independentSiteMembers.$inferInsert;
+
+export const independentSiteAccessAuditLogs = mysqlTable("independentSiteAccessAuditLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  action: varchar("action", { length: 64 }).notNull(),
+  targetUserId: int("targetUserId"),
+  targetEmail: varchar("targetEmail", { length: 320 }),
+  metadataJson: text("metadataJson"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  siteCreatedIndex: index("independent_site_access_audit_site_created_idx").on(table.siteId, table.createdAt),
+}));
+export type IndependentSiteAccessAuditLogRow = typeof independentSiteAccessAuditLogs.$inferSelect;
+export type InsertIndependentSiteAccessAuditLogRow = typeof independentSiteAccessAuditLogs.$inferInsert;

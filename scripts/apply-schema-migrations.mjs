@@ -44,6 +44,7 @@ const migrations = [
   ["0061_studio_visual_project_modes", "drizzle/0061_studio_visual_project_modes.sql"],
   ["0062_family_site_members_announcements", "drizzle/0062_family_site_members_announcements.sql"],
   ["0063_independent_site_builder", "drizzle/0063_independent_site_builder.sql"],
+  ["0064_independent_site_access", "drizzle/0064_independent_site_access.sql"],
 ];
 
 const databaseUrl = process.env.DATABASE_URL?.trim();

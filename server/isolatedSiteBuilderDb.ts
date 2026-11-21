@@ -1,10 +1,14 @@
 import { resolveTxt } from "node:dns/promises";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, gt, inArray } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
 import {
   independentSiteDomains,
   independentSiteMedia,
   independentSiteVersions,
   independentSites,
+  independentSiteMembers,
+  independentSiteAccessAuditLogs,
+  users,
 } from "../drizzle/schema";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
@@ -35,6 +39,11 @@ import {
   type IndependentSiteType,
 } from "../shared/isolatedSiteBuilder";
 import { getDb } from "./db";
+import {
+  getPublicUrl,
+  isTransactionalEmailConfigured,
+  sendTransactionalEmail,
+} from "./transactionalEmail";
 
 export interface IndependentSiteProjectDto {
   id: number;
@@ -64,19 +73,23 @@ export interface IndependentSiteProjectDto {
 
 function filterPublicPagesAndNavigation(
   pages: IndependentSitePage[],
-  navigation: IndependentSiteMenuItem[]
+  navigation: IndependentSiteMenuItem[],
 ): { pages: IndependentSitePage[]; navigation: IndependentSiteMenuItem[] } {
   const publicPages = pages.filter((page) => page.visibility === "public");
   const publicPageIds = new Set(publicPages.map((page) => page.id));
 
-  const filterItems = (items: IndependentSiteMenuItem[]): IndependentSiteMenuItem[] =>
+  const filterItems = (
+    items: IndependentSiteMenuItem[],
+  ): IndependentSiteMenuItem[] =>
     items.flatMap((item) => {
       if (item.pageId && !publicPageIds.has(item.pageId)) return [];
       const children = item.children ? filterItems(item.children) : undefined;
       return [
         {
           ...item,
-          ...(children && children.length > 0 ? { children } : { children: undefined }),
+          ...(children && children.length > 0
+            ? { children }
+            : { children: undefined }),
         },
       ];
     });
@@ -139,6 +152,533 @@ let nextMemoryVersionId = 5001;
 let nextMemoryMediaId = 8001;
 let nextMemoryDomainId = 9001;
 
+export type IndependentSiteAccessRole = "owner" | "admin" | "editor";
+export type IndependentSiteAccessStatus = "invited" | "active" | "blocked";
+export interface IndependentSiteAccessDto {
+  id: number;
+  siteId: number;
+  userId: number | null;
+  email: string;
+  role: IndependentSiteAccessRole;
+  status: IndependentSiteAccessStatus;
+  invitationExpiresAt: string | null;
+  createdAt: string;
+}
+const memoryMembers = new Map<number, IndependentSiteAccessDto[]>();
+const memoryAccessAudit: Array<Record<string, unknown>> = [];
+const memoryInvitationTokens = new Map<
+  string,
+  { siteId: number; memberId: number; expiresAt: string }
+>();
+function normalizeAccessEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+function accessHash(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+function ensureMemoryOwner(site: IndependentSiteProjectDto) {
+  const members = memoryMembers.get(site.id) ?? [];
+  if (
+    !members.some((m) => m.userId === site.ownerUserId && m.role === "owner")
+  ) {
+    members.unshift({
+      id: site.ownerUserId,
+      siteId: site.id,
+      userId: site.ownerUserId,
+      email: `owner-${site.ownerUserId}@local.invalid`,
+      role: "owner",
+      status: "active",
+      invitationExpiresAt: null,
+      createdAt: site.createdAt,
+    });
+    memoryMembers.set(site.id, members);
+  }
+  return members;
+}
+export async function resolveIndependentSiteAccess(
+  userId: number,
+  siteId: number,
+): Promise<IndependentSiteAccessDto | null> {
+  const db = await getDb();
+  if (!db) {
+    const site = memorySites.get(siteId);
+    if (!site) return null;
+    const owner = site.ownerUserId === userId;
+    const member = ensureMemoryOwner(site).find(
+      (m) => m.userId === userId && m.status === "active",
+    );
+    return owner ? ensureMemoryOwner(site)[0] : (member ?? null);
+  }
+  const sites = await db
+    .select({ ownerUserId: independentSites.ownerUserId })
+    .from(independentSites)
+    .where(eq(independentSites.id, siteId))
+    .limit(1);
+  if (!sites[0]) return null;
+  if (sites[0].ownerUserId === userId)
+    return {
+      id: 0,
+      siteId,
+      userId,
+      email: "",
+      role: "owner",
+      status: "active",
+      invitationExpiresAt: null,
+      createdAt: new Date().toISOString(),
+    };
+  const rows = await db
+    .select()
+    .from(independentSiteMembers)
+    .where(
+      and(
+        eq(independentSiteMembers.siteId, siteId),
+        eq(independentSiteMembers.userId, userId),
+        eq(independentSiteMembers.status, "active"),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  return row
+    ? {
+        id: row.id,
+        siteId: row.siteId,
+        userId: row.userId,
+        email: row.email,
+        role: row.role,
+        status: row.status,
+        invitationExpiresAt: row.invitationExpiresAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+      }
+    : null;
+}
+const roleRank: Record<IndependentSiteAccessRole, number> = {
+  editor: 1,
+  admin: 2,
+  owner: 3,
+};
+export async function assertIndependentSiteAccess(
+  userId: number,
+  siteId: number,
+  minimumRole: IndependentSiteAccessRole = "editor",
+) {
+  const access = await resolveIndependentSiteAccess(userId, siteId);
+  if (!access || roleRank[access.role] < roleRank[minimumRole])
+    throw new Error("INDEPENDENT_SITE_ACCESS_DENIED");
+  return access;
+}
+async function ownerForSite(
+  userId: number,
+  siteId: number,
+  minimumRole: IndependentSiteAccessRole = "editor",
+) {
+  const access = await assertIndependentSiteAccess(userId, siteId, minimumRole);
+  const db = await getDb();
+  if (!db)
+    return access.role === "owner"
+      ? userId
+      : (memorySites.get(siteId)?.ownerUserId ?? userId);
+  const rows = await db
+    .select({ ownerUserId: independentSites.ownerUserId })
+    .from(independentSites)
+    .where(eq(independentSites.id, siteId))
+    .limit(1);
+  return rows[0]?.ownerUserId ?? userId;
+}
+export async function resolveIndependentSiteOwnerUserId(
+  userId: number,
+  siteId: number,
+  minimumRole: IndependentSiteAccessRole = "editor",
+) {
+  return ownerForSite(userId, siteId, minimumRole);
+}
+export async function listIndependentSiteProjectsAccessible(
+  userId: number,
+  filters?: { status?: IndependentSiteStatus; siteType?: IndependentSiteType },
+) {
+  const db = await getDb();
+  if (!db)
+    return Array.from(memorySites.values())
+      .filter((s) => Boolean(awaitableAccess(userId, s.id)))
+      .filter((s) => !filters?.status || s.status === filters.status)
+      .filter((s) => !filters?.siteType || s.siteType === filters.siteType)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((s) => JSON.parse(JSON.stringify(s)));
+  const owned = await db
+    .select()
+    .from(independentSites)
+    .where(eq(independentSites.ownerUserId, userId));
+  const memberships = await db
+    .select({ siteId: independentSiteMembers.siteId })
+    .from(independentSiteMembers)
+    .where(
+      and(
+        eq(independentSiteMembers.userId, userId),
+        eq(independentSiteMembers.status, "active"),
+      ),
+    );
+  const ids = new Set([
+    ...owned.map((r) => r.id),
+    ...memberships.map((r) => r.siteId),
+  ]);
+  const rows = ids.size
+    ? await db
+        .select()
+        .from(independentSites)
+        .where(inArray(independentSites.id, Array.from(ids)))
+    : [];
+  return rows
+    .map(rowToProjectDto)
+    .filter((s) => ids.has(s.id))
+    .filter((s) => !filters?.status || s.status === filters.status)
+    .filter((s) => !filters?.siteType || s.siteType === filters.siteType)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+function awaitableAccess(userId: number, siteId: number) {
+  const s = memorySites.get(siteId);
+  if (!s) return false;
+  return (
+    s.ownerUserId === userId ||
+    ensureMemoryOwner(s).some(
+      (m) => m.userId === userId && m.status === "active",
+    )
+  );
+}
+export async function listIndependentSiteAccess(
+  userId: number,
+  siteId: number,
+) {
+  await assertIndependentSiteAccess(userId, siteId, "editor");
+  const db = await getDb();
+  if (!db)
+    return ensureMemoryOwner(memorySites.get(siteId)!).map((m) => ({ ...m }));
+  const siteRows = await db
+    .select({
+      ownerUserId: independentSites.ownerUserId,
+      ownerEmail: users.email,
+    })
+    .from(independentSites)
+    .leftJoin(users, eq(users.id, independentSites.ownerUserId))
+    .where(eq(independentSites.id, siteId))
+    .limit(1);
+  const site = siteRows[0];
+  if (!site) return [];
+  const rows = await db
+    .select()
+    .from(independentSiteMembers)
+    .where(eq(independentSiteMembers.siteId, siteId));
+  const members = rows.map((r) => ({
+    id: r.id,
+    siteId: r.siteId,
+    userId: r.userId,
+    email: r.email,
+    role: r.role,
+    status: r.status,
+    invitationExpiresAt: r.invitationExpiresAt?.toISOString() ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
+  if (
+    members.some(
+      (member) => member.userId === site.ownerUserId || member.role === "owner",
+    )
+  )
+    return members;
+  return [
+    {
+      id: 0,
+      siteId,
+      userId: site.ownerUserId,
+      email: site.ownerEmail ?? `owner-${site.ownerUserId}@local.invalid`,
+      role: "owner" as const,
+      status: "active" as const,
+      invitationExpiresAt: null,
+      createdAt: new Date().toISOString(),
+    },
+    ...members,
+  ];
+}
+export async function logIndependentSiteAccessAction(
+  actorUserId: number,
+  siteId: number,
+  action: string,
+  target?: { userId?: number | null; email?: string },
+  metadata?: Record<string, unknown>,
+) {
+  const db = await getDb();
+  if (!db) {
+    memoryAccessAudit.push({
+      actorUserId,
+      siteId,
+      action,
+      target,
+      metadata,
+      createdAt: new Date().toISOString(),
+    });
+    return;
+  }
+  await db
+    .insert(independentSiteAccessAuditLogs)
+    .values({
+      siteId,
+      actorUserId,
+      action,
+      targetUserId: target?.userId ?? null,
+      targetEmail: target?.email ?? null,
+      metadataJson: metadata ? JSON.stringify(metadata) : null,
+    });
+}
+export async function inviteIndependentSiteAccess(
+  actorUserId: number,
+  input: {
+    siteId: number;
+    email: string;
+    role?: "admin" | "editor";
+    expiresInHours?: number;
+  },
+) {
+  await assertIndependentSiteAccess(actorUserId, input.siteId, "owner");
+  const email = normalizeAccessEmail(input.email);
+  const expires = new Date(Date.now() + 3600000 * (input.expiresInHours ?? 72));
+  const token = randomBytes(32).toString("base64url");
+  const role = input.role ?? "editor";
+  const db = await getDb();
+  let member: IndependentSiteAccessDto;
+  if (!db) {
+    const site = memorySites.get(input.siteId);
+    if (!site) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+    const list = ensureMemoryOwner(site);
+    const existing = list.find((m) => m.email === email);
+    member = {
+      id: existing?.id ?? Math.floor(Math.random() * 1e6),
+      siteId: input.siteId,
+      userId: null,
+      email,
+      role,
+      status: "invited",
+      invitationExpiresAt: expires.toISOString(),
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
+    if (existing) Object.assign(existing, member);
+    else list.push(member);
+    memoryInvitationTokens.set(accessHash(token), {
+      siteId: input.siteId,
+      memberId: member.id,
+      expiresAt: expires.toISOString(),
+    });
+  } else {
+    const existing = await db
+      .select()
+      .from(independentSiteMembers)
+      .where(
+        and(
+          eq(independentSiteMembers.siteId, input.siteId),
+          eq(independentSiteMembers.email, email),
+        ),
+      )
+      .limit(1);
+    if (existing[0])
+      await db
+        .update(independentSiteMembers)
+        .set({
+          role,
+          status: "invited",
+          invitationTokenHash: accessHash(token),
+          invitationExpiresAt: expires,
+          invitationUsedAt: null,
+        })
+        .where(eq(independentSiteMembers.id, existing[0].id));
+    else
+      await db
+        .insert(independentSiteMembers)
+        .values({
+          siteId: input.siteId,
+          email,
+          role,
+          status: "invited",
+          invitationTokenHash: accessHash(token),
+          invitationExpiresAt: expires,
+        });
+    member = {
+      id: existing[0]?.id ?? 0,
+      siteId: input.siteId,
+      userId: null,
+      email,
+      role,
+      status: "invited",
+      invitationExpiresAt: expires.toISOString(),
+      createdAt:
+        existing[0]?.createdAt?.toISOString() ?? new Date().toISOString(),
+    };
+  }
+  await logIndependentSiteAccessAction(actorUserId, input.siteId, "invite", {
+    email,
+  });
+  const result = {
+    ...member,
+    expiresAt: expires,
+    invitationDelivery: "not_configured" as
+      "not_configured" | "delivered" | "failed",
+    developmentOnlyToken:
+      process.env.NODE_ENV === "production" ? undefined : token,
+  };
+  if (!isTransactionalEmailConfigured()) return result;
+  try {
+    const link = `${getPublicUrl()}/site-builder/invitation?token=${encodeURIComponent(token)}`;
+    const delivery = await sendTransactionalEmail({
+      to: email,
+      subject: "Invitation à collaborer sur un site indépendant",
+      text: `Vous êtes invité à collaborer sur un site indépendant MAZIGHO. Activez votre accès : ${link}`,
+      html: `<p>Vous êtes invité à collaborer sur un site indépendant MAZIGHO.</p><p><a href="${link}">Activer mon accès</a></p>`,
+      idempotencyKey: `independent-site-invitation/${input.siteId}/${member.id}`,
+    });
+    return {
+      ...result,
+      invitationDelivery: delivery.delivered
+        ? ("delivered" as const)
+        : ("failed" as const),
+    };
+  } catch {
+    return { ...result, invitationDelivery: "failed" as const };
+  }
+}
+export async function revokeIndependentSiteAccess(
+  actorUserId: number,
+  siteId: number,
+  memberId: number,
+) {
+  await assertIndependentSiteAccess(actorUserId, siteId, "owner");
+  const db = await getDb();
+  if (!db) {
+    const list = ensureMemoryOwner(memorySites.get(siteId)!);
+    const m = list.find((x) => x.id === memberId);
+    if (!m || m.role === "owner")
+      throw new Error("INDEPENDENT_SITE_MEMBER_NOT_FOUND");
+    m.status = "blocked";
+    await logIndependentSiteAccessAction(actorUserId, siteId, "revoke", m);
+    return m;
+  }
+  const rows = await db
+    .select()
+    .from(independentSiteMembers)
+    .where(
+      and(
+        eq(independentSiteMembers.id, memberId),
+        eq(independentSiteMembers.siteId, siteId),
+      ),
+    )
+    .limit(1);
+  const m = rows[0];
+  if (!m || m.role === "owner")
+    throw new Error("INDEPENDENT_SITE_MEMBER_NOT_FOUND");
+  await db
+    .update(independentSiteMembers)
+    .set({ status: "blocked", invitationTokenHash: null })
+    .where(eq(independentSiteMembers.id, memberId));
+  await logIndependentSiteAccessAction(actorUserId, siteId, "revoke", m);
+  return { ...m, status: "blocked" as const };
+}
+export async function updateIndependentSiteAccessRole(
+  actorUserId: number,
+  siteId: number,
+  memberId: number,
+  role: "admin" | "editor",
+) {
+  await assertIndependentSiteAccess(actorUserId, siteId, "owner");
+  const db = await getDb();
+  if (!db) {
+    const m = ensureMemoryOwner(memorySites.get(siteId)!).find(
+      (x) => x.id === memberId,
+    );
+    if (!m || m.role === "owner")
+      throw new Error("INDEPENDENT_SITE_MEMBER_NOT_FOUND");
+    m.role = role;
+    await logIndependentSiteAccessAction(actorUserId, siteId, "role_change", m);
+    return m;
+  }
+  await db
+    .update(independentSiteMembers)
+    .set({ role })
+    .where(
+      and(
+        eq(independentSiteMembers.id, memberId),
+        eq(independentSiteMembers.siteId, siteId),
+      ),
+    );
+  await logIndependentSiteAccessAction(actorUserId, siteId, "role_change", {
+    userId: memberId,
+  });
+  return { memberId, role };
+}
+export async function acceptIndependentSiteInvitation(
+  userId: number,
+  token: string,
+  accountEmail: string,
+) {
+  const email = normalizeAccessEmail(accountEmail);
+  const db = await getDb();
+  if (!db) {
+    const invitation = memoryInvitationTokens.get(accessHash(token));
+    if (!invitation || new Date(invitation.expiresAt) <= new Date())
+      throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
+    const site = memorySites.get(invitation.siteId);
+    const member = site
+      ? ensureMemoryOwner(site).find((m) => m.id === invitation.memberId)
+      : null;
+    if (
+      !member ||
+      member.status !== "invited" ||
+      normalizeAccessEmail(member.email) !== email
+    )
+      throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
+    member.userId = userId;
+    member.status = "active";
+    memoryInvitationTokens.delete(accessHash(token));
+    await logIndependentSiteAccessAction(userId, invitation.siteId, "accept", {
+      email: member.email,
+      userId,
+    });
+    return {
+      siteId: invitation.siteId,
+      role: member.role,
+      status: "active" as const,
+    };
+  }
+  const rows = await db
+    .select()
+    .from(independentSiteMembers)
+    .where(
+      and(
+        eq(independentSiteMembers.invitationTokenHash, accessHash(token)),
+        eq(independentSiteMembers.status, "invited"),
+        eq(independentSiteMembers.email, email),
+        gt(independentSiteMembers.invitationExpiresAt, new Date()),
+        isNull(independentSiteMembers.invitationUsedAt),
+      ),
+    )
+    .limit(1);
+  const m = rows[0];
+  if (!m) throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
+  await db
+    .update(independentSiteMembers)
+    .set({
+      userId,
+      status: "active",
+      invitationUsedAt: new Date(),
+      invitationTokenHash: null,
+    })
+    .where(
+      and(
+        eq(independentSiteMembers.id, m.id),
+        eq(independentSiteMembers.status, "invited"),
+        isNull(independentSiteMembers.invitationUsedAt),
+      ),
+    );
+  await logIndependentSiteAccessAction(userId, m.siteId, "accept", {
+    email: m.email,
+    userId,
+  });
+  return { siteId: m.siteId, role: m.role, status: "active" as const };
+}
+
 const DEFAULT_THEME: IndependentSiteThemeConfig = {
   primaryColor: "#172033",
   accentColor: "#9b563e",
@@ -156,7 +696,9 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-function rowToProjectDto(row: typeof independentSites.$inferSelect): IndependentSiteProjectDto {
+function rowToProjectDto(
+  row: typeof independentSites.$inferSelect,
+): IndependentSiteProjectDto {
   return {
     id: row.id,
     ownerUserId: row.ownerUserId,
@@ -165,18 +707,32 @@ function rowToProjectDto(row: typeof independentSites.$inferSelect): Independent
     siteType: (row.siteType as IndependentSiteType) || "vitrine",
     status: row.status,
     templateId: row.templateId ?? null,
-    theme: safeJsonParse<IndependentSiteThemeConfig>(row.themeJson, DEFAULT_THEME),
-    navigation: safeJsonParse<IndependentSiteMenuItem[]>(row.navigationJson, []),
+    theme: safeJsonParse<IndependentSiteThemeConfig>(
+      row.themeJson,
+      DEFAULT_THEME,
+    ),
+    navigation: safeJsonParse<IndependentSiteMenuItem[]>(
+      row.navigationJson,
+      [],
+    ),
     pages: safeJsonParse<IndependentSitePage[]>(row.pagesJson, []),
-    reusableBlocks: safeJsonParse<IndependentSiteReusableBlock[]>(row.reusableBlocksJson, []),
+    reusableBlocks: safeJsonParse<IndependentSiteReusableBlock[]>(
+      row.reusableBlocksJson,
+      [],
+    ),
     publishedSnapshot: safeJsonParse(row.publishedSnapshotJson, null),
-    publishedAt: row.publishedAt ? new Date(row.publishedAt).toISOString() : null,
+    publishedAt: row.publishedAt
+      ? new Date(row.publishedAt).toISOString()
+      : null,
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
   };
 }
 
-function ensureUniqueSlug(baseSlug: string, existingSlugs: Set<string>): string {
+function ensureUniqueSlug(
+  baseSlug: string,
+  existingSlugs: Set<string>,
+): string {
   const clean = slugifyIndependentSite(baseSlug);
   if (!existingSlugs.has(clean)) return clean;
   let counter = 2;
@@ -188,14 +744,18 @@ function ensureUniqueSlug(baseSlug: string, existingSlugs: Set<string>): string 
 
 export async function listIndependentSiteProjects(
   ownerUserId: number,
-  filters?: { status?: IndependentSiteStatus; siteType?: IndependentSiteType }
+  filters?: { status?: IndependentSiteStatus; siteType?: IndependentSiteType },
 ): Promise<IndependentSiteProjectDto[]> {
   const db = await getDb();
   if (!db) {
     const items = Array.from(memorySites.values())
       .filter((site) => site.ownerUserId === ownerUserId)
-      .filter((site) => (filters?.status ? site.status === filters.status : true))
-      .filter((site) => (filters?.siteType ? site.siteType === filters.siteType : true))
+      .filter((site) =>
+        filters?.status ? site.status === filters.status : true,
+      )
+      .filter((site) =>
+        filters?.siteType ? site.siteType === filters.siteType : true,
+      )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return items.map((item) => JSON.parse(JSON.stringify(item)));
   }
@@ -209,12 +769,14 @@ export async function listIndependentSiteProjects(
   return rows
     .map(rowToProjectDto)
     .filter((site) => (filters?.status ? site.status === filters.status : true))
-    .filter((site) => (filters?.siteType ? site.siteType === filters.siteType : true));
+    .filter((site) =>
+      filters?.siteType ? site.siteType === filters.siteType : true,
+    );
 }
 
 export async function getIndependentSiteProject(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentSiteProjectDto | null> {
   const db = await getDb();
   if (!db) {
@@ -226,7 +788,12 @@ export async function getIndependentSiteProject(
   const rows = await db
     .select()
     .from(independentSites)
-    .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)))
+    .where(
+      and(
+        eq(independentSites.id, siteId),
+        eq(independentSites.ownerUserId, ownerUserId),
+      ),
+    )
     .limit(1);
 
   return rows[0] ? rowToProjectDto(rows[0]) : null;
@@ -234,7 +801,7 @@ export async function getIndependentSiteProject(
 
 export async function getPublicIndependentSiteBySlug(
   slug: string,
-  options?: { allowDraftForOwnerUserId?: number; previewToken?: string | null }
+  options?: { allowDraftForOwnerUserId?: number; previewToken?: string | null },
 ): Promise<{
   id: number;
   slug: string;
@@ -276,14 +843,22 @@ export async function getPublicIndependentSiteBySlug(
     typeof options?.allowDraftForOwnerUserId === "number" &&
     project.ownerUserId === options.allowDraftForOwnerUserId;
   const tokenVerification = options?.previewToken
-    ? verifyIndependentCollaboratorPreviewToken(project.id, options.previewToken)
+    ? verifyIndependentCollaboratorPreviewToken(
+        project.id,
+        options.previewToken,
+      )
     : { valid: false as const };
   const isCollaboratorPreview = tokenVerification.valid;
 
-  if (project.status === "published" && project.publishedSnapshot && !isOwnerPreview && !isCollaboratorPreview) {
+  if (
+    project.status === "published" &&
+    project.publishedSnapshot &&
+    !isOwnerPreview &&
+    !isCollaboratorPreview
+  ) {
     const publicContent = filterPublicPagesAndNavigation(
       project.publishedSnapshot.pages,
-      project.publishedSnapshot.navigation
+      project.publishedSnapshot.navigation,
     );
     return {
       id: project.id,
@@ -322,17 +897,20 @@ export async function createIndependentSiteProject(
     slug?: string;
     templateId?: string | null;
     socleId?: string | null;
-  }
+  },
 ): Promise<IndependentSiteProjectDto> {
   assertNoSecretsInIndependentSite(input);
   assertZeroEcommerceInIndependentSite(input);
 
-  const safeTitle = sanitizeBuilderText(input.title || "Mon Site Internet", 160) || "Mon Site Internet";
+  const safeTitle =
+    sanitizeBuilderText(input.title || "Mon Site Internet", 160) ||
+    "Mon Site Internet";
   const template = input.templateId
-    ? INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === input.templateId) ?? null
+    ? (INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === input.templateId) ??
+      null)
     : null;
   const socle = input.socleId
-    ? INDEPENDENT_PAGE_SOCLES.find((s) => s.id === input.socleId) ?? null
+    ? (INDEPENDENT_PAGE_SOCLES.find((s) => s.id === input.socleId) ?? null)
     : null;
 
   const siteType: IndependentSiteType =
@@ -385,7 +963,9 @@ export async function createIndependentSiteProject(
 
   const db = await getDb();
   if (!db) {
-    const existingSlugs = new Set(Array.from(memorySites.values()).map((s) => s.slug));
+    const existingSlugs = new Set(
+      Array.from(memorySites.values()).map((s) => s.slug),
+    );
     const uniqueSlug = ensureUniqueSlug(input.slug || safeTitle, existingSlugs);
     const now = new Date().toISOString();
     const id = nextMemorySiteId++;
@@ -412,7 +992,9 @@ export async function createIndependentSiteProject(
     return JSON.parse(JSON.stringify(created));
   }
 
-  const allExisting = await db.select({ slug: independentSites.slug }).from(independentSites);
+  const allExisting = await db
+    .select({ slug: independentSites.slug })
+    .from(independentSites);
   const existingSlugs = new Set(allExisting.map((r) => r.slug));
   const uniqueSlug = ensureUniqueSlug(input.slug || safeTitle, existingSlugs);
 
@@ -432,7 +1014,11 @@ export async function createIndependentSiteProject(
   });
 
   const insertedId = Number((insertResult as { insertId?: number }).insertId);
-  await createIndependentSiteVersion(ownerUserId, insertedId, "Version initiale");
+  await createIndependentSiteVersion(
+    ownerUserId,
+    insertedId,
+    "Version initiale",
+  );
   const loaded = await getIndependentSiteProject(ownerUserId, insertedId);
   if (!loaded) {
     throw new Error("INDEPENDENT_SITE_CREATION_FAILED");
@@ -451,7 +1037,7 @@ export async function saveIndependentSiteProject(
     pages?: IndependentSitePage[];
     reusableBlocks?: IndependentSiteReusableBlock[];
     createVersionLabel?: string;
-  }
+  },
 ): Promise<IndependentSiteProjectDto> {
   assertNoSecretsInIndependentSite(input);
   assertZeroEcommerceInIndependentSite(input);
@@ -461,18 +1047,27 @@ export async function saveIndependentSiteProject(
     throw new Error("INDEPENDENT_SITE_NOT_FOUND");
   }
 
-  const nextTitle = input.title ? sanitizeBuilderText(input.title, 160) : current.title;
+  const nextTitle = input.title
+    ? sanitizeBuilderText(input.title, 160)
+    : current.title;
   const nextSiteType = input.siteType ?? current.siteType;
-  const nextTheme = input.theme ? { ...current.theme, ...input.theme } : current.theme;
+  const nextTheme = input.theme
+    ? { ...current.theme, ...input.theme }
+    : current.theme;
   const nextPages: IndependentSitePage[] = input.pages
     ? input.pages.map((p, idx) => ({
         ...p,
         title: sanitizeBuilderText(p.title || `Page ${idx + 1}`, 140),
         slug: normalizeIndependentPageSlug(p.slug),
         menuOrder: typeof p.menuOrder === "number" ? p.menuOrder : idx + 1,
-        seoTitle: sanitizeBuilderText(p.seoTitle || p.title || `Page ${idx + 1}`, 180),
+        seoTitle: sanitizeBuilderText(
+          p.seoTitle || p.title || `Page ${idx + 1}`,
+          180,
+        ),
         seoDescription: sanitizeBuilderText(p.seoDescription || "", 320),
-        socialImageUrl: p.socialImageUrl ? sanitizeBuilderImageSrc(p.socialImageUrl) : undefined,
+        socialImageUrl: p.socialImageUrl
+          ? sanitizeBuilderImageSrc(p.socialImageUrl)
+          : undefined,
         indexable: p.indexable !== false,
         html: sanitizeIndependentHtml(p.html),
         css: sanitizeIndependentCss(p.css),
@@ -483,8 +1078,11 @@ export async function saveIndependentSiteProject(
     throw new Error("INDEPENDENT_SITE_EMPTY_PAGES_FORBIDDEN");
   }
 
-  const nextNavigation = input.navigation ?? buildNavigationFromPages(nextPages);
-  const nextReusableBlocks = (input.reusableBlocks ?? current.reusableBlocks).map((block) => ({
+  const nextNavigation =
+    input.navigation ?? buildNavigationFromPages(nextPages);
+  const nextReusableBlocks = (
+    input.reusableBlocks ?? current.reusableBlocks
+  ).map((block) => ({
     ...block,
     name: sanitizeBuilderText(block.name, 140),
     category: sanitizeBuilderText(block.category, 80),
@@ -496,11 +1094,13 @@ export async function saveIndependentSiteProject(
     current.pages,
     nextPages,
     current.title,
-    nextTitle
+    nextTitle,
   );
   const effectiveVersionLabel =
     input.createVersionLabel ||
-    (autoVersionDecision.shouldCreate ? autoVersionDecision.autoLabel : undefined);
+    (autoVersionDecision.shouldCreate
+      ? autoVersionDecision.autoLabel
+      : undefined);
 
   const db = await getDb();
   if (!db) {
@@ -516,7 +1116,11 @@ export async function saveIndependentSiteProject(
     };
     memorySites.set(current.id, updated);
     if (effectiveVersionLabel) {
-      await createIndependentSiteVersion(ownerUserId, current.id, effectiveVersionLabel);
+      await createIndependentSiteVersion(
+        ownerUserId,
+        current.id,
+        effectiveVersionLabel,
+      );
     }
     return JSON.parse(JSON.stringify(updated));
   }
@@ -531,10 +1135,19 @@ export async function saveIndependentSiteProject(
       navigationJson: JSON.stringify(nextNavigation),
       reusableBlocksJson: JSON.stringify(nextReusableBlocks),
     })
-    .where(and(eq(independentSites.id, current.id), eq(independentSites.ownerUserId, ownerUserId)));
+    .where(
+      and(
+        eq(independentSites.id, current.id),
+        eq(independentSites.ownerUserId, ownerUserId),
+      ),
+    );
 
   if (effectiveVersionLabel) {
-    await createIndependentSiteVersion(ownerUserId, current.id, effectiveVersionLabel);
+    await createIndependentSiteVersion(
+      ownerUserId,
+      current.id,
+      effectiveVersionLabel,
+    );
   }
 
   const reloaded = await getIndependentSiteProject(ownerUserId, current.id);
@@ -545,14 +1158,17 @@ export async function saveIndependentSiteProject(
 export async function duplicateIndependentSiteProject(
   ownerUserId: number,
   siteId: number,
-  newTitle?: string
+  newTitle?: string,
 ): Promise<IndependentSiteProjectDto> {
   const source = await getIndependentSiteProject(ownerUserId, siteId);
   if (!source) {
     throw new Error("INDEPENDENT_SITE_NOT_FOUND");
   }
 
-  const copyTitle = sanitizeBuilderText(newTitle || `${source.title} (copie)`, 160);
+  const copyTitle = sanitizeBuilderText(
+    newTitle || `${source.title} (copie)`,
+    160,
+  );
   const created = await createIndependentSiteProject(ownerUserId, {
     title: copyTitle,
     siteType: source.siteType,
@@ -574,7 +1190,7 @@ export async function duplicateIndependentSiteProject(
 export async function updateIndependentSiteStatus(
   ownerUserId: number,
   siteId: number,
-  status: IndependentSiteStatus
+  status: IndependentSiteStatus,
 ): Promise<IndependentSiteProjectDto> {
   const current = await getIndependentSiteProject(ownerUserId, siteId);
   if (!current) {
@@ -599,7 +1215,12 @@ export async function updateIndependentSiteStatus(
   await db
     .update(independentSites)
     .set({ status })
-    .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)));
+    .where(
+      and(
+        eq(independentSites.id, siteId),
+        eq(independentSites.ownerUserId, ownerUserId),
+      ),
+    );
 
   const reloaded = await getIndependentSiteProject(ownerUserId, siteId);
   if (!reloaded) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
@@ -608,7 +1229,7 @@ export async function updateIndependentSiteStatus(
 
 export async function publishIndependentSiteProject(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentSiteProjectDto> {
   const current = await getIndependentSiteProject(ownerUserId, siteId);
   if (!current) {
@@ -618,7 +1239,10 @@ export async function publishIndependentSiteProject(
   assertNoSecretsInIndependentSite(current);
   assertZeroEcommerceInIndependentSite(current);
 
-  if (!current.pages.length || !current.pages.some((p) => p.html && p.html.trim().length > 0)) {
+  if (
+    !current.pages.length ||
+    !current.pages.some((p) => p.html && p.html.trim().length > 0)
+  ) {
     throw new Error("INDEPENDENT_SITE_PUBLISH_EMPTY_CONTENT");
   }
 
@@ -638,7 +1262,7 @@ export async function publishIndependentSiteProject(
       .filter((c) => c.blocking && !c.passed)
       .map((c) => c.label);
     throw new Error(
-      `INDEPENDENT_SITE_PUBLISH_CHECKLIST_BLOCKED: ${failedLabels.join(" | ")}`
+      `INDEPENDENT_SITE_PUBLISH_CHECKLIST_BLOCKED: ${failedLabels.join(" | ")}`,
     );
   }
 
@@ -670,7 +1294,7 @@ export async function publishIndependentSiteProject(
     const ver = await createIndependentSiteVersion(
       ownerUserId,
       siteId,
-      `Publication du site (${nowIso.slice(0, 10)})`
+      `Publication du site (${nowIso.slice(0, 10)})`,
     );
     recordIndependentPublicationLog({
       siteId,
@@ -689,12 +1313,17 @@ export async function publishIndependentSiteProject(
       publishedSnapshotJson: JSON.stringify(snapshot),
       publishedAt: new Date(nowIso),
     })
-    .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)));
+    .where(
+      and(
+        eq(independentSites.id, siteId),
+        eq(independentSites.ownerUserId, ownerUserId),
+      ),
+    );
 
   const ver = await createIndependentSiteVersion(
     ownerUserId,
     siteId,
-    `Publication du site (${nowIso.slice(0, 10)})`
+    `Publication du site (${nowIso.slice(0, 10)})`,
   );
   recordIndependentPublicationLog({
     siteId,
@@ -714,7 +1343,7 @@ export async function publishIndependentSiteProject(
 
 export async function listIndependentSiteVersions(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentSiteVersionDto[]> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -733,8 +1362,8 @@ export async function listIndependentSiteVersions(
     .where(
       and(
         eq(independentSiteVersions.siteId, siteId),
-        eq(independentSiteVersions.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteVersions.ownerUserId, ownerUserId),
+      ),
     )
     .orderBy(desc(independentSiteVersions.versionNumber));
 
@@ -759,7 +1388,7 @@ export async function listIndependentSiteVersions(
 export async function createIndependentSiteVersion(
   ownerUserId: number,
   siteId: number,
-  label?: string
+  label?: string,
 ): Promise<IndependentSiteVersionDto> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -767,8 +1396,12 @@ export async function createIndependentSiteVersion(
   }
 
   const existing = await listIndependentSiteVersions(ownerUserId, siteId);
-  const nextVersionNumber = existing.length > 0 ? existing[0].versionNumber + 1 : 1;
-  const safeLabel = sanitizeBuilderText(label || `Point de sauvegarde v${nextVersionNumber}`, 150);
+  const nextVersionNumber =
+    existing.length > 0 ? existing[0].versionNumber + 1 : 1;
+  const safeLabel = sanitizeBuilderText(
+    label || `Point de sauvegarde v${nextVersionNumber}`,
+    150,
+  );
 
   const snapshot = {
     title: project.title,
@@ -817,7 +1450,7 @@ export async function createIndependentSiteVersion(
 export async function restoreIndependentSiteVersion(
   ownerUserId: number,
   siteId: number,
-  versionId: number
+  versionId: number,
 ): Promise<IndependentSiteProjectDto> {
   const versions = await listIndependentSiteVersions(ownerUserId, siteId);
   const target = versions.find((v) => v.id === versionId);
@@ -853,7 +1486,7 @@ export async function restoreIndependentSiteVersion(
 
 export async function listIndependentSiteMedia(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentSiteMediaDto[]> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -869,7 +1502,10 @@ export async function listIndependentSiteMedia(
     .select()
     .from(independentSiteMedia)
     .where(
-      and(eq(independentSiteMedia.siteId, siteId), eq(independentSiteMedia.ownerUserId, ownerUserId))
+      and(
+        eq(independentSiteMedia.siteId, siteId),
+        eq(independentSiteMedia.ownerUserId, ownerUserId),
+      ),
     )
     .orderBy(desc(independentSiteMedia.createdAt));
 
@@ -881,7 +1517,9 @@ export async function listIndependentSiteMedia(
     altText: row.altText,
     url: row.url,
     mimeType: row.mimeType,
-    transforms: normalizeImageTransforms(safeJsonParse(row.transformsJson, DEFAULT_IMAGE_TRANSFORMS)),
+    transforms: normalizeImageTransforms(
+      safeJsonParse(row.transformsJson, DEFAULT_IMAGE_TRANSFORMS),
+    ),
     createdAt: new Date(row.createdAt).toISOString(),
   }));
 }
@@ -895,7 +1533,7 @@ export async function addIndependentSiteMedia(
     url: string;
     mimeType?: string;
     transforms?: Partial<IndependentImageTransforms>;
-  }
+  },
 ): Promise<IndependentSiteMediaDto> {
   assertNoSecretsInIndependentSite(input);
   const project = await getIndependentSiteProject(ownerUserId, input.siteId);
@@ -953,7 +1591,7 @@ export async function updateIndependentSiteMediaTransforms(
   ownerUserId: number,
   siteId: number,
   mediaId: number,
-  transforms: Partial<IndependentImageTransforms>
+  transforms: Partial<IndependentImageTransforms>,
 ): Promise<IndependentSiteMediaDto> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -964,7 +1602,9 @@ export async function updateIndependentSiteMediaTransforms(
   const db = await getDb();
   if (!db) {
     const list = memoryMedia.get(siteId) ?? [];
-    const index = list.findIndex((m) => m.id === mediaId && m.ownerUserId === ownerUserId);
+    const index = list.findIndex(
+      (m) => m.id === mediaId && m.ownerUserId === ownerUserId,
+    );
     if (index === -1) throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
     const updated: IndependentSiteMediaDto = {
       ...list[index],
@@ -983,8 +1623,8 @@ export async function updateIndependentSiteMediaTransforms(
       and(
         eq(independentSiteMedia.id, mediaId),
         eq(independentSiteMedia.siteId, siteId),
-        eq(independentSiteMedia.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteMedia.ownerUserId, ownerUserId),
+      ),
     );
 
   const all = await listIndependentSiteMedia(ownerUserId, siteId);
@@ -996,7 +1636,7 @@ export async function updateIndependentSiteMediaTransforms(
 export async function deleteIndependentSiteMedia(
   ownerUserId: number,
   siteId: number,
-  mediaId: number
+  mediaId: number,
 ): Promise<{ deleted: true }> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1008,7 +1648,7 @@ export async function deleteIndependentSiteMedia(
     const list = memoryMedia.get(siteId) ?? [];
     memoryMedia.set(
       siteId,
-      list.filter((m) => !(m.id === mediaId && m.ownerUserId === ownerUserId))
+      list.filter((m) => !(m.id === mediaId && m.ownerUserId === ownerUserId)),
     );
     return { deleted: true };
   }
@@ -1019,8 +1659,8 @@ export async function deleteIndependentSiteMedia(
       and(
         eq(independentSiteMedia.id, mediaId),
         eq(independentSiteMedia.siteId, siteId),
-        eq(independentSiteMedia.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteMedia.ownerUserId, ownerUserId),
+      ),
     );
   return { deleted: true };
 }
@@ -1059,7 +1699,7 @@ function formatDomainDto(row: {
 
 export async function listIndependentSiteDomains(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentSiteDomainDto[]> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1077,8 +1717,8 @@ export async function listIndependentSiteDomains(
     .where(
       and(
         eq(independentSiteDomains.siteId, siteId),
-        eq(independentSiteDomains.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteDomains.ownerUserId, ownerUserId),
+      ),
     );
   return rows.map(formatDomainDto);
 }
@@ -1086,7 +1726,7 @@ export async function listIndependentSiteDomains(
 export async function addIndependentSiteDomain(
   ownerUserId: number,
   siteId: number,
-  rawHostname: string
+  rawHostname: string,
 ): Promise<IndependentSiteDomainDto> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1154,7 +1794,7 @@ export async function addIndependentSiteDomain(
 export async function verifyIndependentSiteDomain(
   ownerUserId: number,
   siteId: number,
-  domainId: number
+  domainId: number,
 ): Promise<IndependentSiteDomainDto> {
   const domains = await listIndependentSiteDomains(ownerUserId, siteId);
   const target = domains.find((d) => d.id === domainId);
@@ -1168,7 +1808,9 @@ export async function verifyIndependentSiteDomain(
   } catch {
     throw new Error("INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED");
   }
-  if (!txtRecords.some((record) => record.join("") === target.verificationToken)) {
+  if (
+    !txtRecords.some((record) => record.join("") === target.verificationToken)
+  ) {
     throw new Error("INDEPENDENT_SITE_DOMAIN_DNS_NOT_VERIFIED");
   }
 
@@ -1182,7 +1824,7 @@ export async function verifyIndependentSiteDomain(
     };
     memoryDomains.set(
       siteId,
-      domains.map((d) => (d.id === domainId ? updated : d))
+      domains.map((d) => (d.id === domainId ? updated : d)),
     );
     return updated;
   }
@@ -1197,8 +1839,8 @@ export async function verifyIndependentSiteDomain(
       and(
         eq(independentSiteDomains.id, domainId),
         eq(independentSiteDomains.siteId, siteId),
-        eq(independentSiteDomains.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteDomains.ownerUserId, ownerUserId),
+      ),
     );
 
   const refreshed = await listIndependentSiteDomains(ownerUserId, siteId);
@@ -1210,7 +1852,7 @@ export async function verifyIndependentSiteDomain(
 export async function removeIndependentSiteDomain(
   ownerUserId: number,
   siteId: number,
-  domainId: number
+  domainId: number,
 ): Promise<{ removed: true }> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1222,7 +1864,7 @@ export async function removeIndependentSiteDomain(
     const list = memoryDomains.get(siteId) ?? [];
     memoryDomains.set(
       siteId,
-      list.filter((d) => !(d.id === domainId && d.ownerUserId === ownerUserId))
+      list.filter((d) => !(d.id === domainId && d.ownerUserId === ownerUserId)),
     );
     return { removed: true };
   }
@@ -1233,8 +1875,8 @@ export async function removeIndependentSiteDomain(
       and(
         eq(independentSiteDomains.id, domainId),
         eq(independentSiteDomains.siteId, siteId),
-        eq(independentSiteDomains.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteDomains.ownerUserId, ownerUserId),
+      ),
     );
   return { removed: true };
 }
@@ -1244,13 +1886,13 @@ export async function removeIndependentSiteDomain(
  * pour l’utilisateur courant, afin de démontrer un site associatif et familial complet sans boutique.
  */
 export async function ensureAthVahloulDemoProject(
-  ownerUserId: number
+  ownerUserId: number,
 ): Promise<IndependentSiteProjectDto> {
   const existing = await listIndependentSiteProjects(ownerUserId);
   const found = existing.find(
     (site) =>
       site.templateId === ATH_VAHLOUL_DEMO_TEMPLATE_ID ||
-      site.title.toLowerCase().includes("ath vahloul")
+      site.title.toLowerCase().includes("ath vahloul"),
   );
   if (found) return found;
 
@@ -1292,8 +1934,14 @@ export interface IndependentCollaboratorPreviewShareDto {
   previewPath: string;
 }
 
-const memoryPublicationLogs = new Map<number, IndependentPublicationLogEntryDto[]>();
-const memoryPreviewShares = new Map<number, IndependentCollaboratorPreviewShareDto[]>();
+const memoryPublicationLogs = new Map<
+  number,
+  IndependentPublicationLogEntryDto[]
+>();
+const memoryPreviewShares = new Map<
+  number,
+  IndependentCollaboratorPreviewShareDto[]
+>();
 let nextMemoryPubLogId = 12001;
 let nextMemoryShareId = 15001;
 
@@ -1312,7 +1960,7 @@ export function recordIndependentPublicationLog(input: {
     action: input.action,
     authorLabel: sanitizeBuilderText(
       input.authorLabel || `Propriétaire #${input.ownerUserId}`,
-      120
+      120,
     ),
     versionNumber: input.versionNumber ?? null,
     summary: sanitizeBuilderText(input.summary, 280),
@@ -1325,7 +1973,7 @@ export function recordIndependentPublicationLog(input: {
 
 export async function listIndependentPublicationLogs(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentPublicationLogEntryDto[]> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1352,7 +2000,7 @@ export async function listIndependentPublicationLogs(
 export async function unpublishIndependentSiteProject(
   ownerUserId: number,
   siteId: number,
-  reason?: string
+  reason?: string,
 ): Promise<IndependentSiteProjectDto> {
   const current = await getIndependentSiteProject(ownerUserId, siteId);
   if (!current) {
@@ -1373,7 +2021,7 @@ export async function unpublishIndependentSiteProject(
     const ver = await createIndependentSiteVersion(
       ownerUserId,
       siteId,
-      `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`
+      `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`,
     );
     recordIndependentPublicationLog({
       siteId,
@@ -1381,7 +2029,9 @@ export async function unpublishIndependentSiteProject(
       action: "unpublish",
       versionNumber: ver.versionNumber,
       summary: `Site dépublié et repassé en brouillon privé (${
-        reason ? sanitizeBuilderText(reason, 100) : "invisible sur /sites/" + current.slug
+        reason
+          ? sanitizeBuilderText(reason, 100)
+          : "invisible sur /sites/" + current.slug
       }).`,
     });
     return JSON.parse(JSON.stringify(updated));
@@ -1394,12 +2044,17 @@ export async function unpublishIndependentSiteProject(
       publishedSnapshotJson: null,
       publishedAt: null,
     })
-    .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, ownerUserId)));
+    .where(
+      and(
+        eq(independentSites.id, siteId),
+        eq(independentSites.ownerUserId, ownerUserId),
+      ),
+    );
 
   const ver = await createIndependentSiteVersion(
     ownerUserId,
     siteId,
-    `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`
+    `Dépublication (${reason ? sanitizeBuilderText(reason, 80) : "retour en brouillon privé"})`,
   );
   recordIndependentPublicationLog({
     siteId,
@@ -1423,7 +2078,7 @@ export async function updateIndependentSiteMediaMetadata(
     altText?: string;
     newUrl?: string;
     replaceInPages?: boolean;
-  }
+  },
 ): Promise<{
   media: IndependentSiteMediaDto;
   replacedOccurrencesCount: number;
@@ -1440,12 +2095,22 @@ export async function updateIndependentSiteMediaMetadata(
     throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
   }
 
-  const nextLabel = input.label ? sanitizeBuilderText(input.label, 150) : target.label;
-  const nextAlt = input.altText ? sanitizeBuilderText(input.altText, 220) : target.altText;
-  const nextUrl = input.newUrl ? sanitizeBuilderImageSrc(input.newUrl) : target.url;
+  const nextLabel = input.label
+    ? sanitizeBuilderText(input.label, 150)
+    : target.label;
+  const nextAlt = input.altText
+    ? sanitizeBuilderText(input.altText, 220)
+    : target.altText;
+  const nextUrl = input.newUrl
+    ? sanitizeBuilderImageSrc(input.newUrl)
+    : target.url;
 
   let replacedOccurrencesCount = 0;
-  if (input.replaceInPages && input.newUrl && input.newUrl.trim() !== target.url) {
+  if (
+    input.replaceInPages &&
+    input.newUrl &&
+    input.newUrl.trim() !== target.url
+  ) {
     const oldUrl = target.url;
     const updatedPages = project.pages.map((page) => {
       let html = page.html || "";
@@ -1457,7 +2122,8 @@ export async function updateIndependentSiteMediaMetadata(
       return {
         ...page,
         html: sanitizeIndependentHtml(html),
-        socialImageUrl: page.socialImageUrl === oldUrl ? nextUrl : page.socialImageUrl,
+        socialImageUrl:
+          page.socialImageUrl === oldUrl ? nextUrl : page.socialImageUrl,
       };
     });
     if (replacedOccurrencesCount > 0) {
@@ -1471,7 +2137,9 @@ export async function updateIndependentSiteMediaMetadata(
   const db = await getDb();
   if (!db) {
     const list = memoryMedia.get(input.siteId) ?? [];
-    const idx = list.findIndex((m) => m.id === input.mediaId && m.ownerUserId === ownerUserId);
+    const idx = list.findIndex(
+      (m) => m.id === input.mediaId && m.ownerUserId === ownerUserId,
+    );
     if (idx === -1) throw new Error("INDEPENDENT_SITE_MEDIA_NOT_FOUND");
     const updated: IndependentSiteMediaDto = {
       ...list[idx],
@@ -1499,8 +2167,8 @@ export async function updateIndependentSiteMediaMetadata(
       and(
         eq(independentSiteMedia.id, input.mediaId),
         eq(independentSiteMedia.siteId, input.siteId),
-        eq(independentSiteMedia.ownerUserId, ownerUserId)
-      )
+        eq(independentSiteMedia.ownerUserId, ownerUserId),
+      ),
     );
 
   const refreshed = await listIndependentSiteMedia(ownerUserId, input.siteId);
@@ -1523,7 +2191,7 @@ export async function createIndependentCollaboratorPreviewShare(
     collaboratorLabel: string;
     collaboratorEmail?: string | null;
     expiresInHours?: number;
-  }
+  },
 ): Promise<IndependentCollaboratorPreviewShareDto> {
   const project = await getIndependentSiteProject(ownerUserId, input.siteId);
   if (!project) {
@@ -1535,7 +2203,8 @@ export async function createIndependentCollaboratorPreviewShare(
   const expiresAt = new Date(now.getTime() + hours * 3600 * 1000).toISOString();
   const token = `mpreview_${project.id}_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`;
   const cleanLabel =
-    sanitizeBuilderText(input.collaboratorLabel || "Relecteur invité", 120) || "Relecteur invité";
+    sanitizeBuilderText(input.collaboratorLabel || "Relecteur invité", 120) ||
+    "Relecteur invité";
   const cleanEmail = input.collaboratorEmail
     ? sanitizeBuilderText(input.collaboratorEmail, 160)
     : null;
@@ -1561,7 +2230,7 @@ export async function createIndependentCollaboratorPreviewShare(
 
 export async function listIndependentCollaboratorPreviewShares(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ): Promise<IndependentCollaboratorPreviewShareDto[]> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1573,14 +2242,16 @@ export async function listIndependentCollaboratorPreviewShares(
 export async function revokeIndependentCollaboratorPreviewShare(
   ownerUserId: number,
   siteId: number,
-  shareId: number
+  shareId: number,
 ): Promise<IndependentCollaboratorPreviewShareDto> {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
     throw new Error("INDEPENDENT_SITE_NOT_FOUND");
   }
   const current = memoryPreviewShares.get(siteId) ?? [];
-  const idx = current.findIndex((s) => s.id === shareId && s.ownerUserId === ownerUserId);
+  const idx = current.findIndex(
+    (s) => s.id === shareId && s.ownerUserId === ownerUserId,
+  );
   if (idx === -1) {
     throw new Error("INDEPENDENT_SITE_SHARE_NOT_FOUND");
   }
@@ -1597,7 +2268,7 @@ export async function revokeIndependentCollaboratorPreviewShare(
 export function verifyIndependentCollaboratorPreviewToken(
   siteId: number,
   token: string | null | undefined,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): {
   valid: boolean;
   share?: IndependentCollaboratorPreviewShareDto;
@@ -1622,7 +2293,7 @@ export function verifyIndependentCollaboratorPreviewToken(
 
 export async function exportIndependentSiteProjectJson(
   ownerUserId: number,
-  siteId: number
+  siteId: number,
 ) {
   const project = await getIndependentSiteProject(ownerUserId, siteId);
   if (!project) {
@@ -1646,19 +2317,19 @@ export async function importIndependentSiteProjectJson(
     siteId?: number | null;
     rawJson: string;
     newTitle?: string;
-  }
+  },
 ): Promise<IndependentSiteProjectDto> {
   const validation = validateAndSanitizeIndependentSiteImport(input.rawJson);
   if (!validation.valid || !validation.sanitizedPackage) {
     throw new Error(
-      `INDEPENDENT_SITE_IMPORT_REJECTED: ${validation.error || "Format invalide"}`
+      `INDEPENDENT_SITE_IMPORT_REJECTED: ${validation.error || "Format invalide"}`,
     );
   }
 
   const imported = validation.sanitizedPackage.project;
   const targetTitle = sanitizeBuilderText(
     input.newTitle?.trim() || imported.title,
-    160
+    160,
   );
 
   if (input.siteId) {

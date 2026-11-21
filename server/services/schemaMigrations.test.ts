@@ -149,3 +149,15 @@ describe("deployment schema migrations", () => {
     expect(migration).not.toMatch(/`storeId`\s+int/i);
   });
 });
+
+describe("independent site access migration", () => {
+  it("registers additive, isolated site access tables", () => {
+    const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
+    const migration = worktreeFile("drizzle/0064_independent_site_access.sql");
+    expect(runner).toContain('["0064_independent_site_access", "drizzle/0064_independent_site_access.sql"]');
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteMembers`");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteAccessAuditLogs`");
+    expect(migration).not.toMatch(/DROP|TRUNCATE|DELETE/i);
+    expect(migration).not.toMatch(/`storeId`|payment|order|stock/i);
+  });
+});

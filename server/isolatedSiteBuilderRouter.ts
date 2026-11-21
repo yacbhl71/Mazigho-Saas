@@ -32,6 +32,14 @@ import {
   listIndependentSiteDomains,
   listIndependentSiteMedia,
   listIndependentSiteProjects,
+  listIndependentSiteProjectsAccessible,
+  listIndependentSiteAccess,
+  inviteIndependentSiteAccess,
+  revokeIndependentSiteAccess,
+  updateIndependentSiteAccessRole,
+  acceptIndependentSiteInvitation,
+  assertIndependentSiteAccess,
+  resolveIndependentSiteOwnerUserId,
   listIndependentSiteVersions,
   publishIndependentSiteProject,
   removeIndependentSiteDomain,
@@ -87,7 +95,7 @@ const menuItemSchema = z.object({
         label: z.string().min(1).max(120),
         href: z.string().min(1).max(240),
         pageId: z.string().max(80).optional(),
-      })
+      }),
     )
     .optional(),
 });
@@ -144,17 +152,20 @@ export const isolatedSiteBuilderRouter = router({
         slug: z.string().min(1).max(120),
         previewMode: z.boolean().optional(),
         previewToken: z.string().max(200).nullable().optional(),
-      })
+      }),
     )
     .query(async ({ ctx, input }) => {
       const site = await getPublicIndependentSiteBySlug(input.slug, {
-        allowDraftForOwnerUserId: input.previewMode !== false ? ctx.user?.id : undefined,
-        previewToken: input.previewMode !== false ? input.previewToken : undefined,
+        allowDraftForOwnerUserId:
+          input.previewMode !== false ? ctx.user?.id : undefined,
+        previewToken:
+          input.previewMode !== false ? input.previewToken : undefined,
       });
       if (!site) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Ce site indépendant est introuvable ou n’est pas encore publié.",
+          message:
+            "Ce site indépendant est introuvable ou n’est pas encore publié.",
         });
       }
       return site;
@@ -167,20 +178,25 @@ export const isolatedSiteBuilderRouter = router({
           status: siteStatusSchema.optional(),
           siteType: siteTypeSchema.optional(),
         })
-        .optional()
+        .optional(),
     )
     .query(async ({ ctx, input }) => {
-      return await listIndependentSiteProjects(ctx.user.id, input);
+      return await listIndependentSiteProjectsAccessible(ctx.user.id, input);
     }),
 
   getProject: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const project = await getIndependentSiteProject(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      const project = await getIndependentSiteProject(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input.siteId,
+      );
       if (!project) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Projet de site indépendant introuvable ou accès non autorisé.",
+          message:
+            "Projet de site indépendant introuvable ou accès non autorisé.",
         });
       }
       return project;
@@ -198,7 +214,7 @@ export const isolatedSiteBuilderRouter = router({
         slug: z.string().max(96).optional(),
         templateId: z.string().max(80).nullable().optional(),
         socleId: z.string().max(80).nullable().optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       return await createIndependentSiteProject(ctx.user.id, input);
@@ -215,15 +231,22 @@ export const isolatedSiteBuilderRouter = router({
         pages: z.array(pageSchema).optional(),
         reusableBlocks: z.array(reusableBlockSchema).optional(),
         createVersionLabel: z.string().max(150).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await saveIndependentSiteProject(ctx.user.id, input);
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+        return await saveIndependentSiteProject(
+          await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+          input,
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Erreur de sauvegarde";
         if (msg === "INDEPENDENT_SITE_NOT_FOUND") {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Projet introuvable." });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Projet introuvable.",
+          });
         }
         throw new TRPCError({ code: "BAD_REQUEST", message: msg });
       }
@@ -234,13 +257,20 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         newTitle: z.string().min(1).max(160).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await duplicateIndependentSiteProject(ctx.user.id, input.siteId, input.newTitle);
+        return await duplicateIndependentSiteProject(
+          ctx.user.id,
+          input.siteId,
+          input.newTitle,
+        );
       } catch {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Projet à dupliquer introuvable." });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Projet à dupliquer introuvable.",
+        });
       }
     }),
 
@@ -249,15 +279,22 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         status: siteStatusSchema,
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await updateIndependentSiteStatus(ctx.user.id, input.siteId, input.status);
+        return await updateIndependentSiteStatus(
+          ctx.user.id,
+          input.siteId,
+          input.status,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Impossible de modifier le statut.",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Impossible de modifier le statut.",
         });
       }
     }),
@@ -266,11 +303,20 @@ export const isolatedSiteBuilderRouter = router({
     .input(z.object({ siteId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await publishIndependentSiteProject(ctx.user.id, input.siteId);
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+        return await publishIndependentSiteProject(
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "admin",
+          ),
+          input.siteId,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Échec de la publication.",
+          message:
+            err instanceof Error ? err.message : "Échec de la publication.",
         });
       }
     }),
@@ -280,15 +326,20 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         reason: z.string().max(140).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await unpublishIndependentSiteProject(ctx.user.id, input.siteId, input.reason);
+        return await unpublishIndependentSiteProject(
+          ctx.user.id,
+          input.siteId,
+          input.reason,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Échec de la dépublication.",
+          message:
+            err instanceof Error ? err.message : "Échec de la dépublication.",
         });
       }
     }),
@@ -302,7 +353,11 @@ export const isolatedSiteBuilderRouter = router({
   exportProjectJson: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await exportIndependentSiteProjectJson(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      return await exportIndependentSiteProjectJson(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input.siteId,
+      );
     }),
 
   importProjectJson: protectedProcedure
@@ -311,7 +366,7 @@ export const isolatedSiteBuilderRouter = router({
         siteId: z.number().int().positive().nullable().optional(),
         rawJson: z.string().min(2).max(2_000_000),
         newTitle: z.string().max(160).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
@@ -327,7 +382,15 @@ export const isolatedSiteBuilderRouter = router({
   listCollaboratorShares: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await listIndependentCollaboratorPreviewShares(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await listIndependentCollaboratorPreviewShares(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input.siteId,
+      );
     }),
 
   createCollaboratorShare: protectedProcedure
@@ -337,10 +400,18 @@ export const isolatedSiteBuilderRouter = router({
         collaboratorLabel: z.string().min(1).max(120),
         collaboratorEmail: z.string().max(160).nullable().optional(),
         expiresInHours: z.number().int().min(1).max(720).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await createIndependentCollaboratorPreviewShare(ctx.user.id, input);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await createIndependentCollaboratorPreviewShare(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input,
+      );
     }),
 
   revokeCollaboratorShare: protectedProcedure
@@ -348,20 +419,89 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         shareId: z.number().int().positive(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       return await revokeIndependentCollaboratorPreviewShare(
-        ctx.user.id,
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
         input.siteId,
-        input.shareId
+        input.shareId,
       );
     }),
 
+  listAccess: protectedProcedure
+    .input(z.object({ siteId: z.number().int().positive() }))
+    .query(({ ctx, input }) =>
+      listIndependentSiteAccess(ctx.user.id, input.siteId),
+    ),
+  inviteAccess: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        email: z.string().email(),
+        role: z.enum(["admin", "editor"]).optional(),
+        expiresInHours: z.number().int().min(1).max(720).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      inviteIndependentSiteAccess(ctx.user.id, input),
+    ),
+  revokeAccess: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        memberId: z.number().int().positive(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      revokeIndependentSiteAccess(ctx.user.id, input.siteId, input.memberId),
+    ),
+  updateAccessRole: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        memberId: z.number().int().positive(),
+        role: z.enum(["admin", "editor"]),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      updateIndependentSiteAccessRole(
+        ctx.user.id,
+        input.siteId,
+        input.memberId,
+        input.role,
+      ),
+    ),
+  acceptSiteInvitation: protectedProcedure
+    .input(z.object({ token: z.string().min(20).max(200) }))
+    .mutation(({ ctx, input }) => {
+      if (!ctx.user.email)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Le compte connecté doit avoir une adresse e-mail.",
+        });
+      return acceptIndependentSiteInvitation(
+        ctx.user.id,
+        input.token,
+        ctx.user.email,
+      );
+    }),
   listVersions: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await listIndependentSiteVersions(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await listIndependentSiteVersions(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input.siteId,
+      );
     }),
 
   createVersion: protectedProcedure
@@ -369,10 +509,19 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         label: z.string().max(150).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await createIndependentSiteVersion(ctx.user.id, input.siteId, input.label);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await createIndependentSiteVersion(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input.siteId,
+        input.label,
+      );
     }),
 
   restoreVersion: protectedProcedure
@@ -380,16 +529,29 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         versionId: z.number().int().positive(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await restoreIndependentSiteVersion(ctx.user.id, input.siteId, input.versionId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "admin");
+      return await restoreIndependentSiteVersion(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "admin",
+        ),
+        input.siteId,
+        input.versionId,
+      );
     }),
 
   listMedia: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await listIndependentSiteMedia(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      return await listIndependentSiteMedia(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input.siteId,
+      );
     }),
 
   addMedia: protectedProcedure
@@ -401,10 +563,14 @@ export const isolatedSiteBuilderRouter = router({
         url: z.string().min(1),
         mimeType: z.string().max(64).optional(),
         transforms: imageTransformsSchema.optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await addIndependentSiteMedia(ctx.user.id, input);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      return await addIndependentSiteMedia(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input,
+      );
     }),
 
   updateMediaMetadata: protectedProcedure
@@ -416,10 +582,14 @@ export const isolatedSiteBuilderRouter = router({
         altText: z.string().min(1).max(240).optional(),
         newUrl: z.string().min(1).optional(),
         replaceInPages: z.boolean().optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await updateIndependentSiteMediaMetadata(ctx.user.id, input);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      return await updateIndependentSiteMediaMetadata(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input,
+      );
     }),
 
   updateMediaTransforms: protectedProcedure
@@ -428,14 +598,15 @@ export const isolatedSiteBuilderRouter = router({
         siteId: z.number().int().positive(),
         mediaId: z.number().int().positive(),
         transforms: imageTransformsSchema,
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
       return await updateIndependentSiteMediaTransforms(
-        ctx.user.id,
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
         input.siteId,
         input.mediaId,
-        input.transforms
+        input.transforms,
       );
     }),
 
@@ -444,16 +615,29 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         mediaId: z.number().int().positive(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await deleteIndependentSiteMedia(ctx.user.id, input.siteId, input.mediaId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      return await deleteIndependentSiteMedia(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input.siteId,
+        input.mediaId,
+      );
     }),
 
   listDomains: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return await listIndependentSiteDomains(ctx.user.id, input.siteId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "owner");
+      return await listIndependentSiteDomains(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "owner",
+        ),
+        input.siteId,
+      );
     }),
 
   addDomain: protectedProcedure
@@ -461,15 +645,27 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         hostname: z.string().min(4).max(253),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await addIndependentSiteDomain(ctx.user.id, input.siteId, input.hostname);
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "owner");
+        return await addIndependentSiteDomain(
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "owner",
+          ),
+          input.siteId,
+          input.hostname,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Domaine personnalisé invalide.",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Domaine personnalisé invalide.",
         });
       }
     }),
@@ -479,16 +675,27 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         domainId: z.number().int().positive(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await verifyIndependentSiteDomain(ctx.user.id, input.siteId, input.domainId);
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "owner");
+        return await verifyIndependentSiteDomain(
+          await resolveIndependentSiteOwnerUserId(
+            ctx.user.id,
+            input.siteId,
+            "owner",
+          ),
+          input.siteId,
+          input.domainId,
+        );
       } catch (err) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
-            err instanceof Error ? err.message : "Le domaine n’est pas encore vérifié par DNS.",
+            err instanceof Error
+              ? err.message
+              : "Le domaine n’est pas encore vérifié par DNS.",
         });
       }
     }),
@@ -498,9 +705,18 @@ export const isolatedSiteBuilderRouter = router({
       z.object({
         siteId: z.number().int().positive(),
         domainId: z.number().int().positive(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await removeIndependentSiteDomain(ctx.user.id, input.siteId, input.domainId);
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "owner");
+      return await removeIndependentSiteDomain(
+        await resolveIndependentSiteOwnerUserId(
+          ctx.user.id,
+          input.siteId,
+          "owner",
+        ),
+        input.siteId,
+        input.domainId,
+      );
     }),
 });
