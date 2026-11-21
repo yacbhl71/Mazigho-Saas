@@ -995,6 +995,23 @@ export async function listIndependentSiteProjects(
   ownerUserId: number,
   filters?: { status?: IndependentSiteStatus; siteType?: IndependentSiteType },
 ): Promise<IndependentSiteProjectDto[]> {
+  const repairAthProjects = async (projects: IndependentSiteProjectDto[]) =>
+    Promise.all(
+      projects.map(async (project) => {
+        const isAthProject =
+          project.templateId === ATH_VAHLOUL_DEMO_TEMPLATE_ID ||
+          project.title.toLowerCase().includes("ath vahloul");
+        if (!isAthProject) return project;
+        const repaired = repairKnownIndependentInternalLinks(project.pages);
+        if (repaired.changes.length === 0) return project;
+        return saveIndependentSiteProject(ownerUserId, {
+          siteId: project.id,
+          pages: repaired.pages,
+          createVersionLabel: "Réparation automatique des anciens liens ATH VAHLOUL",
+        });
+      }),
+    );
+
   const db = await getDb();
   if (!db) {
     const items = Array.from(memorySites.values())
@@ -1006,7 +1023,7 @@ export async function listIndependentSiteProjects(
         filters?.siteType ? site.siteType === filters.siteType : true,
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return items.map((item) => JSON.parse(JSON.stringify(item)));
+    return repairAthProjects(items.map((item) => JSON.parse(JSON.stringify(item))));
   }
 
   const rows = await db
@@ -1015,12 +1032,13 @@ export async function listIndependentSiteProjects(
     .where(eq(independentSites.ownerUserId, ownerUserId))
     .orderBy(desc(independentSites.updatedAt));
 
-  return rows
+  const projects = rows
     .map(rowToProjectDto)
     .filter((site) => (filters?.status ? site.status === filters.status : true))
     .filter((site) =>
       filters?.siteType ? site.siteType === filters.siteType : true,
     );
+  return repairAthProjects(projects);
 }
 
 export async function getIndependentSiteProject(
