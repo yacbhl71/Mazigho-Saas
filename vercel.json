@@ -3,7 +3,7 @@
   "version": 2,
   "framework": null,
   "buildCommand": "node scripts/apply-schema-migrations.mjs && npm run build",
-  "installCommand": "npm install --include=dev --include=optional --legacy-peer-deps",
+  "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "dist",
   "routes": [
     { "handle": "filesystem" },
