@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearVisualBuilderLocalDraft, getVisualBuilderLocalDraftKey, isDynamicCatalogueAttributes, normalizeBuilderHref, readVisualBuilderLocalDraft, sanitizeBuilderAlt, writeVisualBuilderLocalDraft } from "../client/src/lib/visualBuilderSafety";
+import { auditVisualBuilderAccessibility, clearVisualBuilderLocalDraft, getVisualBuilderLocalDraftKey, isDynamicCatalogueAttributes, normalizeBuilderHref, readVisualBuilderLocalDraft, sanitizeBuilderAlt, writeVisualBuilderLocalDraft } from "../client/src/lib/visualBuilderSafety";
 
 describe("visualBuilderSafety", () => {
   it("autorise les chemins internes et protocoles attendus", () => {
@@ -44,5 +44,15 @@ describe("visualBuilderSafety", () => {
   it("refuse un brouillon local trop volumineux", () => {
     const storage = { setItem: () => undefined };
     expect(writeVisualBuilderLocalDraft(storage, "draft", "x".repeat(2_000_001))).toBe(false);
+  });
+
+  it("détecte les problèmes d’accessibilité et de sécurité des liens", () => {
+    expect(auditVisualBuilderAccessibility('<img src="photo.jpg" alt=""><button><svg></svg></button><a target="_blank">Voir</a>')).toEqual([
+      "1 image(s) sans texte alternatif.",
+      "1 bouton(s) sans nom accessible.",
+      "1 lien(s) sans destination.",
+      "1 lien(s) externe(s) sans protection noopener/noreferrer.",
+    ]);
+    expect(auditVisualBuilderAccessibility('<img src="photo.jpg" alt="Photo"><a href="https://example.com" target="_blank" rel="noopener noreferrer">Voir</a>')).toEqual([]);
   });
 });

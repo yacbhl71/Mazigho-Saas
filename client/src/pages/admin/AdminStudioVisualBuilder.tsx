@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import {
   COMMERCE_MODULE_DISABLED_MESSAGE,
   VISUAL_PROJECT_MODE_OPTIONS,
+  auditVisualBuilderAccessibility,
   disableVisualProjectCommerce,
   enableVisualProjectCommerce,
   evaluateVisualProjectCapabilities,
@@ -1026,13 +1027,13 @@ export default function AdminStudioVisualBuilder() {
     // canvas et peuvent porter un alt de démonstration dans leur modèle.
     // Elles ne doivent pas bloquer la publication comme une vraie image média.
     const mediaHtml = html.replace(/<img\b[^>]*\bsrc=["']data:image\/[^"']+["'][^>]*>/gi, "");
-    if (/<img\b(?![^>]*\balt=)[^>]*>/i.test(mediaHtml) || /<img\b[^>]*\balt=["']\s*["']/i.test(mediaHtml)) issues.push("Une image semble dépourvue de texte alternatif.");
     if ((html.match(/href=["']#["']/gi) || []).length > 0) issues.push("Un ou plusieurs boutons utilisent encore le lien de démonstration #.");
     // Les SVG/data images peuvent contenir un texte décoratif (par exemple
     // « Votre image ») sans que ce texte fasse partie du contenu éditorial.
     // On retire donc les payloads data avant l’audit des placeholders visibles.
     const editorialHtml = mediaHtml.replace(/data:image\/[a-z0-9.+-]+(?:;base64)?,[^"']+/gi, "");
     if (/Votre image|Produit exemple|Votre marque|Prénom du client|à remplacer|texte de démonstration/i.test(editorialHtml)) issues.push("Des contenus de démonstration doivent être remplacés avant publication.");
+    issues.push(...auditVisualBuilderAccessibility(editorialHtml));
     const imageUrls = Array.from(html.matchAll(/<(?:img[^>]*\bsrc|[^>]*style=["'][^"']*background(?:-image)?\s*:\s*url\(['"]?)(https?:\/\/[^'"\s)]+)/gi), match => match[1]).filter(Boolean);
     const uniqueImageUrls = Array.from(new Set(imageUrls));
     const imageResults = await Promise.all(uniqueImageUrls.map(async url => ({ url, valid: await checkImageUrl(url) })));

@@ -12,6 +12,23 @@ export function isDynamicCatalogueAttributes(attributes: Record<string, unknown>
   return attributes?.["data-mazigho-dynamic"] === "catalogue";
 }
 
+export function auditVisualBuilderAccessibility(html: string) {
+  const issues: string[] = [];
+  const imagesWithoutAlt = html.match(/<img\b(?![^>]*\balt\s*=\s*["'][^"']+)[^>]*>/gi) ?? [];
+  if (imagesWithoutAlt.length > 0) issues.push(`${imagesWithoutAlt.length} image(s) sans texte alternatif.`);
+
+  const unnamedButtons = html.match(/<button\b[^>]*>(?:\s|&nbsp;|<[^>]+>)*<\/button>/gi) ?? [];
+  if (unnamedButtons.length > 0) issues.push(`${unnamedButtons.length} bouton(s) sans nom accessible.`);
+
+  const linksWithoutHref = html.match(/<a\b(?![^>]*\bhref\s*=)[^>]*>/gi) ?? [];
+  if (linksWithoutHref.length > 0) issues.push(`${linksWithoutHref.length} lien(s) sans destination.`);
+
+  const externalLinks = html.match(/<a\b[^>]*target\s*=\s*["']_blank["'][^>]*>/gi) ?? [];
+  const unsafeExternalLinks = externalLinks.filter(link => !/\brel\s*=\s*["'][^"']*\b(?:noopener|noreferrer)\b/i.test(link));
+  if (unsafeExternalLinks.length > 0) issues.push(`${unsafeExternalLinks.length} lien(s) externe(s) sans protection noopener/noreferrer.`);
+  return issues;
+}
+
 const LOCAL_DRAFT_PREFIX = "mazigho:visual-builder:draft:";
 const LOCAL_DRAFT_MAX_BYTES = 2_000_000;
 
