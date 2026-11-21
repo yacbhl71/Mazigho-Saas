@@ -364,6 +364,10 @@ export default function AdminStudioVisualBuilder() {
   const [mediaSearch, setMediaSearch] = useState("");
   const [pages, setPages] = useState<BuilderPage[]>([defaultBuilderPage]);
   const [activePageId, setActivePageId] = useState("home");
+  const activeBuilderPage = useMemo(
+    () => pages.find(page => page.id === activePageId) ?? pages[0],
+    [pages, activePageId],
+  );
   const [pageTitle, setPageTitle] = useState("Accueil");
   const [pageSlug, setPageSlug] = useState("/");
   const [pageDescription, setPageDescription] = useState("");
@@ -473,6 +477,15 @@ export default function AdminStudioVisualBuilder() {
     [projectMode, commerceEnabled]
   );
   const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode), style: responsiveEditorCssWithAnimations, blockManager: { blocks: modeAvailableBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode, modeAvailableBlocks]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeBuilderPage?.project || Object.keys(activeBuilderPage.project).length === 0) return;
+    // Les pages peuvent arriver après l'initialisation de l'iframe GrapesJS.
+    // Recharge le projet actif pour que le canvas Studio reflète ses styles
+    // enregistrés au lieu de montrer uniquement une structure HTML brute.
+    editor.loadProjectData(activeBuilderPage.project as Parameters<Editor["loadProjectData"]>[0]);
+  }, [activeBuilderPage?.id, activeBuilderPage?.project]);
 
   useEffect(() => {
     if (saveTarget === "store" && selectedStoreId === null && stores.length > 0 && projectMode !== "independent") {

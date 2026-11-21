@@ -1046,6 +1046,17 @@ export default function IndependentSiteBuilderPage() {
     return pages.find((p) => p.id === activePageId) ?? pages[0];
   }, [pages, activePageId]);
 
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activePage) return;
+    // Le projet arrive après l'initialisation de GrapesJS : resynchroniser ici
+    // garantit que le canvas privé reflète la vitrine, styles compris, au lieu
+    // d'afficher uniquement le HTML brut.
+    editor.setComponents(activePage.html);
+    editor.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
+    refreshLayersFromEditor(editor);
+  }, [activePage?.id, activePage?.html, activePage?.css]);
+
   const navigationTree = useMemo(() => buildNavigationFromPages(pages), [pages]);
 
   const activePageImages = useMemo(
