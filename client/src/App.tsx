@@ -199,6 +199,29 @@ function ExternalLocationRedirect({ href }: { href: string }) {
   return <div className="min-h-screen bg-slate-950" aria-busy="true" />;
 }
 
+function IndependentSiteBuilderPrivateRoute() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return <div className="grid min-h-screen place-items-center bg-slate-950 text-white"><Loader2 className="h-7 w-7 animate-spin" /></div>;
+  }
+  if (!user) {
+    return <Redirect to="/login?returnTo=%2Fconstructeur-sites" replace />;
+  }
+  if ((user as any).role !== "admin") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f4f6f1] px-4 text-slate-900">
+        <div className="w-full max-w-lg rounded-3xl border border-[#d9dfcf] bg-white p-8 text-center shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#59634c]">Constructeur privé</p>
+          <h1 className="mt-3 text-2xl font-bold">Cette surface est réservée au propriétaire de MAZIGHO</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">Les clients et membres invités administrent uniquement leur propre site depuis l’espace client dédié. Le constructeur visuel n’est pas disponible pour eux.</p>
+          <a href="/administration-site" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#59634c] px-5 py-2 text-sm font-semibold text-white hover:bg-[#46513b]">Ouvrir mon administration de site</a>
+        </div>
+      </main>
+    );
+  }
+  return <IndependentSiteBuilderPage />;
+}
+
 function StorefrontShowcaseCommerceUnavailablePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#fbf7f2] px-6 text-center text-slate-900">
@@ -506,7 +529,7 @@ function Router() {
       <Route path={"/constructeur-sites/invitation/:token"} component={SiteInvitationPage} />
       <Route path={"/administration-site"} component={IndependentSiteAdminPage} />
       <Route path={"/constructeur-sites/apercu/:slug"} component={IndependentSitePublicPreviewPage} />
-      <Route path={"/constructeur-sites"} component={IndependentSiteBuilderPage} />
+      <Route path={"/constructeur-sites"} component={IndependentSiteBuilderPrivateRoute} />
       <Route path={"/sites/:slug"} component={IndependentSitePublicPreviewPage} />
       <Route path={"/mazigho-saas"} component={MazighoSaasLanding} />
       <Route path={"/creation-boutique"} component={BoutiqueKeyInHandLanding} />

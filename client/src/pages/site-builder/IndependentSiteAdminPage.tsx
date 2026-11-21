@@ -111,16 +111,19 @@ export default function IndependentSiteAdminPage() {
     setDraftImage(readFirstImage(activePage.html));
   }, [activePage?.id, activePage?.html]);
 
-  if (authLoading || projectsQuery.isLoading) {
+  if (authLoading || projectsQuery.isLoading || (Boolean(siteId) && (projectQuery.isLoading || roleQuery.isLoading))) {
     return <main className="grid min-h-screen place-items-center bg-[#f4f6f1]"><Loader2 className="h-7 w-7 animate-spin text-[#59634c]" /></main>;
   }
   if (!user) {
     return <main className="grid min-h-screen place-items-center bg-[#f4f6f1]"><Loader2 className="h-7 w-7 animate-spin text-[#59634c]" /></main>;
   }
-  if (!accessibleProject || !siteId || projectQuery.isError) {
+  if (projectsQuery.isError) {
+    return <main className="grid min-h-screen place-items-center bg-[#f4f6f1] px-4"><Card className="max-w-lg"><CardHeader><CardTitle>Impossible de charger vos sites</CardTitle><CardDescription>Votre session n’a pas permis de récupérer les sites qui vous sont attribués. Rechargez la page ou reconnectez-vous.</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" onClick={() => void projectsQuery.refetch()}>Réessayer</Button></CardContent></Card></main>;
+  }
+  if (!accessibleProject || !siteId || projectQuery.isError || !project) {
     return <main className="grid min-h-screen place-items-center bg-[#f4f6f1] px-4"><Card className="max-w-lg"><CardHeader><CardTitle>Accès limité à ce site</CardTitle><CardDescription>Votre compte ne possède pas d’accès actif à ce site indépendant.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href={`/sites/${requestedSlug}`}>Retour au site public</Link></Button></CardContent></Card></main>;
   }
-  const currentProject = project as NonNullable<typeof project>;
+  const currentProject = project;
 
   function savePages(nextPages: EditablePage[], label: string) {
     saveMutation.mutate({ siteId, pages: nextPages as any, createVersionLabel: label });
