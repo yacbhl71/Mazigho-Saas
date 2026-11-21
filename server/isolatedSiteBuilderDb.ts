@@ -894,7 +894,7 @@ export async function acceptIndependentSiteInvitation(
     .limit(1);
   const m = rows[0];
   if (!m) throw new Error("INDEPENDENT_SITE_INVITATION_INVALID");
-  await db
+  const updateResult = await db
     .update(independentSiteMembers)
     .set({
       userId,
@@ -908,6 +908,12 @@ export async function acceptIndependentSiteInvitation(
         isNull(independentSiteMembers.invitationUsedAt),
       ),
     );
+  const affectedRows = Number(
+    (updateResult as { affectedRows?: number }).affectedRows ?? 0,
+  );
+  if (affectedRows !== 1) {
+    throw new Error("INDEPENDENT_SITE_INVITATION_INVALID:ALREADY_USED");
+  }
   await logIndependentSiteAccessAction(userId, m.siteId, "accept", {
     email: m.email,
     userId,
