@@ -4,12 +4,21 @@ import {
   assertIndependentSiteAccess,
   createIndependentSiteProject,
   getIndependentSiteProject,
+  inspectIndependentSiteInvitation,
   inviteIndependentSiteAccess,
   listIndependentSiteProjectsAccessible,
   listIndependentSiteAccess,
   revokeIndependentSiteAccess,
   updateIndependentSiteAccessRole,
 } from "./isolatedSiteBuilderDb";
+import {
+  INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE,
+  INDEPENDENT_SITE_ROLE_PRESENTATIONS,
+  formatIndependentInvitationErrorMessage,
+  formatIndependentInvitationStatusNotice,
+  getIndependentSiteRolePresentation,
+  sanitizeIndependentAdministrationReturnTo,
+} from "../shared/isolatedSiteBuilder";
 
 describe("independent site access isolation", () => {
   it("keeps sites isolated and lets an invited editor access only the assigned site", async () => {
@@ -104,5 +113,179 @@ describe("independent site access isolation", () => {
       "editor",
     );
     expect(editor.status).toBe("active");
+  });
+
+  it("inspects invitations and reports clear UX diagnostics for valid, mismatched email, already used, revoked, expired, and unknown tokens", async () => {
+    const site = await createIndependentSiteProject(9701, {
+      title: "Association Villageoise",
+    });
+
+    // 1. Unknown token
+    const notFound = await inspectIndependentSiteInvitation("unknown-token-1234567890");
+    expect(notFound.status).toBe("not_found");
+    expect(formatIndependentInvitationStatusNotice(notFound).canAccept).toBe(false);
+
+    // 2. Valid invitation + email match vs mismatch
+    const invite = await inviteIndependentSiteAccess(9701, {
+      siteId: site.id,
+      email: "president@village.test",
+      role: "admin",
+      expiresInHours: 48,
+    });
+    expect(invite.invitationPath).toContain("/constructeur-sites/invitation/");
+
+    const validMatching = await inspectIndependentSiteInvitation(
+      invite.developmentOnlyToken!,
+      "PRESIDENT@village.test",
+    );
+    expect(validMatching.status).toBe("valid");
+    expect(validMatching.siteTitle).toBe("Association Villageoise");
+    expect(validMatching.role).toBe("admin");
+    expect(validMatching.emailMatchesViewer).toBe(true);
+    expect(
+      formatIndependentInvitationStatusNotice(
+        validMatching,
+        "PRESIDENT@village.test",
+      ).canAccept,
+    ).toBe(true);
+
+    const validMismatched = await inspectIndependentSiteInvitation(
+      invite.developmentOnlyToken!,
+      "autre@village.test",
+    );
+    expect(validMismatched.status).toBe("valid");
+    expect(validMismatched.emailMatchesViewer).toBe(false);
+    expect(
+      formatIndependentInvitationStatusNotice(
+        validMismatched,
+        "autre@village.test",
+      ).canAccept,
+    ).toBe(false);
+
+    // Accepting with wrong email throws specific code containing INDEPENDENT_SITE_INVITATION_INVALID
+    await expect(
+      acceptIndependentSiteInvitation(
+        9702,
+        invite.developmentOnlyToken!,
+        "autre@village.test",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID:EMAIL_MISMATCH");
+
+    expect(
+      formatIndependentInvitationErrorMessage(
+        new Error("INDEPENDENT_SITE_INVITATION_INVALID:EMAIL_MISMATCH"),
+      ),
+    ).toContain("adresse e-mail invitée");
+
+    // 3. Accepting with matching email succeeds, and subsequent inspection reports "already_used"
+    await acceptIndependentSiteInvitation(
+      9702,
+      invite.developmentOnlyToken!,
+      "president@village.test",
+    );
+    const afterUse = await inspectIndependentSiteInvitation(
+      invite.developmentOnlyToken!,
+      "president@village.test",
+    );
+    expect(afterUse.status).toBe("already_used");
+    await expect(
+      acceptIndependentSiteInvitation(
+        9702,
+        invite.developmentOnlyToken!,
+        "president@village.test",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID:ALREADY_USED");
+
+    // 4. Revoked invitation reports "revoked"
+    const revocableInvite = await inviteIndependentSiteAccess(9701, {
+      siteId: site.id,
+      email: "secretaire@village.test",
+      role: "editor",
+    });
+    const members = await listIndependentSiteAccess(9701, site.id);
+    const secretaireMember = members.find(
+      (m) => m.email === "secretaire@village.test",
+    )!;
+    await revokeIndependentSiteAccess(9701, site.id, secretaireMember.id);
+
+    const afterRevoke = await inspectIndependentSiteInvitation(
+      revocableInvite.developmentOnlyToken!,
+      "secretaire@village.test",
+    );
+    expect(afterRevoke.status).toBe("revoked");
+    await expect(
+      acceptIndependentSiteInvitation(
+        9703,
+        revocableInvite.developmentOnlyToken!,
+        "secretaire@village.test",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID:REVOKED");
+
+    // 5. Expired invitation reports "expired"
+    const expiredInvite = await inviteIndependentSiteAccess(9701, {
+      siteId: site.id,
+      email: "tresorier@village.test",
+      role: "editor",
+      expiresInHours: -1,
+    });
+    const afterExpiry = await inspectIndependentSiteInvitation(
+      expiredInvite.developmentOnlyToken!,
+      "tresorier@village.test",
+    );
+    expect(afterExpiry.status).toBe("expired");
+    await expect(
+      acceptIndependentSiteInvitation(
+        9704,
+        expiredInvite.developmentOnlyToken!,
+        "tresorier@village.test",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID:EXPIRED");
+  });
+
+  it("provides non-technical French role presentations and safe returnTo paths without boutique escape", () => {
+    expect(getIndependentSiteRolePresentation("owner").shortLabel).toBe(
+      "Propriétaire",
+    );
+    expect(getIndependentSiteRolePresentation("admin").shortLabel).toBe(
+      "Administrateur",
+    );
+    expect(getIndependentSiteRolePresentation("editor").shortLabel).toBe(
+      "Éditeur",
+    );
+    expect(
+      INDEPENDENT_SITE_ROLE_PRESENTATIONS.editor.restrictedActions.join(" "),
+    ).toContain("publier");
+    expect(INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.steps).toHaveLength(4);
+    expect(
+      INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE.ownershipTransferNotice.statusBadge,
+    ).toContain("Protégé");
+
+    // returnTo safety: keeps independent site routes and never falls back to /demarrer-boutique
+    expect(sanitizeIndependentAdministrationReturnTo(undefined)).toBe(
+      "/constructeur-sites",
+    );
+    expect(
+      sanitizeIndependentAdministrationReturnTo("/demarrer-boutique?plan=free"),
+    ).toBe("/constructeur-sites");
+    expect(
+      sanitizeIndependentAdministrationReturnTo(
+        "/constructeur-sites?siteId=1042",
+      ),
+    ).toBe("/constructeur-sites?siteId=1042");
+    expect(
+      sanitizeIndependentAdministrationReturnTo(
+        "/constructeur-sites?siteSlug=association-familiale-ath-vahloul",
+      ),
+    ).toBe("/constructeur-sites?siteSlug=association-familiale-ath-vahloul");
+    expect(
+      sanitizeIndependentAdministrationReturnTo(
+        "/constructeur-sites/invitation/token_abc12345678901234567890",
+      ),
+    ).toBe("/constructeur-sites/invitation/token_abc12345678901234567890");
+    expect(
+      sanitizeIndependentAdministrationReturnTo(
+        "https://mazighoshop.com/boutique",
+      ),
+    ).toBe("/constructeur-sites");
   });
 });

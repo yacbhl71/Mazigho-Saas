@@ -38,6 +38,7 @@ import {
   inviteIndependentSiteAccess,
   revokeIndependentSiteAccess,
   updateIndependentSiteAccessRole,
+  inspectIndependentSiteInvitation,
   acceptIndependentSiteInvitation,
   assertIndependentSiteAccess,
   resolveIndependentSiteOwnerUserId,
@@ -529,6 +530,11 @@ export const isolatedSiteBuilderRouter = router({
         input.memberId,
         input.role,
       ),
+    ),
+  inspectSiteInvitation: publicProcedure
+    .input(z.object({ token: z.string().min(1).max(200) }))
+    .query(({ ctx, input }) =>
+      inspectIndependentSiteInvitation(input.token, ctx.user?.email ?? null),
     ),
   acceptSiteInvitation: protectedProcedure
     .input(z.object({ token: z.string().min(20).max(200) }))

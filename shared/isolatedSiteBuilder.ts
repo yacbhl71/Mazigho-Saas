@@ -4912,3 +4912,311 @@ export function evaluateIndependentSiteQualityAndChecklist(input: {
     publicationStatusLabel,
   };
 }
+
+// ---------------------------------------------------------------------------
+// AUDIT UX/UI — Rôles d’accès par site indépendant, Parcours d’invitation
+//               & Parcours de livraison client (100 % aligné permissions serveur)
+// ---------------------------------------------------------------------------
+
+export type IndependentSiteClientRole = "owner" | "admin" | "editor";
+
+export interface IndependentSiteRolePresentation {
+  role: IndependentSiteClientRole;
+  title: string;
+  shortLabel: string;
+  badgeLabel: string;
+  audienceSummary: string;
+  description: string;
+  allowedActions: string[];
+  restrictedActions: string[];
+}
+
+export const INDEPENDENT_SITE_ROLE_PRESENTATIONS: Record<
+  IndependentSiteClientRole,
+  IndependentSiteRolePresentation
+> = {
+  owner: {
+    role: "owner",
+    title: "Propriétaire du site (Owner)",
+    shortLabel: "Propriétaire",
+    badgeLabel: "Propriétaire (Owner)",
+    audienceSummary: "Créateur ou responsable principal du site",
+    description:
+      "Dispose de l’intégralité des droits sur ce site : édition, publication, domaines personnalisés, gestion des accès clients et réglages sensibles.",
+    allowedActions: [
+      "Modifier toutes les pages, textes, images, blocs et menus",
+      "Sauvegarder les brouillons et prévisualiser le site en privé",
+      "Publier et dépublier le site sur son adresse publique",
+      "Gérer l’historique des versions et l’import/export JSON",
+      "Rattacher et vérifier un nom de domaine personnalisé (DNS TXT)",
+      "Inviter des membres (Administrateur ou Éditeur), modifier leur rôle et révoquer un accès",
+      "Dupliquer ou archiver le site",
+    ],
+    restrictedActions: [
+      "Le transfert définitif de propriété est protégé et nécessite une validation dédiée",
+    ],
+  },
+  admin: {
+    role: "admin",
+    title: "Administrateur du site (Admin)",
+    shortLabel: "Administrateur",
+    badgeLabel: "Administrateur (Admin)",
+    audienceSummary: "Client responsable du site, président d’association ou gérant",
+    description:
+      "Assure la gestion opérationnelle complète du site au quotidien (contenu, médias, versions et mise en ligne), sans pouvoir modifier les membres ni les domaines.",
+    allowedActions: [
+      "Modifier toutes les pages, textes, images, blocs, menus et réglages SEO",
+      "Gérer la bibliothèque de médias du site",
+      "Sauvegarder les brouillons et ouvrir l’aperçu privé",
+      "Publier le site en ligne et le dépublier (retour en brouillon)",
+      "Créer et restaurer des versions dans l’historique du site",
+      "Exporter et importer le contenu du site au format JSON",
+      "Créer des liens d’aperçu privé en lecture seule pour relecture",
+    ],
+    restrictedActions: [
+      "Ne peut pas inviter, modifier ou révoquer les membres du site",
+      "Ne peut pas ajouter ou supprimer un domaine personnalisé DNS",
+      "Ne peut pas archiver le site ni transférer la propriété",
+    ],
+  },
+  editor: {
+    role: "editor",
+    title: "Éditeur de contenu (Editor)",
+    shortLabel: "Éditeur",
+    badgeLabel: "Éditeur (Editor)",
+    audienceSummary: "Rédacteur, bénévole ou collaborateur chargé des mises à jour",
+    description:
+      "Modifie le contenu autorisé du site (textes, pages, images et brouillons) en toute sécurité, sans pouvoir publier en ligne ni modifier les accès.",
+    allowedActions: [
+      "Modifier les textes, titres, cartes et sections des pages",
+      "Ajouter et remplacer des images dans la bibliothèque de médias du site",
+      "Ajuster le référencement (titre et description SEO) des pages",
+      "Sauvegarder le travail en brouillon et consulter l’aperçu privé",
+    ],
+    restrictedActions: [
+      "Ne peut pas publier ni dépublier le site en ligne (validation par un Administrateur ou Propriétaire)",
+      "Ne peut pas restaurer d’anciennes versions ni importer/exporter le projet",
+      "Ne peut pas gérer les noms de domaine personnalisés",
+      "Ne peut pas voir ni gérer les membres et invitations du site",
+    ],
+  },
+};
+
+export function getIndependentSiteRolePresentation(
+  role: IndependentSiteClientRole | null | undefined
+): IndependentSiteRolePresentation {
+  if (role === "owner") return INDEPENDENT_SITE_ROLE_PRESENTATIONS.owner;
+  if (role === "admin") return INDEPENDENT_SITE_ROLE_PRESENTATIONS.admin;
+  return INDEPENDENT_SITE_ROLE_PRESENTATIONS.editor;
+}
+
+export interface IndependentSiteClientDeliveryStep {
+  stepNumber: number;
+  title: string;
+  description: string;
+}
+
+export const INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE: {
+  heading: string;
+  subtitle: string;
+  isolationNotice: string;
+  supportNotice: string;
+  ownershipTransferNotice: {
+    title: string;
+    statusBadge: string;
+    description: string;
+  };
+  steps: IndependentSiteClientDeliveryStep[];
+} = {
+  heading: "Parcours de livraison et prise en main client",
+  subtitle:
+    "Guide clair pour remettre un site à une association, une famille ou une petite entreprise en toute autonomie.",
+  isolationNotice:
+    "Séparation garantie : la personne invitée accède uniquement à l’administration de son propre site. Elle ne voit jamais les autres projets, ni le catalogue privé MAZIGHO, ni la boutique e-commerce.",
+  supportNotice:
+    "Besoin d’aide ? En cas de question sur votre accès, d’invitation expirée ou de publication, contactez directement le propriétaire du site qui vous a transmis l’invitation ou votre référent d’accompagnement.",
+  ownershipTransferNotice: {
+    title: "Transfert de propriété du site (Owner)",
+    statusBadge: "Protégé · Sur validation",
+    description:
+      "Pour éviter toute perte accidentelle d’accès, le rôle Propriétaire (Owner) ne peut pas être cédé en un clic. Lors de la livraison d’un site, attribuez le rôle « Administrateur » à votre client pour lui donner l’autonomie de gestion et de publication. Le transfert intégral de propriété fera l’objet d’une procédure dédiée avec double confirmation.",
+  },
+  steps: [
+    {
+      stepNumber: 1,
+      title: "Inviter le client avec le rôle adapté",
+      description:
+        "Saisissez l’adresse e-mail exacte du client et choisissez « Administrateur » (s’il doit pouvoir publier lui-même) ou « Éditeur » (s’il prépare uniquement les contenus en brouillon).",
+    },
+    {
+      stepNumber: 2,
+      title: "Transmettre le lien d’activation à usage unique",
+      description:
+        "Copiez le lien d’invitation généré et envoyez-le au client. Ce lien affiche clairement le nom du site, la durée de validité et le rôle attribué avant activation.",
+    },
+    {
+      stepNumber: 3,
+      title: "Connexion sur /connexion-administration",
+      description:
+        "Le client se connecte (ou crée son mot de passe) avec l’adresse e-mail invitée sur la page dédiée /connexion-administration, puis active son accès en un clic.",
+    },
+    {
+      stepNumber: 4,
+      title: "Gestion du site et retour au site public",
+      description:
+        "Depuis son espace dédié, le client modifie ses pages, sauvegarde ses changements et peut revenir à tout moment sur son site public (/sites/nom-du-site).",
+    },
+  ],
+};
+
+export type IndependentSiteInvitationInspectionStatus =
+  | "valid"
+  | "expired"
+  | "revoked"
+  | "already_used"
+  | "not_found";
+
+export interface IndependentSiteInvitationInspectionDto {
+  status: IndependentSiteInvitationInspectionStatus;
+  siteId: number | null;
+  siteTitle: string | null;
+  siteSlug: string | null;
+  role: "admin" | "editor" | null;
+  invitedEmail: string | null;
+  expiresAt: string | null;
+  emailMatchesViewer: boolean | null;
+}
+
+export function formatIndependentInvitationStatusNotice(
+  inspection: IndependentSiteInvitationInspectionDto,
+  viewerEmail?: string | null
+): {
+  title: string;
+  description: string;
+  actionGuidance: string;
+  canAccept: boolean;
+  tone: "emerald" | "amber" | "rose" | "slate";
+} {
+  if (inspection.status === "not_found") {
+    return {
+      title: "Lien d’invitation introuvable ou incomplet",
+      description:
+        "Ce lien d’invitation ne correspond à aucune invitation enregistrée. Vérifiez que l’adresse URL complète a bien été copiée sans coupure.",
+      actionGuidance:
+        "Demandez un nouveau lien d’invitation au propriétaire du site ou connectez-vous à votre espace si votre accès a déjà été activé.",
+      canAccept: false,
+      tone: "rose",
+    };
+  }
+
+  if (inspection.status === "revoked") {
+    return {
+      title: "Invitation révoquée",
+      description: `L’invitation pour le site « ${inspection.siteTitle || "ce site"} » a été révoquée par le propriétaire du site et ne peut plus être utilisée.`,
+      actionGuidance:
+        "Si vous pensez qu’il s’agit d’une erreur, contactez le propriétaire du site pour qu’il vous envoie une nouvelle invitation.",
+      canAccept: false,
+      tone: "rose",
+    };
+  }
+
+  if (inspection.status === "already_used") {
+    return {
+      title: "Invitation déjà utilisée (accès actif)",
+      description: `Ce lien d’invitation à usage unique pour « ${inspection.siteTitle || "ce site"} » a déjà été activé avec l’adresse ${inspection.invitedEmail || "invitée"}.`,
+      actionGuidance:
+        "Vous n’avez plus besoin de ce lien : connectez-vous directement via /connexion-administration pour accéder à l’administration de votre site.",
+      canAccept: false,
+      tone: "amber",
+    };
+  }
+
+  if (inspection.status === "expired") {
+    const expiredDateLabel = inspection.expiresAt
+      ? new Date(inspection.expiresAt).toLocaleString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
+    return {
+      title: "Invitation expirée",
+      description: `Le délai de validité de cette invitation pour « ${inspection.siteTitle || "ce site"} » est dépassé${expiredDateLabel ? ` (expirée le ${expiredDateLabel})` : ""}.`,
+      actionGuidance:
+        "Pour votre sécurité, les invitations sont limitées dans le temps. Demandez au propriétaire du site de générer un nouveau lien d’invitation.",
+      canAccept: false,
+      tone: "amber",
+    };
+  }
+
+  // status === "valid"
+  const normalizedViewer = viewerEmail?.trim().toLowerCase() || null;
+  const normalizedInvited = inspection.invitedEmail?.trim().toLowerCase() || null;
+  if (normalizedViewer && normalizedInvited && normalizedViewer !== normalizedInvited) {
+    return {
+      title: "Adresse e-mail différente de l’adresse invitée",
+      description: `Cette invitation a été envoyée à ${inspection.invitedEmail}, mais vous êtes actuellement connecté avec ${viewerEmail}.`,
+      actionGuidance: `Connectez-vous sur /connexion-administration avec l’adresse exacte ${inspection.invitedEmail} pour pouvoir activer cet accès.`,
+      canAccept: false,
+      tone: "amber",
+    };
+  }
+
+  const roleInfo = getIndependentSiteRolePresentation(inspection.role);
+  return {
+    title: `Invitation valide — ${roleInfo.title}`,
+    description: `Vous êtes invité à rejoindre l’espace de gestion du site « ${inspection.siteTitle || "Site indépendant"} » avec le rôle ${roleInfo.shortLabel}.`,
+    actionGuidance: normalizedViewer
+      ? "Vérifiez les informations ci-dessous puis cliquez sur « Activer mon accès au site »."
+      : `Connectez-vous ou créez votre compte avec l’adresse ${inspection.invitedEmail || "invitée"} pour activer votre accès.`,
+    canAccept: Boolean(normalizedViewer && (!normalizedInvited || normalizedViewer === normalizedInvited)),
+    tone: "emerald",
+  };
+}
+
+export function formatIndependentInvitationErrorMessage(error: unknown): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "INDEPENDENT_SITE_INVITATION_INVALID";
+
+  if (raw.includes("EMAIL_MISMATCH")) {
+    return "L’adresse e-mail de votre session ne correspond pas à l’adresse e-mail invitée. Veuillez vous connecter avec l’adresse exacte indiquée sur l’invitation.";
+  }
+  if (raw.includes("EXPIRED")) {
+    return "Cette invitation a expiré. Demandez au propriétaire du site de vous envoyer un nouveau lien d’invitation.";
+  }
+  if (raw.includes("REVOKED")) {
+    return "Cette invitation a été révoquée par le propriétaire du site.";
+  }
+  if (raw.includes("ALREADY_USED")) {
+    return "Ce lien d’invitation à usage unique a déjà été activé. Vous pouvez ouvrir directement votre espace via /connexion-administration.";
+  }
+  if (raw.includes("INDEPENDENT_SITE_INVITATION_INVALID")) {
+    return "Cette invitation n’est plus valide (lien expiré, déjà utilisé, révoqué ou adresse e-mail différente de celle invitée).";
+  }
+  return raw;
+}
+
+export function sanitizeIndependentAdministrationReturnTo(
+  rawReturnTo: string | null | undefined
+): string {
+  const candidate = (rawReturnTo || "").trim();
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/constructeur-sites";
+  }
+  if (
+    candidate === "/constructeur-sites" ||
+    /^\/constructeur-sites\?(?:siteSlug=[a-z0-9-]{1,120}|siteId=[0-9]{1,12})$/.test(candidate) ||
+    /^\/constructeur-sites\/invitation\/[A-Za-z0-9_-]{16,200}$/.test(candidate) ||
+    /^\/constructeur-sites\/apercu\/[a-z0-9-]{1,120}$/.test(candidate) ||
+    /^\/sites\/[a-z0-9-]{1,120}$/.test(candidate)
+  ) {
+    return candidate;
+  }
+  return "/constructeur-sites";
+}
