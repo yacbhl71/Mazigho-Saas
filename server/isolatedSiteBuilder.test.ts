@@ -71,6 +71,7 @@ import {
   filterIndependentMediaItems,
   generateUniquePageSlug,
   reorderIndependentPagesMenu,
+  repairKnownIndependentInternalLinks,
   replaceMediaUrlAcrossPages,
   shouldAutoCreateVersionOnSave,
   validateAndSanitizeIndependentSiteImport,
@@ -1178,6 +1179,52 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     const p1After = reordered.find((p) => p.id === "p1");
     expect(p2After?.menuOrder).toBe(1);
     expect(p1After?.menuOrder).toBe(2);
+  });
+
+  it("21 bis. répare seulement les alias internes connus sans masquer les chemins inconnus", () => {
+    const pages = [
+      {
+        id: "home",
+        title: "Accueil",
+        slug: "/",
+        menuOrder: 1,
+        parentPageId: null,
+        visibility: "public" as const,
+        seoTitle: "Accueil",
+        seoDescription: "",
+        html: '<a href="/a-propos">Notre histoire</a> <a href="/participer#formulaire">Participer</a> <a href="/inconnu">Inconnu</a>',
+        css: "",
+      },
+      {
+        id: "family",
+        title: "Notre famille",
+        slug: "/notre-famille",
+        menuOrder: 2,
+        parentPageId: null,
+        visibility: "public" as const,
+        seoTitle: "Notre famille",
+        seoDescription: "",
+        html: "<h1>Notre famille</h1>",
+        css: "",
+      },
+      {
+        id: "contact",
+        title: "Contact",
+        slug: "/contact",
+        menuOrder: 3,
+        parentPageId: null,
+        visibility: "public" as const,
+        seoTitle: "Contact",
+        seoDescription: "",
+        html: "<h1>Contact</h1>",
+        css: "",
+      },
+    ];
+    const repaired = repairKnownIndependentInternalLinks(pages);
+    expect(repaired.changes).toHaveLength(2);
+    expect(repaired.pages[0].html).toContain('href="/notre-famille"');
+    expect(repaired.pages[0].html).toContain('href="/contact#formulaire"');
+    expect(repaired.pages[0].html).toContain('href="/inconnu"');
   });
 
   it("22. Phase 2 — Checklist avant publication (14 points), blocage en cas d’erreur critique, Dépublication, Journal de publication et Collaboration contrôlée en lecture seule", async () => {

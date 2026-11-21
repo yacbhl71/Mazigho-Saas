@@ -55,6 +55,7 @@ import {
   normalizeIndependentPageSlug,
   parseBuilderQueryParams,
   removeCardFromVisualCardGrid,
+  repairKnownIndependentInternalLinks,
   renderVisualCardGridHtml,
   reorderIndependentPagesMenu,
   replaceMediaUrlAcrossPages,
@@ -681,6 +682,19 @@ export default function IndependentSiteBuilderPage() {
       setErrorBanner(formatIndependentBuilderErrorMessage(err));
     },
   });
+
+  const handleRepairKnownInternalLinks = () => {
+    if (!selectedSiteId) return;
+    const repaired = repairKnownIndependentInternalLinks(pages);
+    if (repaired.changes.length === 0) {
+      setStatusBanner("Aucun alias de lien connu n’a pu être réparé automatiquement. Les chemins restants doivent être vérifiés manuellement.");
+      return;
+    }
+    setPages(repaired.pages);
+    setHasUnsavedChanges(true);
+    saveProjectMutation.mutate({ siteId: selectedSiteId, pages: repaired.pages });
+    setStatusBanner(`${repaired.changes.length} lien(s) connu(s) réparé(s), avec conservation des ancres et paramètres.`);
+  };
 
   const duplicateProjectMutation = trpc.independentSiteBuilder.duplicateProject.useMutation({
     onSuccess: async (copy) => {
@@ -3008,6 +3022,19 @@ export default function IndependentSiteBuilderPage() {
                               </li>
                             ))}
                           </ul>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-7 border-rose-300 bg-white text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
+                            onClick={handleRepairKnownInternalLinks}
+                            disabled={saveProjectMutation.isPending}
+                          >
+                            Corriger les liens connus
+                          </Button>
+                          <p className="mt-1 text-[10px] text-rose-800">
+                            Seuls les anciens alias documentés sont modifiés ; les autres erreurs restent visibles pour contrôle manuel.
+                          </p>
                         </div>
                       )}
                     </div>

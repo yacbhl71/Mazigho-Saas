@@ -4584,6 +4584,57 @@ export function verifyIndependentInternalLinks(
   };
 }
 
+export interface RepairedInternalLinkChange {
+  fromPageSlug: string;
+  sourceHref: string;
+  targetHref: string;
+  linkText: string;
+}
+
+/**
+ * Répare uniquement les anciens alias connus des blocs associatifs génériques.
+ * Les chemins inconnus restent inchangés afin de ne pas masquer une erreur éditoriale.
+ */
+export function repairKnownIndependentInternalLinks(
+  pages: ReadonlyArray<IndependentSitePage>,
+): { pages: IndependentSitePage[]; changes: RepairedInternalLinkChange[] } {
+  const knownSlugs = new Set(pages.map((p) => normalizeIndependentPageSlug(p.slug)));
+  const aliases: Record<string, string[]> = {
+    "/a-propos": ["/notre-famille"],
+    "/histoire": ["/notre-famille"],
+    "/membres": ["/notre-famille"],
+    "/charte": ["/notre-famille"],
+    "/participer": ["/contact"],
+    "/mentions-legales": ["/mentions-legales", "/contact"],
+    "/confidentialite": ["/confidentialite", "/contact"],
+  };
+  const changes: RepairedInternalLinkChange[] = [];
+
+  const repairedPages = pages.map((page) => {
+    let html = page.html || "";
+    html = html.replace(
+      /(<a\b[^>]*\bhref\s*=\s*)(["'])(\/[^"']*)(\2)([^>]*>)([\s\S]*?)(<\/a>)/gi,
+      (full, prefix, quote, rawHref, closingQuote, afterHref, inner, endTag) => {
+        const pathOnly = rawHref.split("#")[0].split("?")[0] || "/";
+        const normalized = normalizeIndependentPageSlug(pathOnly);
+        if (knownSlugs.has(normalized) || !aliases[normalized]) return full;
+        const target = aliases[normalized].find((candidate) =>
+          knownSlugs.has(normalizeIndependentPageSlug(candidate)),
+        );
+        if (!target) return full;
+        const suffix = rawHref.slice(pathOnly.length);
+        const targetHref = `${target}${suffix}`;
+        const linkText = String(inner).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || rawHref;
+        changes.push({ fromPageSlug: page.slug, sourceHref: rawHref, targetHref, linkText });
+        return `${prefix}${quote}${targetHref}${closingQuote}${afterHref}${inner}${endTag}`;
+      },
+    );
+    return html === (page.html || "") ? page : { ...page, html };
+  });
+
+  return { pages: repairedPages, changes };
+}
+
 /**
  * 4. CHECKLIST AVANT PUBLICATION & 13. QUALITÉ DU PROJET (SCORE EXPLICABLE)
  */

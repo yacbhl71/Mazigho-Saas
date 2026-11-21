@@ -22,6 +22,7 @@ import {
   exportIndependentSiteProjectToJson,
   normalizeImageTransforms,
   normalizeIndependentPageSlug,
+  repairKnownIndependentInternalLinks,
   sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
@@ -2142,7 +2143,17 @@ export async function ensureAthVahloulDemoProject(
       site.templateId === ATH_VAHLOUL_DEMO_TEMPLATE_ID ||
       site.title.toLowerCase().includes("ath vahloul"),
   );
-  if (found) return found;
+  if (found) {
+    const repaired = repairKnownIndependentInternalLinks(found.pages);
+    if (repaired.changes.length > 0) {
+      return await saveIndependentSiteProject(ownerUserId, {
+        siteId: found.id,
+        pages: repaired.pages,
+        createVersionLabel: "Réparation des anciens liens internes ATH VAHLOUL",
+      });
+    }
+    return found;
+  }
 
   return await createIndependentSiteProject(ownerUserId, {
     title: "Association familiale ATH VAHLOUL",
