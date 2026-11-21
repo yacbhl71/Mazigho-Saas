@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDynamicCatalogueAttributes, normalizeBuilderHref, sanitizeBuilderAlt } from "../client/src/lib/visualBuilderSafety";
+import { clearVisualBuilderLocalDraft, getVisualBuilderLocalDraftKey, isDynamicCatalogueAttributes, normalizeBuilderHref, readVisualBuilderLocalDraft, sanitizeBuilderAlt, writeVisualBuilderLocalDraft } from "../client/src/lib/visualBuilderSafety";
 
 describe("visualBuilderSafety", () => {
   it("autorise les chemins internes et protocoles attendus", () => {
@@ -24,5 +24,25 @@ describe("visualBuilderSafety", () => {
     expect(isDynamicCatalogueAttributes({ "data-mazigho-dynamic": "catalogue" })).toBe(true);
     expect(isDynamicCatalogueAttributes({ "data-mazigho-dynamic": "other" })).toBe(false);
     expect(isDynamicCatalogueAttributes(undefined)).toBe(false);
+  });
+
+  it("isole et restaure un brouillon local sans exposer de données de boutique", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      setItem: (key: string, value: string) => values.set(key, value),
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+    };
+    const key = getVisualBuilderLocalDraftKey({ storeId: 42 });
+    expect(key).toBe("mazigho:visual-builder:draft:store-42");
+    expect(writeVisualBuilderLocalDraft(storage, key, { components: "<section>test</section>", styles: "" })).toBe(true);
+    expect(readVisualBuilderLocalDraft(storage, key)?.payload).toEqual({ components: "<section>test</section>", styles: "" });
+    clearVisualBuilderLocalDraft(storage, key);
+    expect(readVisualBuilderLocalDraft(storage, key)).toBeNull();
+  });
+
+  it("refuse un brouillon local trop volumineux", () => {
+    const storage = { setItem: () => undefined };
+    expect(writeVisualBuilderLocalDraft(storage, "draft", "x".repeat(2_000_001))).toBe(false);
   });
 });
