@@ -3028,7 +3028,7 @@ export default function IndependentSiteBuilderPage() {
                             variant="outline"
                             className="mt-2 h-7 border-rose-300 bg-white text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
                             onClick={handleRepairKnownInternalLinks}
-                            disabled={saveProjectMutation.isPending}
+                            aria-label="Corriger les anciens liens internes connus"
                           >
                             Corriger les liens connus
                           </Button>
