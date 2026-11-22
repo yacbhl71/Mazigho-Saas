@@ -360,7 +360,7 @@ function BrowserTitle() {
     };
 
 	    const studioTitle = pathname === "/admin/studio/production" ? "MAZIGHO Studio | Tableau de production" : pathname === "/admin/studio/sante" ? "MAZIGHO Studio | Santé du système" : pathname === "/admin/studio/facturation" ? "MAZIGHO Studio | Abonnements et factures" : pathname === "/admin/studio/assistance" ? "MAZIGHO Studio | Assistance boutiques" : pathname === "/admin/studio/domaines" ? "MAZIGHO Studio | Domaines personnalisés" : pathname === "/admin/studio/themes" ? "MAZIGHO Studio | Thèmes de boutiques" : pathname === "/admin/studio/constructeur-visuel" ? "MAZIGHO Studio | Constructeur visuel" : pathname === "/admin/studio/creer-image" ? "MAZIGHO Studio | Atelier d’images" : pathname === "/admin/studio/copier-boutique" ? "MAZIGHO Studio | Copier une boutique" : pathname.startsWith("/admin/studio/gestion-boutique/") ? "MAZIGHO Studio | Gestion de boutique" : pathname.startsWith("/admin/studio/contenu-public/") ? "MAZIGHO Studio | Contenu storefront" : pathname.startsWith("/admin/studio/catalogue-existant/") ? "MAZIGHO Studio | Catalogue existant" : pathname.startsWith("/admin/studio/publication-catalogue/") ? "MAZIGHO Studio | Publication catalogue" : pathname.startsWith("/admin/studio/revue-passage/") ? "MAZIGHO Studio | Revue de passage" : pathname.startsWith("/admin/studio/revue-etancheite/") ? "MAZIGHO Studio | Revue d’étanchéité" : pathname.startsWith("/admin/studio/prevol-commercial/") ? "MAZIGHO Studio | Revue commerciale" : pathname.startsWith("/admin/studio/panier-simulation/") ? "MAZIGHO Studio | Panier simulé" : pathname.startsWith("/admin/studio/stock-fournisseurs/") ? "MAZIGHO Studio | Stock et fournisseur" : pathname.startsWith("/admin/studio/produits/") ? "MAZIGHO Studio | Fiches produits" : pathname.startsWith("/admin/studio/collections/") ? "MAZIGHO Studio | Collections de boutique" : pathname.startsWith("/admin/studio/lancement/") ? "MAZIGHO Studio | Centre de lancement" : pathname.startsWith("/admin/studio/page-preview/") ? "MAZIGHO Studio | Aperçu complet" : pathname.startsWith("/admin/studio/navigation/") ? "MAZIGHO Studio | Navigation de boutique" : pathname.startsWith("/admin/studio/checklist/") ? "MAZIGHO Studio | Checklist de préparation" : pathname.startsWith("/admin/studio/pages/") ? "MAZIGHO Studio | Éditeur de pages" : pathname.startsWith("/admin/studio/constructeur/") ? "MAZIGHO Studio | Créateur de boutique" : pathname.startsWith("/admin/studio/espace-proprietaire/") ? "MAZIGHO Studio | Aperçu panneau propriétaire" : pathname.startsWith("/admin/studio/apercu/") ? "MAZIGHO Studio | Aperçu privé" : undefined;
-    if (studioTitle || pathname.startsWith("/admin")) {
+    if (studioTitle || pathname === "/admin" || pathname.startsWith("/admin/")) {
       document.title = studioTitle || adminTitles[pathname] || "MAZIGHO Admin";
       return;
     }
@@ -454,15 +454,6 @@ function Router() {
   const isSaasLandingHost = currentHostname === "pro.mazigho.com" || currentHostname === "pro.mazigho.ch";
   const isPrimaryMazighoHost = currentHostname === "mazigho.ch" || currentHostname === "www.mazigho.ch";
   const isIndependentSitesHost = currentHostname.includes("mazigho-independent-sites");
-  // Client administration must remain reachable from the Studio hostname.
-  // The Studio hostname is an operator front door only for / and /admin;
-  // never let that policy absorb the isolated client routes.
-  const isIndependentClientRoute =
-    path === "/administration-site" ||
-    path === "/connexion-administration" ||
-    path.startsWith("/constructeur-sites/invitation/") ||
-    path.startsWith("/sites/");
-  const isStudioOperatorFrontDoor = isStudioHost && !isIndependentClientRoute;
   const isPublicSaasLanding =
     path === "/mazigho-saas" ||
     path.startsWith("/creation-boutique") ||
@@ -477,7 +468,8 @@ function Router() {
   const isStaff = !!user && STAFF_ROLES.includes((user as any).role);
   const isSupportImpersonating = Boolean((user as any)?.supportImpersonation);
   const isExemptPath =
-    path.startsWith("/admin") ||
+    path === "/admin" ||
+    path.startsWith("/admin/") ||
     path === "/constructeur-sites" ||
     path.startsWith("/constructeur-sites/") ||
     path === "/administration-site" ||
@@ -486,19 +478,19 @@ function Router() {
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const forcePreview = maintenancePreview?.get("preview_maintenance") === "1";
   const forceStoreMaintenancePreview = maintenancePreview?.get("preview_store_maintenance") === "1";
-  const publishedPathEligible = path !== "/" && !path.startsWith("/admin") && !path.startsWith("/api") && !path.startsWith("/constructeur-sites") && !path.startsWith("/sites/") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+  const publishedPathEligible = path !== "/" && path !== "/admin" && !path.startsWith("/admin/") && path !== "/administration-site" && path !== "/connexion-administration" && !path.startsWith("/api") && !path.startsWith("/constructeur-sites") && !path.startsWith("/sites/") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
   const publishedPathQuery = trpc.design.getPublishedBuilder.useQuery({ path }, { enabled: publishedPathEligible, retry: false, refetchOnWindowFocus: false });
 
   // The Studio hostname is an operator-only front door. It keeps the main
   // MAZIGHO storefront at its own address while preserving every existing
   // route and authorization guard behind the same deployment.
-  if (isStudioOperatorFrontDoor && (path === "/" || path === "/admin")) {
+  if (isStudioHost && (path === "/" || path === "/admin")) {
     return <Redirect to="/admin/studio" replace />;
   }
-  if (isStudioOperatorFrontDoor && path === "/admin/sante") {
+  if (isStudioHost && path === "/admin/sante") {
     return <Redirect to="/admin/studio/sante" replace />;
   }
-  if (isStudioOperatorFrontDoor && path.startsWith("/admin") && !path.startsWith("/admin/studio")) {
+  if (isStudioHost && path.startsWith("/admin/") && !path.startsWith("/admin/studio")) {
     return <Redirect to="/admin/studio" replace />;
   }
   if (isPrimaryMazighoHost && path.startsWith("/admin/studio")) {

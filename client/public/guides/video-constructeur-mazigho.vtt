@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:14.850
+01. Bienvenue dans le constructeur MAZIGHO — Bienvenue dans le constructeur indépendant MAZIGHO, votre atelier privé pour concevoir et livrer des sites complets.
+
+00:00:15.000 --> 00:00:29.850
+02. Sélection d’un site actif — Sélectionnez le site à modifier dans le menu principal. Son identifiant siteId reste synchronisé même après rechargement.
+
+00:00:30.000 --> 00:00:44.850
+03. Découverte de l’interface — L’interface réunit la barre d’actions en haut, les outils de pages et blocs à gauche, et le canvas visuel au centre.
+
+00:00:45.000 --> 00:00:59.850
+04. Sélection et modification d’une page — Sélectionnez la page souhaitée dans le panneau Pages pour afficher immédiatement son contenu dans le canvas.
+
+00:01:00.000 --> 00:01:14.850
+05. Modification d’un texte dans le canvas — Double-cliquez sur n’importe quel titre ou paragraphe dans le canvas pour mettre à jour le texte en conservant la mise en forme.
+
+00:01:15.000 --> 00:01:29.850
+06. Ajout d’une section ou d’un bloc — Ajoutez une section ou un bloc depuis la bibliothèque pour enrichir la page sans casser l’alignement.
+
+00:01:30.000 --> 00:01:44.850
+07. Remplacement d’une image — Utilisez la bibliothèque médias du site pour remplacer une image et renseigner son texte alternatif.
+
+00:01:45.000 --> 00:01:59.850
+08. Aperçu responsive multi-écrans — Basculez entre les vues ordinateur, tablette et mobile pour vérifier l’équilibre des cartes et l’absence de débordement.
+
+00:02:00.000 --> 00:02:14.850
+09. Vérification et réparation des liens internes — Lancez la vérification des liens internes puis cliquez sur Corriger les liens connus. Les liens inconnus restent signalés.
+
+00:02:15.000 --> 00:02:29.850
+10. Sauvegarde des modifications — Cliquez sur Enregistrer pour sauvegarder vos modifications en toute sécurité avant de passer à la publication.
+
+00:02:30.000 --> 00:02:44.850
+11. Historique et restauration d’une version — Consultez l’historique pour créer un point de repère ou restaurer une version précédente après confirmation.
+
+00:02:45.000 --> 00:02:59.850
+12. Publication et contrôle final avant livraison — Après votre contrôle final, publiez le site et invitez le client dans son espace d’administration privé.
