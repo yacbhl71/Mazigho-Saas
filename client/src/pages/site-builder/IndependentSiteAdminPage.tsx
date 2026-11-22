@@ -273,6 +273,7 @@ export default function IndependentSiteAdminPage() {
   const [newMediaLabel, setNewMediaLabel] = useState("");
   const [newMediaAlt, setNewMediaAlt] = useState("");
   const [newMediaUrl, setNewMediaUrl] = useState("");
+  const [newMediaFile, setNewMediaFile] = useState<File | null>(null);
   const [imageAiSubject, setImageAiSubject] = useState("");
   const [imageAiFormat, setImageAiFormat] = useState<"hero" | "story" | "square">("hero");
   const [imageAiStyle, setImageAiStyle] = useState<"editorial" | "soft" | "bold">("editorial");
@@ -721,6 +722,23 @@ export default function IndependentSiteAdminPage() {
         message: "L’image a été ajoutée à la bibliothèque média de votre site.",
       });
       toast.success("Image ajoutée.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const uploadMediaMutation = trpc.independentSiteBuilder.uploadMedia.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listMedia.invalidate({ siteId });
+      setNewMediaLabel("");
+      setNewMediaAlt("");
+      setNewMediaUrl("");
+      setNewMediaFile(null);
+      setFeedbackBanner({ tone: "success", message: "L’image a été téléversée dans la bibliothèque de votre site." });
+      toast.success("Image téléversée.");
     },
     onError: (err) => {
       const msg = formatIndependentBuilderErrorMessage(err);
@@ -2329,9 +2347,33 @@ export default function IndependentSiteAdminPage() {
                 </p>
 
                 <form
-                  onSubmit={(e) => {
+                  onSubmit={async (e) => {
                     e.preventDefault();
-                    if (!canEdit || !siteId || !newMediaLabel.trim() || !newMediaUrl.trim()) return;
+                    if (!canEdit || !siteId || !newMediaLabel.trim()) return;
+                    if (newMediaFile) {
+                      if (!/^image\/(jpeg|png|webp)$/.test(newMediaFile.type)) {
+                        toast.error("Format non pris en charge. Utilisez JPEG, PNG ou WebP.");
+                        return;
+                      }
+                      if (newMediaFile.size > 5 * 1024 * 1024) {
+                        toast.error("L’image doit peser au maximum 5 Mo.");
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result !== "string") return;
+                        uploadMediaMutation.mutate({
+                          siteId,
+                          label: newMediaLabel.trim(),
+                          altText: (newMediaAlt.trim() || newMediaLabel.trim()).slice(0, 240),
+                          dataUrl: reader.result,
+                          fileName: newMediaFile.name,
+                        });
+                      };
+                      reader.readAsDataURL(newMediaFile);
+                      return;
+                    }
+                    if (!newMediaUrl.trim()) return;
                     addMediaMutation.mutate({
                       siteId,
                       label: newMediaLabel.trim(),
@@ -2341,6 +2383,22 @@ export default function IndependentSiteAdminPage() {
                   }}
                   className="mt-4 grid gap-4 md:grid-cols-3"
                 >
+                  <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50 p-4 md:col-span-3">
+                    <Label htmlFor="media-file">Télécharger une image depuis votre appareil</Label>
+                    <Input
+                      id="media-file"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setNewMediaFile(file);
+                        if (file && !newMediaLabel.trim()) setNewMediaLabel(file.name.replace(/\.[^.]+$/, ""));
+                      }}
+                      disabled={!canEdit || uploadMediaMutation.isPending}
+                      className="mt-2 min-h-[44px] bg-white"
+                    />
+                    <p className="mt-1 text-xs text-slate-600">JPEG, PNG ou WebP · 5 Mo maximum. L’image sera rattachée uniquement à ce site.</p>
+                  </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="media-label">Nom de l’image</Label>
                     <Input
@@ -2373,7 +2431,6 @@ export default function IndependentSiteAdminPage() {
                       onChange={(e) => setNewMediaUrl(e.target.value)}
                       placeholder="https://…"
                       disabled={!canEdit}
-                      required
                       className="min-h-[44px]"
                     />
                   </div>
@@ -2383,15 +2440,16 @@ export default function IndependentSiteAdminPage() {
                       disabled={
                         !canEdit ||
                         !newMediaLabel.trim() ||
-                        !newMediaUrl.trim() ||
-                        addMediaMutation.isPending
+                        (!newMediaUrl.trim() && !newMediaFile) ||
+                        addMediaMutation.isPending ||
+                        uploadMediaMutation.isPending
                       }
                       className="min-h-[44px] bg-[#1e3a2f] px-5 text-sm font-medium text-white hover:bg-[#162b23]"
                     >
                       <ImagePlus className="mr-2 h-4 w-4" />
-                      {addMediaMutation.isPending
-                        ? "Ajout en cours…"
-                        : "Ajouter à la bibliothèque"}
+                      {addMediaMutation.isPending || uploadMediaMutation.isPending
+                        ? "Téléversement en cours…"
+                        : newMediaFile ? "Télécharger et ajouter à la bibliothèque" : "Ajouter à la bibliothèque"}
                     </Button>
                   </div>
                 </form>

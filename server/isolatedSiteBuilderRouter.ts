@@ -18,6 +18,7 @@ import { invokeLLM, listLLMModels } from "./_core/llm";
 import { consumeIndependentFormRateLimit } from "./independentFormRateLimit";
 import { consumeIndependentContentAiRateLimit } from "./independentContentAiRateLimit";
 import { consumeIndependentImageAiRateLimit } from "./independentImageAiRateLimit";
+import { storagePut } from "./storage";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
@@ -929,6 +930,31 @@ export const isolatedSiteBuilderRouter = router({
       return await addIndependentSiteMedia(
         await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
         input,
+      );
+    }),
+
+  uploadMedia: protectedProcedure
+    .input(z.object({
+      siteId: z.number().int().positive(),
+      label: z.string().min(1).max(160),
+      altText: z.string().min(1).max(240),
+      dataUrl: z.string().max(7_100_000),
+      fileName: z.string().trim().min(1).max(160),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(input.dataUrl);
+      if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "Format non pris en charge. Utilisez JPEG, PNG ou WebP." });
+      const buffer = Buffer.from(match[2], "base64");
+      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
+        throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "L’image doit peser au maximum 5 Mo." });
+      }
+      const extension = match[1] === "image/jpeg" ? "jpg" : match[1].split("/")[1];
+      const safeName = input.fileName.replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-").slice(0, 80) || "image";
+      const { url } = await storagePut(`independent-sites/${input.siteId}/media/${Date.now()}-${safeName}.${extension}`, buffer, match[1]);
+      return await addIndependentSiteMedia(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        { siteId: input.siteId, label: input.label, altText: input.altText, url, mimeType: match[1] },
       );
     }),
 
