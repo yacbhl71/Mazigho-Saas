@@ -243,6 +243,18 @@ function BrowserTitle() {
   useEffect(() => {
     const pathname = location.split("?")[0];
     const hostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
+    if (pathname === "/administration-site") {
+      document.title = "Administration du site";
+      return;
+    }
+    if (pathname === "/connexion-administration") {
+      document.title = "Connexion — Administration du site";
+      return;
+    }
+    if (pathname.startsWith("/constructeur-sites/invitation/")) {
+      document.title = "Invitation — Administration du site";
+      return;
+    }
     if (pathname === "/creation-boutique") {
       const title = "Création de boutique clé en main | MAZIGHO";
       document.title = title;
@@ -416,7 +428,17 @@ function StorefrontMarketing() {
     ((pathname === "/login" || pathname === "/register") &&
       (query.get("intent") === "independent" || /^\/constructeur-sites\/invitation\/[A-Za-z0-9_-]{20,200}$/.test(query.get("returnTo") || "")));
   const hostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
-  if (isIndependentClientAuth || pathname === "/connexion-administration" || pathname === "/mazigho-saas" || pathname.startsWith("/creation-boutique") || hostname === "pro.mazigho.ch") return null;
+  if (
+    isIndependentClientAuth ||
+    pathname === "/connexion-administration" ||
+    pathname.startsWith("/administration-site") ||
+    pathname.startsWith("/sites/") ||
+    pathname === "/mazigho-saas" ||
+    pathname.startsWith("/creation-boutique") ||
+    hostname === "pro.mazigho.ch"
+  ) {
+    return null;
+  }
   return <><MarketingPixels /><MarketingConsentBanner /></>;
 }
 
@@ -671,7 +693,7 @@ function Router() {
         </Switch>
       </Suspense>
       <StorefrontMarketing />
-      {!location.startsWith("/constructeur-sites/invitation/") && !location.startsWith("/connexion-administration") && !location.startsWith("/sites/") && !location.includes("intent=independent") && <MazighoSurfaceSwitcher />}
+      {!location.startsWith("/administration-site") && !location.startsWith("/constructeur-sites/invitation/") && !location.startsWith("/connexion-administration") && !location.startsWith("/sites/") && !location.includes("intent=independent") && <MazighoSurfaceSwitcher />}
     </>
   );
 }

@@ -21,8 +21,23 @@ import {
   sanitizeIndependentAdministrationReturnTo,
   verifyIndependentInternalLinks,
 } from "../shared/isolatedSiteBuilder";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { isolatedSiteBuilderRouter } from "./isolatedSiteBuilderRouter";
 import type { TrpcContext } from "./_core/context";
+import {
+  CLIENT_ADMIN_FIRST_LOGIN_STEPS,
+  CLIENT_ADMIN_ROLE_MATRIX,
+  CLIENT_ADMIN_SPACE_DISTINCTIONS,
+  appendClientSectionHtml,
+  buildClientPreviewSrcDoc,
+  formatClientMemberStatus,
+  formatClientStatusSummary,
+  readFirstHtmlImage,
+  readFirstHtmlTag,
+  replaceFirstHtmlImage,
+  replaceFirstHtmlTag,
+} from "../client/src/pages/site-builder/clientAdminHelpers";
 
 function makeCaller(user: {
   id: number;
@@ -435,5 +450,125 @@ describe("independent site access isolation", () => {
     await expect(
       editorCaller.repairKnownInternalLinks({ siteId: siteA.id }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("provides client admin UX helpers with working image replacement, clear statuses, and 3-role matrix", () => {
+    const sampleHtml = `<section class="hero"><h1>Association familiale ATH VAHLOUL</h1><p>Texte initial de présentation.</p><img src="https://cdn.example.ch/photo-1.jpg" alt="Photo 1" /></section>`;
+
+    expect(readFirstHtmlTag(sampleHtml, "h1")).toBe(
+      "Association familiale ATH VAHLOUL",
+    );
+    expect(readFirstHtmlTag(sampleHtml, "p")).toBe(
+      "Texte initial de présentation.",
+    );
+    expect(readFirstHtmlImage(sampleHtml)).toBe(
+      "https://cdn.example.ch/photo-1.jpg",
+    );
+
+    const updatedH1 = replaceFirstHtmlTag(sampleHtml, "h1", "Bienvenue <ATH>");
+    expect(updatedH1).toContain("Bienvenue &lt;ATH&gt;");
+
+    const updatedImg = replaceFirstHtmlImage(
+      sampleHtml,
+      "https://cdn.example.ch/photo-2.webp",
+      "Nouvelle photo",
+    );
+    expect(readFirstHtmlImage(updatedImg)).toBe(
+      "https://cdn.example.ch/photo-2.webp",
+    );
+    expect(updatedImg).toContain('alt="Nouvelle photo"');
+
+    const withNews = appendClientSectionHtml(sampleHtml, {
+      kind: "actualite",
+      title: "Assemblée générale",
+      body: "Rendez-vous dimanche à 14h.",
+    });
+    expect(withNews).toContain("Actualité");
+    expect(withNews).toContain("Assemblée générale");
+
+    const previewDoc = buildClientPreviewSrcDoc({
+      siteTitle: "Association familiale ATH VAHLOUL",
+      pageTitle: "Accueil",
+      html: withNews,
+      css: ".hero { color: #111; }",
+    });
+    expect(previewDoc).toContain("<!doctype html>");
+    expect(previewDoc).toContain("Association familiale ATH VAHLOUL");
+    expect(previewDoc).toContain("Assemblée générale");
+
+    expect(formatClientStatusSummary("draft", true, null)).toMatchObject({
+      statusLabel: "Brouillon",
+      saveStateLabel: "Modifications non enregistrées",
+    });
+    expect(
+      formatClientStatusSummary("draft", false, "2026-06-01T10:00:00.000Z"),
+    ).toMatchObject({
+      statusLabel: "Brouillon",
+      saveStateLabel: "Sauvegardé en brouillon",
+    });
+    expect(
+      formatClientStatusSummary("published", false, "2026-06-01T10:00:00.000Z"),
+    ).toMatchObject({
+      statusLabel: "Publié",
+      saveStateLabel: "Sauvegardé et en ligne",
+    });
+    expect(formatClientStatusSummary("archived", false, null)).toMatchObject({
+      statusLabel: "Archivé",
+      saveStateLabel: "Sauvegardé (archivé)",
+    });
+
+    expect(formatClientMemberStatus({ status: "active" }).label).toBe(
+      "Accès actif",
+    );
+    expect(formatClientMemberStatus({ status: "invited" }).label).toBe(
+      "Invitation en attente",
+    );
+    expect(formatClientMemberStatus({ status: "blocked" }).label).toBe(
+      "Accès révoqué",
+    );
+
+    expect(CLIENT_ADMIN_SPACE_DISTINCTIONS).toHaveLength(3);
+    expect(CLIENT_ADMIN_FIRST_LOGIN_STEPS).toHaveLength(3);
+
+    expect(CLIENT_ADMIN_ROLE_MATRIX.map((r) => r.role)).toEqual([
+      "owner",
+      "admin",
+      "editor",
+    ]);
+    for (const role of CLIENT_ADMIN_ROLE_MATRIX) {
+      expect(role.canView.length).toBeGreaterThan(0);
+      expect(role.canEdit.length).toBeGreaterThan(0);
+      expect(role.cannotDo.length).toBeGreaterThan(0);
+      expect(role.builderAccessNote.toLowerCase()).toContain("constructeur");
+    }
+  });
+
+  it("keeps client administration strictly isolated from global builder routes and MAZIGHO boutique chrome", () => {
+    const adminPageSource = readFileSync(
+      resolve(process.cwd(), "client/src/pages/site-builder/IndependentSiteAdminPage.tsx"),
+      "utf8",
+    );
+    const appSource = readFileSync(
+      resolve(process.cwd(), "client/src/App.tsx"),
+      "utf8",
+    );
+    const invitePageSource = readFileSync(
+      resolve(process.cwd(), "client/src/pages/site-builder/SiteInvitationPage.tsx"),
+      "utf8",
+    );
+
+    expect(adminPageSource).not.toContain('href="/constructeur-sites"');
+    expect(adminPageSource).not.toContain("/constructeur-sites/apercu/");
+    expect(adminPageSource).not.toContain("trpc.visualBuilder");
+    expect(adminPageSource).not.toContain("trpc.shopify");
+    expect(adminPageSource).not.toContain("trpc.orders");
+
+    // Invitation fallback must redirect to /administration-site, never /constructeur-sites
+    expect(invitePageSource).not.toContain(': "/constructeur-sites"');
+
+    // MazighoSurfaceSwitcher must never render on /administration-site, /connexion-administration, or invitation routes
+    expect(appSource).toContain('!location.startsWith("/administration-site")');
+    expect(appSource).toContain('!location.startsWith("/constructeur-sites/invitation/")');
+    expect(appSource).toContain('!location.startsWith("/connexion-administration")');
   });
 });

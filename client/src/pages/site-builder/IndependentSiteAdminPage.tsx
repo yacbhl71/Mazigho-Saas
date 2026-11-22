@@ -1,174 +1,2549 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ArrowLeft, ExternalLink, FileText, ImagePlus, LayoutDashboard, Loader2, Save, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Eye,
+  FilePlus2,
+  FileText,
+  Globe,
+  History,
+  Image as ImageIcon,
+  ImagePlus,
+  Laptop,
+  LayoutDashboard,
+  Loader2,
+  Lock,
+  MailPlus,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Smartphone,
+  Tablet,
+  Trash2,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getIndependentSiteRolePresentation } from "@shared/isolatedSiteBuilder";
+import {
+  extractImagesFromPageHtml,
+  formatIndependentBuilderErrorMessage,
+  generateUniquePageSlug,
+  getIndependentSiteRolePresentation,
+  replaceMediaUrlAcrossPages,
+  type IndependentSiteClientRole,
+  type IndependentSitePage,
+} from "@shared/isolatedSiteBuilder";
+import {
+  appendClientSectionHtml,
+  buildClientPreviewSrcDoc,
+  CLIENT_ADMIN_ROLE_MATRIX,
+  CLIENT_ADMIN_SPACE_DISTINCTIONS,
+  formatClientDateTime,
+  formatClientMemberStatus,
+  formatClientStatusSummary,
+  readFirstHtmlImage,
+  readFirstHtmlTag,
+  replaceFirstHtmlImage,
+  replaceFirstHtmlTag,
+} from "./clientAdminHelpers";
 
-type EditablePage = {
-  id: string;
+type AdminTab = "overview" | "content" | "media" | "versions" | "team";
+type PreviewViewport = "desktop" | "tablet" | "mobile";
+
+interface InlineConfirmState {
   title: string;
-  slug: string;
-  description?: string;
-  language?: string;
-  html: string;
-  css: string;
-  settings?: Record<string, unknown>;
-};
-
-type AdminTab = "overview" | "content" | "media" | "team";
-
-function readFirstTag(html: string, tag: string) {
-  const match = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match?.[1]?.replace(/<[^>]+>/g, "").trim() ?? "";
+  description: string;
+  confirmLabel: string;
+  tone: "danger" | "primary";
+  onConfirm: () => void;
 }
 
-function readFirstImage(html: string) {
-  return html.match(/<img\\b[^>]*\\bsrc=["']([^"']+)["']/i)?.[1] ?? "";
-}
-
-function replaceFirstTag(html: string, tag: string, value: string) {
-  const escaped = value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return html.replace(new RegExp(`(<${tag}\\b[^>]*>)[\\s\\S]*?(<\\/${tag}>)`, "i"), `$1${escaped}$2`);
-}
-
-function replaceFirstImage(html: string, src: string) {
-  return html.replace(/(<img\\b[^>]*\\bsrc=["'])[^"']*(["'])/i, `$1${src.replace(/"/g, "&quot;")}$2`);
+function MediaThumbnail({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div className="flex h-36 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 text-center text-xs text-slate-600">
+        <ImageIcon className="h-5 w-5 text-slate-400" />
+        <span className="line-clamp-2 font-medium">{alt || "Aperçu indisponible"}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="h-36 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+      <img
+        src={src}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+    </div>
+  );
 }
 
 export default function IndependentSiteAdminPage() {
   const [, setLocation] = useLocation();
   const { user, isLoading: authLoading } = useAuth();
+  const utils = trpc.useUtils();
+
   const [tab, setTab] = useState<AdminTab>("overview");
-  const [selectedPageId, setSelectedPageId] = useState<string>("home");
-  const [draftTitle, setDraftTitle] = useState("");
+  const [selectedSiteOverrideId, setSelectedSiteOverrideId] = useState<number | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState<string>("");
+
+  // Champs éditoriaux : identité du site et page active
+  const [draftSiteTitle, setDraftSiteTitle] = useState("");
+  const [draftPageTitle, setDraftPageTitle] = useState("");
+  const [draftHeading, setDraftHeading] = useState("");
   const [draftIntro, setDraftIntro] = useState("");
   const [draftImage, setDraftImage] = useState("");
+  const [draftImageAlt, setDraftImageAlt] = useState("");
+  const [draftSeoTitle, setDraftSeoTitle] = useState("");
+  const [draftSeoDescription, setDraftSeoDescription] = useState("");
+
+  // Ajout de section / actualité dans la page active
+  const [newSectionKind, setNewSectionKind] = useState<"section" | "actualite">("actualite");
   const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [newSectionDate, setNewSectionDate] = useState("");
   const [newSectionText, setNewSectionText] = useState("");
 
-  const requestedSlug = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("siteSlug")?.trim().toLowerCase() ?? "";
+  // Ajout d'une nouvelle page simple
+  const [showNewPageForm, setShowNewPageForm] = useState(false);
+  const [newPageTitle, setNewPageTitle] = useState("");
+  const [newPageIntro, setNewPageIntro] = useState("");
+
+  // Bibliothèque média
+  const [newMediaLabel, setNewMediaLabel] = useState("");
+  const [newMediaAlt, setNewMediaAlt] = useState("");
+  const [newMediaUrl, setNewMediaUrl] = useState("");
+  const [editingMediaId, setEditingMediaId] = useState<number | null>(null);
+  const [editMediaLabel, setEditMediaLabel] = useState("");
+  const [editMediaAlt, setEditMediaAlt] = useState("");
+  const [editMediaUrl, setEditMediaUrl] = useState("");
+  const [editMediaReplaceInPages, setEditMediaReplaceInPages] = useState(true);
+
+  // Versions
+  const [versionLabelInput, setVersionLabelInput] = useState("");
+
+  // Invitations client (Propriétaire uniquement)
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "editor">("editor");
+  const [inviteExpiresHours, setInviteExpiresHours] = useState<number>(72);
+  const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
+  const [lastInvitation, setLastInvitation] = useState<{
+    email: string;
+    role: "admin" | "editor";
+    invitationUrl: string;
+    expiresAt: string;
+    delivery: "not_configured" | "delivered" | "failed";
+  } | null>(null);
+
+  // Aperçu intégré avant publication + bandeaux + confirmation inline
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewViewport, setPreviewViewport] = useState<PreviewViewport>("desktop");
+  const [feedbackBanner, setFeedbackBanner] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [inlineConfirm, setInlineConfirm] = useState<InlineConfirmState | null>(null);
+
+  const urlParams = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { siteId: null as number | null, siteSlug: "" };
+    }
+    const params = new URLSearchParams(window.location.search);
+    const rawId = Number(params.get("siteId"));
+    const siteId = Number.isInteger(rawId) && rawId > 0 ? rawId : null;
+    const siteSlug = (params.get("siteSlug") || params.get("slug") || "")
+      .trim()
+      .toLowerCase();
+    return { siteId, siteSlug };
   }, []);
-  const requestedSiteId = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    const raw = Number(new URLSearchParams(window.location.search).get("siteId"));
-    return Number.isInteger(raw) && raw > 0 ? raw : null;
-  }, []);
+
   const projectsQuery = trpc.independentSiteBuilder.listProjects.useQuery(undefined, {
     enabled: Boolean(user),
     retry: false,
     refetchOnWindowFocus: false,
   });
-  const accessibleProject = projectsQuery.data?.find(project => requestedSiteId ? project.id === requestedSiteId : (!requestedSlug || project.slug.toLowerCase() === requestedSlug));
+
+  const accessibleProjects = projectsQuery.data ?? [];
+  const accessibleProject = useMemo(() => {
+    if (accessibleProjects.length === 0) return null;
+    if (selectedSiteOverrideId) {
+      const overridden = accessibleProjects.find((p) => p.id === selectedSiteOverrideId);
+      if (overridden) return overridden;
+    }
+    if (urlParams.siteId) {
+      const byId = accessibleProjects.find((p) => p.id === urlParams.siteId);
+      if (byId) return byId;
+    }
+    if (urlParams.siteSlug) {
+      const bySlug = accessibleProjects.find(
+        (p) => p.slug.toLowerCase() === urlParams.siteSlug,
+      );
+      if (bySlug) return bySlug;
+    }
+    return accessibleProjects[0];
+  }, [accessibleProjects, selectedSiteOverrideId, urlParams.siteId, urlParams.siteSlug]);
+
   const siteId = accessibleProject?.id ?? null;
+
   const projectQuery = trpc.independentSiteBuilder.getProject.useQuery(
     { siteId: siteId ?? 0 },
     { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
   );
+
   const roleQuery = trpc.independentSiteBuilder.getAccessRole.useQuery(
     { siteId: siteId ?? 0 },
     { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
   );
-  const saveMutation = trpc.independentSiteBuilder.saveProject.useMutation({
-    onSuccess: () => {
-      void projectQuery.refetch();
-      toast.success("Les modifications ont été enregistrées.");
-    },
-    onError: error => toast.error(error.message || "La sauvegarde n’a pas abouti."),
-  });
-  const accessQuery = trpc.independentSiteBuilder.listAccess.useQuery(
-    { siteId: siteId ?? 0 },
-    { enabled: Boolean(siteId && roleQuery.data?.role === "owner"), retry: false, refetchOnWindowFocus: false },
-  );
 
-  const project = projectQuery.data;
-  const pages = (project?.pages ?? []) as EditablePage[];
-  const activePage = pages.find(page => page.id === selectedPageId) ?? pages[0];
-  const role = roleQuery.data?.role ?? "editor";
+  const role: IndependentSiteClientRole = roleQuery.data?.role ?? "editor";
   const roleInfo = getIndependentSiteRolePresentation(role);
   const canEdit = role === "owner" || role === "admin" || role === "editor";
+  const canAdminister = role === "owner" || role === "admin";
+  const canManageTeam = role === "owner";
 
+  const mediaQuery = trpc.independentSiteBuilder.listMedia.useQuery(
+    { siteId: siteId ?? 0 },
+    { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
+  );
+
+  const versionsQuery = trpc.independentSiteBuilder.listVersions.useQuery(
+    { siteId: siteId ?? 0 },
+    { enabled: Boolean(siteId) && canAdminister, retry: false, refetchOnWindowFocus: false },
+  );
+
+  const accessQuery = trpc.independentSiteBuilder.listAccess.useQuery(
+    { siteId: siteId ?? 0 },
+    { enabled: Boolean(siteId) && canManageTeam, retry: false, refetchOnWindowFocus: false },
+  );
+
+  const project = projectQuery.data ?? null;
+  const pages = (project?.pages ?? []) as IndependentSitePage[];
+  const activePage = useMemo(
+    () => pages.find((page) => page.id === selectedPageId) ?? pages[0] ?? null,
+    [pages, selectedPageId],
+  );
+
+  // Redirection vers la connexion dédiée à l'administration client si non authentifié
   useEffect(() => {
     if (authLoading || user) return;
-    const returnTarget = requestedSiteId ? `/administration-site?siteId=${requestedSiteId}` : `/administration-site?siteSlug=${requestedSlug}`;
+    const returnTarget = urlParams.siteId
+      ? `/administration-site?siteId=${urlParams.siteId}`
+      : urlParams.siteSlug
+        ? `/administration-site?siteSlug=${urlParams.siteSlug}`
+        : "/administration-site";
     setLocation(`/connexion-administration?returnTo=${encodeURIComponent(returnTarget)}`);
-  }, [authLoading, requestedSiteId, requestedSlug, setLocation, user]);
+  }, [authLoading, setLocation, urlParams.siteId, urlParams.siteSlug, user]);
 
+  // Synchronisation du titre du site
+  useEffect(() => {
+    if (!project) return;
+    setDraftSiteTitle(project.title);
+    if (typeof document !== "undefined") {
+      document.title = `Administration — ${project.title}`;
+    }
+  }, [project?.id, project?.title]);
+
+  // Synchronisation des champs de la page active
   useEffect(() => {
     if (!activePage) return;
     setSelectedPageId(activePage.id);
-    setDraftTitle(readFirstTag(activePage.html, "h1"));
-    setDraftIntro(readFirstTag(activePage.html, "p"));
-    setDraftImage(readFirstImage(activePage.html));
-  }, [activePage?.id, activePage?.html]);
+    setDraftPageTitle(activePage.title || "");
+    setDraftHeading(readFirstHtmlTag(activePage.html, "h1"));
+    setDraftIntro(readFirstHtmlTag(activePage.html, "p"));
+    setDraftImage(readFirstHtmlImage(activePage.html));
+    setDraftImageAlt("");
+    setDraftSeoTitle(activePage.seoTitle || "");
+    setDraftSeoDescription(activePage.seoDescription || "");
+  }, [activePage?.id, activePage?.html, activePage?.title, activePage?.seoTitle, activePage?.seoDescription]);
 
-  if (authLoading || projectsQuery.isLoading || (Boolean(siteId) && (projectQuery.isLoading || roleQuery.isLoading))) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f6f1]"><Loader2 className="h-7 w-7 animate-spin text-[#59634c]" /></main>;
+  // Détection exacte des modifications non enregistrées dans les formulaires
+  const hasUnsavedSiteTitle = Boolean(
+    project && draftSiteTitle.trim() !== project.title.trim(),
+  );
+  const hasUnsavedPageChanges = useMemo(() => {
+    if (!activePage) return false;
+    return (
+      draftPageTitle.trim() !== (activePage.title || "").trim() ||
+      draftHeading.trim() !== readFirstHtmlTag(activePage.html, "h1").trim() ||
+      draftIntro.trim() !== readFirstHtmlTag(activePage.html, "p").trim() ||
+      draftImage.trim() !== readFirstHtmlImage(activePage.html).trim() ||
+      draftSeoTitle.trim() !== (activePage.seoTitle || "").trim() ||
+      draftSeoDescription.trim() !== (activePage.seoDescription || "").trim()
+    );
+  }, [
+    activePage,
+    draftHeading,
+    draftImage,
+    draftIntro,
+    draftPageTitle,
+    draftSeoDescription,
+    draftSeoTitle,
+  ]);
+  const hasAnyUnsavedChanges = hasUnsavedSiteTitle || hasUnsavedPageChanges;
+
+  // Images détectées dans les pages du site
+  const embeddedPageImages = useMemo(() => {
+    const seen = new Set<string>();
+    const collected: Array<{ src: string; alt: string; pageTitle: string; pageId: string }> = [];
+    for (const page of pages) {
+      const imgs = extractImagesFromPageHtml(page.html || "");
+      for (const img of imgs) {
+        if (!img.src || seen.has(img.src)) continue;
+        seen.add(img.src);
+        collected.push({
+          src: img.src,
+          alt: img.alt || page.title,
+          pageTitle: page.title,
+          pageId: page.id,
+        });
+      }
+    }
+    return collected;
+  }, [pages]);
+
+  // Mutations réellement connectées aux endpoints existants
+  const saveMutation = trpc.independentSiteBuilder.saveProject.useMutation({
+    onSuccess: async (saved) => {
+      utils.independentSiteBuilder.getProject.setData({ siteId: saved.id }, saved);
+      await Promise.all([
+        utils.independentSiteBuilder.listProjects.invalidate(),
+        utils.independentSiteBuilder.getProject.invalidate({ siteId: saved.id }),
+        canAdminister
+          ? utils.independentSiteBuilder.listVersions.invalidate({ siteId: saved.id })
+          : Promise.resolve(),
+      ]);
+      const msg = `Modifications enregistrées sur « ${saved.title} » (${formatClientDateTime(saved.updatedAt)}).`;
+      setFeedbackBanner({ tone: "success", message: msg });
+      toast.success("Modifications enregistrées.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const publishMutation = trpc.independentSiteBuilder.publishSite.useMutation({
+    onSuccess: async (published) => {
+      utils.independentSiteBuilder.getProject.setData({ siteId: published.id }, published);
+      await Promise.all([
+        utils.independentSiteBuilder.listProjects.invalidate(),
+        utils.independentSiteBuilder.listVersions.invalidate({ siteId: published.id }),
+      ]);
+      const msg = `Le site « ${published.title} » est désormais publié et visible sur /sites/${published.slug}.`;
+      setFeedbackBanner({ tone: "success", message: msg });
+      toast.success("Site publié avec succès.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const unpublishMutation = trpc.independentSiteBuilder.unpublishSite.useMutation({
+    onSuccess: async (unpublished) => {
+      utils.independentSiteBuilder.getProject.setData({ siteId: unpublished.id }, unpublished);
+      await utils.independentSiteBuilder.listProjects.invalidate();
+      const msg = `Le site « ${unpublished.title} » est repassé en brouillon privé.`;
+      setFeedbackBanner({ tone: "success", message: msg });
+      toast.success("Site repassé en brouillon.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const addMediaMutation = trpc.independentSiteBuilder.addMedia.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listMedia.invalidate({ siteId });
+      setNewMediaLabel("");
+      setNewMediaAlt("");
+      setNewMediaUrl("");
+      setFeedbackBanner({
+        tone: "success",
+        message: "L’image a été ajoutée à la bibliothèque média de votre site.",
+      });
+      toast.success("Image ajoutée.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const updateMediaMutation = trpc.independentSiteBuilder.updateMediaMetadata.useMutation({
+    onSuccess: async () => {
+      if (siteId) {
+        await Promise.all([
+          utils.independentSiteBuilder.listMedia.invalidate({ siteId }),
+          utils.independentSiteBuilder.getProject.invalidate({ siteId }),
+        ]);
+      }
+      setEditingMediaId(null);
+      setFeedbackBanner({
+        tone: "success",
+        message: editMediaReplaceInPages
+          ? "L’image et ses occurrences dans les pages ont été mises à jour."
+          : "Les informations de l’image ont été mises à jour.",
+      });
+      toast.success("Image mise à jour.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const deleteMediaMutation = trpc.independentSiteBuilder.deleteMedia.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listMedia.invalidate({ siteId });
+      setFeedbackBanner({
+        tone: "success",
+        message: "L’image a été retirée de la bibliothèque média.",
+      });
+      toast.success("Image supprimée de la bibliothèque.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const createVersionMutation = trpc.independentSiteBuilder.createVersion.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listVersions.invalidate({ siteId });
+      setVersionLabelInput("");
+      setFeedbackBanner({
+        tone: "success",
+        message: "Un point de sauvegarde a été enregistré dans l’historique du site.",
+      });
+      toast.success("Version enregistrée.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const restoreVersionMutation = trpc.independentSiteBuilder.restoreVersion.useMutation({
+    onSuccess: async (restored) => {
+      utils.independentSiteBuilder.getProject.setData({ siteId: restored.id }, restored);
+      await Promise.all([
+        utils.independentSiteBuilder.listProjects.invalidate(),
+        utils.independentSiteBuilder.listVersions.invalidate({ siteId: restored.id }),
+      ]);
+      setFeedbackBanner({
+        tone: "success",
+        message: `La version sélectionnée a été restaurée sur « ${restored.title} ».`,
+      });
+      toast.success("Version restaurée.");
+    },
+    onError: (err) => {
+      const msg = formatIndependentBuilderErrorMessage(err);
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const inviteAccessMutation = trpc.independentSiteBuilder.inviteAccess.useMutation({
+    onSuccess: async (created) => {
+      if (siteId) await utils.independentSiteBuilder.listAccess.invalidate({ siteId });
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const path =
+        created.invitationPath ||
+        (created.developmentOnlyToken
+          ? `/constructeur-sites/invitation/${encodeURIComponent(created.developmentOnlyToken)}`
+          : "/connexion-administration");
+      const invitationUrl = `${origin}${path}`;
+      const expiresAt =
+        typeof created.expiresAt === "string"
+          ? created.expiresAt
+          : created.invitationExpiresAt ||
+            new Date(Date.now() + inviteExpiresHours * 3600000).toISOString();
+      setLastInvitation({
+        email: created.email,
+        role: created.role === "admin" ? "admin" : "editor",
+        invitationUrl,
+        expiresAt,
+        delivery: created.invitationDelivery,
+      });
+      setCopiedInviteUrl(false);
+      setInviteEmail("");
+      setFeedbackBanner({
+        tone: "success",
+        message:
+          created.invitationDelivery === "delivered"
+            ? `Invitation envoyée par e-mail à ${created.email}. Vous pouvez aussi copier le lien d’activation ci-dessous.`
+            : `Invitation personnelle prête pour ${created.email}. Copiez et transmettez le lien d’activation ci-dessous.`,
+      });
+      toast.success("Invitation créée.");
+    },
+    onError: (err) => {
+      const msg = err.message || "Impossible de créer cette invitation.";
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const updateAccessRoleMutation = trpc.independentSiteBuilder.updateAccessRole.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listAccess.invalidate({ siteId });
+      setFeedbackBanner({
+        tone: "success",
+        message: "Le rôle du membre a été mis à jour.",
+      });
+      toast.success("Rôle mis à jour.");
+    },
+    onError: (err) => {
+      const msg = err.message || "Impossible de modifier le rôle de ce membre.";
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const revokeAccessMutation = trpc.independentSiteBuilder.revokeAccess.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listAccess.invalidate({ siteId });
+      setFeedbackBanner({
+        tone: "success",
+        message: "L’accès et le lien d’invitation associés ont été révoqués immédiatement.",
+      });
+      toast.success("Accès révoqué.");
+    },
+    onError: (err) => {
+      const msg = err.message || "Impossible de révoquer cet accès.";
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  // États de chargement, erreur et accès vide (clairs, accessibles et sans liens MAZIGHO)
+  if (
+    authLoading ||
+    !user ||
+    projectsQuery.isLoading ||
+    (Boolean(siteId) && (projectQuery.isLoading || roleQuery.isLoading))
+  ) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-[#f8fafc] px-4 text-slate-900">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white px-8 py-7 text-center"
+        >
+          <Loader2 className="h-6 w-6 animate-spin text-[#1e3a2f] motion-reduce:animate-none" />
+          <p className="text-sm font-semibold text-slate-900">
+            Chargement de l’administration de votre site…
+          </p>
+          <p className="text-xs text-slate-600">
+            Vérification sécurisée de votre session et de vos droits d’accès.
+          </p>
+        </div>
+      </main>
+    );
   }
-  if (!user) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f6f1]"><Loader2 className="h-7 w-7 animate-spin text-[#59634c]" /></main>;
-  }
+
   if (projectsQuery.isError) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f6f1] px-4"><Card className="max-w-lg"><CardHeader><CardTitle>Impossible de charger vos sites</CardTitle><CardDescription>Votre session n’a pas permis de récupérer les sites qui vous sont attribués. Rechargez la page ou reconnectez-vous.</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" onClick={() => void projectsQuery.refetch()}>Réessayer</Button></CardContent></Card></main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4 py-10 text-slate-900">
+        <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 md:p-8">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div className="space-y-2">
+              <h1 className="text-lg font-bold text-slate-900">
+                Impossible de charger votre espace d’administration
+              </h1>
+              <p className="text-sm leading-relaxed text-slate-600">
+                Votre session n’a pas permis de récupérer les sites qui vous sont attribués.
+                Rechargez la page ou reconnectez-vous avec votre adresse e-mail autorisée.
+              </p>
+              <div className="flex flex-wrap gap-2.5 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => void projectsQuery.refetch()}
+                  className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Réessayer
+                </Button>
+                <Button asChild variant="outline" className="min-h-[44px]">
+                  <Link href="/connexion-administration">Se reconnecter</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
+
   if (!accessibleProject || !siteId || projectQuery.isError || !project) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f6f1] px-4"><Card className="max-w-lg"><CardHeader><CardTitle>Accès limité à ce site</CardTitle><CardDescription>Votre compte ne possède pas d’accès actif à ce site indépendant.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href={`/sites/${requestedSlug}`}>Retour au site public</Link></Button></CardContent></Card></main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4 py-10 text-slate-900">
+        <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 md:p-8">
+          <div className="flex items-start gap-3">
+            <Lock className="mt-0.5 h-5 w-5 shrink-0 text-slate-700" />
+            <div className="space-y-2">
+              <h1 className="text-lg font-bold text-slate-900">
+                Aucun site actif n’est associé à ce compte
+              </h1>
+              <p className="text-sm leading-relaxed text-slate-600">
+                Votre compte ({user.email || "compte connecté"}) ne possède pas d’accès actif
+                à ce site. Vérifiez que vous utilisez bien l’adresse e-mail sur laquelle vous
+                avez reçu votre invitation.
+              </p>
+              <div className="flex flex-wrap gap-2.5 pt-3">
+                <Button
+                  asChild
+                  className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"
+                >
+                  <Link href="/connexion-administration">Changer de compte</Link>
+                </Button>
+                {urlParams.siteSlug && (
+                  <Button asChild variant="outline" className="min-h-[44px]">
+                    <Link href={`/sites/${urlParams.siteSlug}`}>
+                      Retour au site public
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
+
   const currentProject = project;
+  const statusSummary = formatClientStatusSummary(
+    currentProject.status,
+    hasAnyUnsavedChanges,
+    currentProject.updatedAt,
+  );
+  const selectedInviteRoleDetail = CLIENT_ADMIN_ROLE_MATRIX.find(
+    (item) => item.role === inviteRole,
+  )!;
+  const currentRoleDetail = CLIENT_ADMIN_ROLE_MATRIX.find(
+    (item) => item.role === role,
+  )!;
 
-  function savePages(nextPages: EditablePage[], label: string) {
-    saveMutation.mutate({ siteId, pages: nextPages as any, createVersionLabel: label });
+  // Aperçu temps réel tenant compte des modifications en cours dans le formulaire
+  const previewHtmlForActivePage = (() => {
+    if (!activePage) return "";
+    let html = activePage.html || "";
+    if (draftHeading.trim()) html = replaceFirstHtmlTag(html, "h1", draftHeading);
+    if (draftIntro.trim()) html = replaceFirstHtmlTag(html, "p", draftIntro);
+    if (draftImage.trim()) {
+      html = replaceFirstHtmlImage(html, draftImage, draftImageAlt || undefined);
+    }
+    return html;
+  })();
+
+  const previewSrcDoc = activePage
+    ? buildClientPreviewSrcDoc({
+        pageTitle: draftPageTitle || activePage.title,
+        siteTitle: draftSiteTitle || currentProject.title,
+        html: previewHtmlForActivePage,
+        css: activePage.css || "",
+      })
+    : "";
+
+  // Handlers éditoriaux
+  function handleSaveSiteTitle(event: React.FormEvent) {
+    event.preventDefault();
+    const clean = draftSiteTitle.trim();
+    if (!canEdit || !clean || !siteId) return;
+    saveMutation.mutate({
+      siteId,
+      title: clean,
+      createVersionLabel: `Titre du site modifié · ${clean}`,
+    });
   }
 
-  function saveContent() {
-    if (!activePage || !canEdit) return;
-    let html = replaceFirstTag(activePage.html, "h1", draftTitle || "Titre de la page");
-    html = replaceFirstTag(html, "p", draftIntro || "Présentez votre site à votre communauté.");
-    if (draftImage.trim()) html = replaceFirstImage(html, draftImage.trim());
-    savePages(pages.map(page => page.id === activePage.id ? { ...page, html } : page), `Mise à jour de contenu · ${activePage.title}`);
+  function handleSaveActivePage(event: React.FormEvent) {
+    event.preventDefault();
+    if (!activePage || !canEdit || !siteId) return;
+    let nextHtml = activePage.html || "";
+    if (draftHeading.trim()) {
+      nextHtml = replaceFirstHtmlTag(nextHtml, "h1", draftHeading);
+    }
+    if (draftIntro.trim()) {
+      nextHtml = replaceFirstHtmlTag(nextHtml, "p", draftIntro);
+    }
+    if (draftImage.trim()) {
+      nextHtml = replaceFirstHtmlImage(nextHtml, draftImage, draftImageAlt || undefined);
+    }
+    const nextPages = pages.map((p) =>
+      p.id === activePage.id
+        ? {
+            ...p,
+            title: draftPageTitle.trim() || p.title,
+            seoTitle: draftSeoTitle.trim() || p.seoTitle,
+            seoDescription: draftSeoDescription.trim() || p.seoDescription,
+            html: nextHtml,
+          }
+        : p,
+    );
+    saveMutation.mutate({
+      siteId,
+      pages: nextPages as any,
+      createVersionLabel: `Mise à jour · ${draftPageTitle.trim() || activePage.title}`,
+    });
   }
 
-  function addSection() {
-    if (!activePage || !newSectionTitle.trim() || !newSectionText.trim()) return;
-    const section = `<section data-site-block="client-section" style="padding:48px 28px;background:#f3eee8"><div style="max-width:920px;margin:0 auto"><h2 style="margin:0 0 12px;color:#172033;font-size:clamp(28px,4vw,44px)">${newSectionTitle.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</h2><p style="margin:0;color:#526070;line-height:1.75">${newSectionText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p></div></section>`;
-    const nextHtml = `${activePage.html}${section}`;
-    savePages(pages.map(page => page.id === activePage.id ? { ...page, html: nextHtml } : page), `Ajout d’une section · ${activePage.title}`);
+  function handleAddSectionOrNews(event: React.FormEvent) {
+    event.preventDefault();
+    if (!activePage || !canEdit || !siteId) return;
+    if (!newSectionTitle.trim() || !newSectionText.trim()) return;
+    const nextHtml = appendClientSectionHtml(activePage.html, {
+      title: newSectionTitle,
+      body: newSectionText,
+      kind: newSectionKind,
+      dateLabel: newSectionDate,
+    });
+    const nextPages = pages.map((p) =>
+      p.id === activePage.id ? { ...p, html: nextHtml } : p,
+    );
+    saveMutation.mutate({
+      siteId,
+      pages: nextPages as any,
+      createVersionLabel: `${newSectionKind === "actualite" ? "Actualité ajoutée" : "Section ajoutée"} · ${activePage.title}`,
+    });
     setNewSectionTitle("");
+    setNewSectionDate("");
     setNewSectionText("");
   }
 
-  const tabs: Array<{ id: AdminTab; label: string; icon: typeof LayoutDashboard }> = [
-    { id: "overview", label: "Vue d’ensemble", icon: LayoutDashboard },
-    { id: "content", label: "Contenus", icon: FileText },
-    { id: "media", label: "Images & médias", icon: ImagePlus },
-    { id: "team", label: "Accès & équipe", icon: UsersRound },
+  function handleCreatePage(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canEdit || !siteId || !newPageTitle.trim()) return;
+    const cleanTitle = newPageTitle.trim();
+    const cleanIntro =
+      newPageIntro.trim() ||
+      `Retrouvez ici toutes les informations utiles concernant ${cleanTitle}.`;
+    const slug = generateUniquePageSlug(cleanTitle, pages);
+    const id = `page-${Date.now()}`;
+    const safeTitle = cleanTitle.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const safeIntro = cleanIntro.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const newPage: IndependentSitePage = {
+      id,
+      title: cleanTitle,
+      slug,
+      parentPageId: null,
+      showInMenu: true,
+      menuOrder: pages.length + 1,
+      visibility: "public",
+      seoTitle: `${cleanTitle} — ${currentProject.title}`,
+      seoDescription: cleanIntro.slice(0, 155),
+      html: `<section style="padding:56px 24px;background:#ffffff"><div style="max-width:920px;margin:0 auto"><h1 style="margin:0 0 16px;color:#0f172a;font-size:clamp(28px,4vw,42px);line-height:1.2">${safeTitle}</h1><p style="margin:0;color:#334155;font-size:17px;line-height:1.7">${safeIntro}</p></div></section>`,
+      css: "",
+    };
+    const nextPages = [...pages, newPage];
+    saveMutation.mutate({
+      siteId,
+      pages: nextPages as any,
+      createVersionLabel: `Nouvelle page · ${cleanTitle}`,
+    });
+    setSelectedPageId(id);
+    setNewPageTitle("");
+    setNewPageIntro("");
+    setShowNewPageForm(false);
+  }
+
+  function handleReplaceEmbeddedImage(oldUrl: string, newUrl: string) {
+    if (!canEdit || !siteId || !newUrl.trim()) return;
+    const replaced = replaceMediaUrlAcrossPages(pages, oldUrl, newUrl.trim());
+    saveMutation.mutate({
+      siteId,
+      pages: replaced.pages as any,
+      createVersionLabel: "Remplacement d’image sur le site",
+    });
+  }
+
+  function handleCopyInviteLink(url: string) {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopiedInviteUrl(true);
+      toast.success("Lien d’activation copié.");
+    });
+  }
+
+  const navItems: Array<{
+    id: AdminTab;
+    label: string;
+    icon: typeof LayoutDashboard;
+    count?: number;
+  }> = [
+    { id: "overview", label: "Accueil", icon: LayoutDashboard },
+    { id: "content", label: "Pages & contenus", icon: FileText, count: pages.length },
+    {
+      id: "media",
+      label: "Images & médias",
+      icon: ImagePlus,
+      count: (mediaQuery.data?.length ?? 0) || embeddedPageImages.length,
+    },
+    {
+      id: "versions",
+      label: "Historique",
+      icon: History,
+      count: canAdminister ? versionsQuery.data?.length : undefined,
+    },
+    {
+      id: "team",
+      label: "Équipe & rôles",
+      icon: UsersRound,
+      count: canManageTeam ? accessQuery.data?.length : undefined,
+    },
   ];
 
-  return <div className="min-h-screen bg-[#f4f6f1] text-slate-900">
-    <header className="border-b border-[#d9dfcf] bg-white">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 md:px-8">
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#59634c]">Administration de site</p><h1 className="mt-1 text-xl font-bold tracking-tight md:text-2xl">{currentProject.title}</h1></div>
-        <div className="flex items-center gap-2"><Badge className="bg-[#e8eee0] text-[#40552d] hover:bg-[#e8eee0]">{roleInfo.title}</Badge><Button asChild variant="outline" size="sm"><Link href={`/sites/${currentProject.slug}`}><ExternalLink className="mr-2 h-4 w-4" />Voir le site</Link></Button></div>
+  return (
+    <div
+      className="min-h-screen overflow-x-clip bg-[#f8fafc] text-slate-900"
+      data-client-admin-site-id={currentProject.id}
+      data-client-admin-role={role}
+    >
+      {/* EN-TÊTE SOBRE ET CLAIR — CONTRAT 3 ZONES, ZÉRO LIEN VERS LE CONSTRUCTEUR PRIVÉ */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-[1360px] flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-600">
+              <span className="font-semibold text-[#1e3a2f]">Administration du site</span>
+              <span aria-hidden="true">·</span>
+              <span>Rôle : {roleInfo.shortLabel}</span>
+              <span aria-hidden="true">·</span>
+              <span
+                className={
+                  statusSummary.tone === "emerald"
+                    ? "font-semibold text-emerald-800"
+                    : statusSummary.tone === "amber"
+                      ? "font-semibold text-amber-800"
+                      : "font-semibold text-slate-700"
+                }
+              >
+                {statusSummary.statusLabel}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h1 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-slate-900 sm:truncate sm:text-xl">
+                {currentProject.title}
+              </h1>
+              {accessibleProjects.length > 1 && (
+                <select
+                  aria-label="Changer de site administré"
+                  value={currentProject.id}
+                  onChange={(event) => {
+                    const nextId = Number(event.target.value);
+                    setSelectedSiteOverrideId(nextId);
+                    setSelectedPageId("");
+                    setFeedbackBanner(null);
+                  }}
+                  className="min-h-[36px] max-w-full rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+                >
+                  {accessibleProjects.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              className="min-h-[44px] whitespace-nowrap border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+            >
+              <Eye className="mr-2 h-4 w-4 text-slate-600" />
+              Aperçu
+            </Button>
+            {currentProject.status === "published" && (
+              <Button
+                asChild
+                className="min-h-[44px] whitespace-nowrap bg-[#1e3a2f] px-4 text-sm font-medium text-white hover:bg-[#162b23] focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+              >
+                <Link href={`/sites/${currentProject.slug}`}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  Voir le site public
+                </Link>
+              </Button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* NAVIGATION MOBILE & TABLETTE (SOUS 1024px) */}
+      <nav
+        aria-label="Navigation de l’administration du site"
+        className="border-b border-slate-200 bg-white lg:hidden"
+      >
+        <div className="mx-auto flex max-w-[1360px] gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                aria-current={active ? "page" : undefined}
+                className={`inline-flex min-h-[44px] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f] ${
+                  active
+                    ? "bg-[#1e3a2f] text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{item.label}</span>
+                {typeof item.count === "number" && (
+                  <span
+                    className={`tabular-nums text-xs ${
+                      active ? "text-emerald-100" : "text-slate-500"
+                    }`}
+                  >
+                    ({item.count})
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* CORPS PRINCIPAL : BARRE LATÉRALE DESKTOP + CONTENU */}
+      <div className="mx-auto grid max-w-[1360px] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[248px_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-8">
+        <aside className="hidden lg:block">
+          <div className="sticky top-6 space-y-6">
+            <nav
+              aria-label="Sections de gestion"
+              className="rounded-xl border border-slate-200 bg-white p-2"
+            >
+              <ul className="space-y-1">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = tab === item.id;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setTab(item.id)}
+                        aria-current={active ? "page" : undefined}
+                        className={`flex min-h-[44px] w-full items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f] ${
+                          active
+                            ? "bg-[#1e3a2f] text-white"
+                            : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5 truncate">
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                        {typeof item.count === "number" && (
+                          <span
+                            className={`tabular-nums text-xs ${
+                              active ? "text-emerald-100" : "text-slate-500"
+                            }`}
+                          >
+                            {item.count}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs leading-relaxed text-slate-600">
+              <div className="flex items-center gap-2 font-semibold text-slate-900">
+                <ShieldCheck className="h-4 w-4 shrink-0 text-[#1e3a2f]" />
+                <span>Espace dédié à votre site</span>
+              </div>
+              <p className="mt-2">
+                Cet espace donne accès uniquement à{" "}
+                <strong className="text-slate-900">{currentProject.title}</strong>. Les autres
+                projets et le constructeur visuel global restent privés et séparés.
+              </p>
+            </div>
+          </div>
+        </aside>
+
+        <main className="min-w-0 space-y-6">
+          {/* BANDEAU DE CONFIRMATION / ERREUR ACCESSIBLE */}
+          {feedbackBanner && (
+            <div
+              role={feedbackBanner.tone === "error" ? "alert" : "status"}
+              aria-live="polite"
+              className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3.5 text-sm ${
+                feedbackBanner.tone === "success"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                  : "border-rose-300 bg-rose-50 text-rose-950"
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                {feedbackBanner.tone === "success" ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                ) : (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />
+                )}
+                <span>{feedbackBanner.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackBanner(null)}
+                aria-label="Fermer ce message"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {/* CONFIRMATION INLINE (JAMAIS window.confirm) */}
+          {inlineConfirm && (
+            <div
+              role="alertdialog"
+              aria-labelledby="client-admin-confirm-title"
+              aria-describedby="client-admin-confirm-desc"
+              className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 p-4"
+            >
+              <div className="min-w-0 flex-1 space-y-1">
+                <p id="client-admin-confirm-title" className="text-sm font-bold text-slate-900">
+                  {inlineConfirm.title}
+                </p>
+                <p id="client-admin-confirm-desc" className="text-xs leading-relaxed text-slate-700">
+                  {inlineConfirm.description}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setInlineConfirm(null)}
+                  className="min-h-[44px] bg-white"
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const action = inlineConfirm.onConfirm;
+                    setInlineConfirm(null);
+                    action();
+                  }}
+                  className={`min-h-[44px] text-white ${
+                    inlineConfirm.tone === "danger"
+                      ? "bg-rose-700 hover:bg-rose-800"
+                      : "bg-[#1e3a2f] hover:bg-[#162b23]"
+                  }`}
+                >
+                  {inlineConfirm.confirmLabel}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ONGLET 1 : VUE D'ENSEMBLE */}
+          {tab === "overview" && (
+            <div className="space-y-6">
+              {/* Grille d'indicateurs réels, sobre, sans cartes imbriquées */}
+              <section
+                aria-label="État actuel du site"
+                className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+              >
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-medium text-slate-500">Statut du site</p>
+                  <p className="mt-2 flex items-center gap-2 text-lg font-bold text-slate-900">
+                    {currentProject.status === "published" ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-amber-700" />
+                    )}
+                    <span>{statusSummary.statusLabel}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">{statusSummary.saveStateLabel}</p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-medium text-slate-500">Dernière sauvegarde</p>
+                  <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
+                    {statusSummary.lastSavedText}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {hasAnyUnsavedChanges
+                      ? "Des changements locaux attendent d’être enregistrés."
+                      : "Toutes vos modifications sont sauvegardées."}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-medium text-slate-500">Pages du site</p>
+                  <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+                    {pages.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Adresse : <code className="font-mono text-slate-700">/sites/{currentProject.slug}</code>
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-medium text-slate-500">Votre rôle sur ce site</p>
+                  <p className="mt-2 text-lg font-bold text-slate-900">{roleInfo.shortLabel}</p>
+                  <p className="mt-1 text-xs text-slate-600">{currentRoleDetail.audience}</p>
+                </div>
+              </section>
+
+              {/* Identité du site + Actions principales */}
+              <section className="grid gap-6 xl:grid-cols-2">
+                <form
+                  onSubmit={handleSaveSiteTitle}
+                  className="rounded-xl border border-slate-200 bg-white p-6"
+                >
+                  <h2 className="text-base font-bold text-slate-900">Identité du site</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Modifiez le nom principal affiché sur votre site et dans vos espaces de gestion.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    <Label htmlFor="client-site-title" className="text-sm font-medium text-slate-800">
+                      Titre du site
+                    </Label>
+                    <Input
+                      id="client-site-title"
+                      value={draftSiteTitle}
+                      onChange={(e) => setDraftSiteTitle(e.target.value)}
+                      disabled={!canEdit}
+                      maxLength={160}
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <Button
+                      type="submit"
+                      disabled={!canEdit || !draftSiteTitle.trim() || !hasUnsavedSiteTitle || saveMutation.isPending}
+                      className="min-h-[44px] bg-[#1e3a2f] px-4 text-sm font-medium text-white hover:bg-[#162b23]"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {saveMutation.isPending ? "Enregistrement…" : "Enregistrer le titre"}
+                    </Button>
+                    {!hasUnsavedSiteTitle && (
+                      <span className="text-xs text-slate-500">Titre déjà à jour</span>
+                    )}
+                  </div>
+                </form>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <h2 className="text-base font-bold text-slate-900">
+                    Publication et actions rapides
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">{statusSummary.statusDetail}</p>
+
+                  <div className="mt-4 flex flex-wrap gap-2.5">
+                    <Button
+                      type="button"
+                      onClick={() => setTab("content")}
+                      className="min-h-[44px] bg-[#1e3a2f] px-4 text-sm font-medium text-white hover:bg-[#162b23]"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Modifier les pages et textes
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setTab("media")}
+                      className="min-h-[44px] px-4 text-sm"
+                    >
+                      <ImagePlus className="mr-2 h-4 w-4" />
+                      Gérer les images
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPreviewOpen(true)}
+                      className="min-h-[44px] px-4 text-sm"
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      Aperçu avant publication
+                    </Button>
+                  </div>
+
+                  <div className="mt-5 border-t border-slate-200 pt-4">
+                    {canAdminister ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-xs text-slate-600">
+                          {currentProject.status === "published"
+                            ? "Votre site est actuellement accessible aux visiteurs."
+                            : "Votre site est en brouillon privé tant que vous ne le publiez pas."}
+                        </p>
+                        {currentProject.status === "published" ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={unpublishMutation.isPending}
+                            onClick={() =>
+                              setInlineConfirm({
+                                title: "Repasser le site en brouillon privé ?",
+                                description:
+                                  "Le site ne sera plus visible sur son adresse publique tant qu’il ne sera pas republié. Aucune page ni donnée ne sera supprimée.",
+                                confirmLabel: "Repasser en brouillon",
+                                tone: "danger",
+                                onConfirm: () => unpublishMutation.mutate({ siteId }),
+                              })
+                            }
+                            className="min-h-[44px] border-slate-300 text-sm text-slate-800"
+                          >
+                            Repasser en brouillon
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            disabled={publishMutation.isPending}
+                            onClick={() => publishMutation.mutate({ siteId })}
+                            className="min-h-[44px] bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-800"
+                          >
+                            <Globe className="mr-2 h-4 w-4" />
+                            {publishMutation.isPending ? "Publication…" : "Publier le site"}
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs leading-relaxed text-slate-600">
+                        Avec votre rôle <strong>Éditeur</strong>, vos modifications sont
+                        enregistrées en brouillon. La mise en ligne est effectuée par un
+                        Administrateur ou le Propriétaire du site.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Séparation claire des espaces (Administrer / Modifier / Construire) */}
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <h2 className="text-base font-bold text-slate-900">
+                  Comment fonctionne votre espace d’administration
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Un cadre simple et sécurisé pour faire vivre votre site sans outil technique
+                  complexe.
+                </p>
+                <div className="mt-5 grid gap-5 border-t border-slate-200 pt-5 md:grid-cols-3">
+                  {CLIENT_ADMIN_SPACE_DISTINCTIONS.map((item, idx) => (
+                    <div key={item.id} className="space-y-1.5">
+                      <p className="text-xs font-semibold tabular-nums text-[#1e3a2f]">
+                        0{idx + 1}.
+                      </p>
+                      <h3 className="text-sm font-bold text-slate-900">{item.title}</h3>
+                      <p className="text-sm leading-relaxed text-slate-600">
+                        {item.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* ONGLET 2 : PAGES & CONTENUS */}
+          {tab === "content" && (
+            <div className="space-y-6">
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Pages et contenus du site
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Sélectionnez une page pour mettre à jour son titre, son texte principal,
+                      son image ou ajouter une actualité.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPreviewOpen(true)}
+                      className="min-h-[44px] whitespace-nowrap text-sm"
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      Aperçu de la page
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowNewPageForm((v) => !v)}
+                      disabled={!canEdit}
+                      className="min-h-[44px] whitespace-nowrap text-sm"
+                    >
+                      <FilePlus2 className="mr-2 h-4 w-4" />
+                      Nouvelle page
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Formulaire de création d'une nouvelle page */}
+                {showNewPageForm && (
+                  <form
+                    onSubmit={handleCreatePage}
+                    className="mt-5 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Créer une nouvelle page
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPageForm(false)}
+                        className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-page-title">Titre de la nouvelle page</Label>
+                        <Input
+                          id="new-page-title"
+                          value={newPageTitle}
+                          onChange={(e) => setNewPageTitle(e.target.value)}
+                          placeholder="Ex. Actualités 2026, Assemblée générale…"
+                          required
+                          className="min-h-[44px] bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-page-intro">Texte d’introduction (facultatif)</Label>
+                        <Input
+                          id="new-page-intro"
+                          value={newPageIntro}
+                          onChange={(e) => setNewPageIntro(e.target.value)}
+                          placeholder="Courte présentation affichée en haut de la page"
+                          className="min-h-[44px] bg-white"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={!newPageTitle.trim() || saveMutation.isPending}
+                      className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Créer et enregistrer la page
+                    </Button>
+                  </form>
+                )}
+
+                {/* Sélecteur de pages */}
+                {pages.length === 0 ? (
+                  <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Aucune page n’est encore configurée sur ce site.
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Créez votre première page avec le bouton « Nouvelle page » ci-dessus.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      role="tablist"
+                      aria-label="Pages du site"
+                      className="mt-5 flex flex-wrap gap-2 border-b border-slate-200 pb-4"
+                    >
+                      {pages.map((page) => {
+                        const isSelected = page.id === activePage?.id;
+                        return (
+                          <button
+                            key={page.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isSelected}
+                            onClick={() => setSelectedPageId(page.id)}
+                            className={`inline-flex min-h-[40px] items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f] ${
+                              isSelected
+                                ? "border-[#1e3a2f] bg-[#1e3a2f] text-white"
+                                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span>{page.title}</span>
+                            <span
+                              className={`font-mono text-xs ${
+                                isSelected ? "text-emerald-100" : "text-slate-500"
+                              }`}
+                            >
+                              {page.slug}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {activePage && (
+                      <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+                        {/* Formulaire principal de modification de la page */}
+                        <form onSubmit={handleSaveActivePage} className="space-y-5">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="admin-page-title">Nom de la page dans le menu</Label>
+                              <Input
+                                id="admin-page-title"
+                                value={draftPageTitle}
+                                onChange={(e) => setDraftPageTitle(e.target.value)}
+                                disabled={!canEdit}
+                                className="min-h-[44px]"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="admin-heading">Titre principal affiché (H1)</Label>
+                              <Input
+                                id="admin-heading"
+                                value={draftHeading}
+                                onChange={(e) => setDraftHeading(e.target.value)}
+                                disabled={!canEdit}
+                                placeholder="Titre principal de cette page"
+                                className="min-h-[44px]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="admin-intro">Texte principal / présentation</Label>
+                            <Textarea
+                              id="admin-intro"
+                              rows={5}
+                              value={draftIntro}
+                              onChange={(e) => setDraftIntro(e.target.value)}
+                              disabled={!canEdit}
+                              placeholder="Saisissez le texte de présentation de cette page…"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-image">Image principale de la page (URL)</Label>
+                            <Input
+                              id="admin-image"
+                              value={draftImage}
+                              onChange={(e) => setDraftImage(e.target.value)}
+                              disabled={!canEdit}
+                              placeholder="https://…"
+                              className="min-h-[44px]"
+                            />
+                            {draftImage.trim() && (
+                              <div className="grid gap-3 pt-1 sm:grid-cols-[180px_minmax(0,1fr)]">
+                                <MediaThumbnail
+                                  src={draftImage.trim()}
+                                  alt={draftImageAlt || draftPageTitle || "Image principale"}
+                                />
+                                <div className="space-y-1.5">
+                                  <Label htmlFor="admin-image-alt" className="text-xs text-slate-600">
+                                    Description de l’image (accessibilité)
+                                  </Label>
+                                  <Input
+                                    id="admin-image-alt"
+                                    value={draftImageAlt}
+                                    onChange={(e) => setDraftImageAlt(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="Décrivez brièvement la photo"
+                                    className="min-h-[40px]"
+                                  />
+                                  <p className="text-xs text-slate-500">
+                                    Pour gérer toutes vos photos, utilisez l’onglet « Images & médias ».
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <Label htmlFor="admin-seo-title">Titre pour Google (SEO)</Label>
+                              <Input
+                                id="admin-seo-title"
+                                value={draftSeoTitle}
+                                onChange={(e) => setDraftSeoTitle(e.target.value)}
+                                disabled={!canEdit}
+                                placeholder={`${activePage.title} — ${currentProject.title}`}
+                                className="min-h-[44px]"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="admin-seo-desc">Résumé pour Google (SEO)</Label>
+                              <Input
+                                id="admin-seo-desc"
+                                value={draftSeoDescription}
+                                onChange={(e) => setDraftSeoDescription(e.target.value)}
+                                disabled={!canEdit}
+                                placeholder="Phrase courte décrivant la page (150 caractères max)"
+                                className="min-h-[44px]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 pt-1">
+                            <Button
+                              type="submit"
+                              disabled={!canEdit || saveMutation.isPending}
+                              className="min-h-[44px] bg-[#1e3a2f] px-5 text-sm font-medium text-white hover:bg-[#162b23]"
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              {saveMutation.isPending
+                                ? "Enregistrement en cours…"
+                                : "Enregistrer la page"}
+                            </Button>
+                            <span className="text-xs text-slate-600">
+                              {hasUnsavedPageChanges
+                                ? "Modifications en attente d’enregistrement."
+                                : `Dernière sauvegarde : ${statusSummary.lastSavedText}`}
+                            </span>
+                          </div>
+                        </form>
+
+                        {/* Colonne latérale : Publier une actualité ou ajouter une section */}
+                        <form
+                          onSubmit={handleAddSectionOrNews}
+                          className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-5"
+                        >
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900">
+                              Ajouter une actualité ou une section
+                            </h3>
+                            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                              Ajoutez un nouveau bloc de texte en bas de la page «{" "}
+                              <strong>{activePage.title}</strong> » sans modifier la mise en page
+                              existante.
+                            </p>
+                          </div>
+
+                          <div className="flex gap-1 rounded-lg bg-slate-200/70 p-1">
+                            <button
+                              type="button"
+                              onClick={() => setNewSectionKind("actualite")}
+                              className={`min-h-[36px] flex-1 rounded-md text-xs font-semibold transition-colors ${
+                                newSectionKind === "actualite"
+                                  ? "bg-white text-slate-900 shadow-xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              Actualité
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewSectionKind("section")}
+                              className={`min-h-[36px] flex-1 rounded-md text-xs font-semibold transition-colors ${
+                                newSectionKind === "section"
+                                  ? "bg-white text-slate-900 shadow-xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              Section texte
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="new-section-title">Titre</Label>
+                            <Input
+                              id="new-section-title"
+                              value={newSectionTitle}
+                              onChange={(e) => setNewSectionTitle(e.target.value)}
+                              placeholder={
+                                newSectionKind === "actualite"
+                                  ? "Ex. Réunion familiale du printemps"
+                                  : "Ex. Informations pratiques"
+                              }
+                              disabled={!canEdit}
+                              className="min-h-[44px] bg-white"
+                            />
+                          </div>
+
+                          {newSectionKind === "actualite" && (
+                            <div className="space-y-1.5">
+                              <Label htmlFor="new-section-date">Date ou repère (facultatif)</Label>
+                              <Input
+                                id="new-section-date"
+                                value={newSectionDate}
+                                onChange={(e) => setNewSectionDate(e.target.value)}
+                                placeholder="Ex. 15 mai 2026"
+                                disabled={!canEdit}
+                                className="min-h-[44px] bg-white"
+                              />
+                            </div>
+                          )}
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="new-section-text">Texte</Label>
+                            <Textarea
+                              id="new-section-text"
+                              rows={4}
+                              value={newSectionText}
+                              onChange={(e) => setNewSectionText(e.target.value)}
+                              placeholder="Rédigez votre annonce ou paragraphe…"
+                              disabled={!canEdit}
+                              className="bg-white"
+                            />
+                          </div>
+
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            disabled={
+                              !canEdit ||
+                              !newSectionTitle.trim() ||
+                              !newSectionText.trim() ||
+                              saveMutation.isPending
+                            }
+                            className="min-h-[44px] w-full bg-white text-sm font-medium"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            {newSectionKind === "actualite"
+                              ? "Ajouter cette actualité"
+                              : "Ajouter cette section"}
+                          </Button>
+                        </form>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
+          )}
+
+          {/* ONGLET 3 : IMAGES & MÉDIAS (RÉELLEMENT CONNECTÉ À LA BIBLIOTHÈQUE SERVEUR) */}
+          {tab === "media" && (
+            <div className="space-y-6">
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <h2 className="text-base font-bold text-slate-900">
+                  Ajouter une image à la bibliothèque du site
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Enregistrez vos photos avec un nom clair et une description accessible pour les
+                  réutiliser ou remplacer les visuels de vos pages.
+                </p>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!canEdit || !siteId || !newMediaLabel.trim() || !newMediaUrl.trim()) return;
+                    addMediaMutation.mutate({
+                      siteId,
+                      label: newMediaLabel.trim(),
+                      altText: (newMediaAlt.trim() || newMediaLabel.trim()).slice(0, 240),
+                      url: newMediaUrl.trim(),
+                    });
+                  }}
+                  className="mt-4 grid gap-4 md:grid-cols-3"
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="media-label">Nom de l’image</Label>
+                    <Input
+                      id="media-label"
+                      value={newMediaLabel}
+                      onChange={(e) => setNewMediaLabel(e.target.value)}
+                      placeholder="Ex. Photo assemblée générale"
+                      disabled={!canEdit}
+                      required
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="media-alt">Texte alternatif (description)</Label>
+                    <Input
+                      id="media-alt"
+                      value={newMediaAlt}
+                      onChange={(e) => setNewMediaAlt(e.target.value)}
+                      placeholder="Description courte pour l’accessibilité"
+                      disabled={!canEdit}
+                      required
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="media-url">Adresse de l’image (URL https://…)</Label>
+                    <Input
+                      id="media-url"
+                      value={newMediaUrl}
+                      onChange={(e) => setNewMediaUrl(e.target.value)}
+                      placeholder="https://…"
+                      disabled={!canEdit}
+                      required
+                      className="min-h-[44px]"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <Button
+                      type="submit"
+                      disabled={
+                        !canEdit ||
+                        !newMediaLabel.trim() ||
+                        !newMediaUrl.trim() ||
+                        addMediaMutation.isPending
+                      }
+                      className="min-h-[44px] bg-[#1e3a2f] px-5 text-sm font-medium text-white hover:bg-[#162b23]"
+                    >
+                      <ImagePlus className="mr-2 h-4 w-4" />
+                      {addMediaMutation.isPending
+                        ? "Ajout en cours…"
+                        : "Ajouter à la bibliothèque"}
+                    </Button>
+                  </div>
+                </form>
+              </section>
+
+              {/* Liste de la bibliothèque média enregistrée */}
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Bibliothèque média enregistrée ({mediaQuery.data?.length ?? 0})
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Remplacez une image partout sur le site ou appliquez-la sur la page active.
+                    </p>
+                  </div>
+                </div>
+
+                {mediaQuery.isLoading ? (
+                  <p className="mt-4 text-sm text-slate-500">Chargement des médias…</p>
+                ) : (mediaQuery.data?.length ?? 0) === 0 ? (
+                  <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Aucune image enregistrée dans la bibliothèque pour le moment.
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Ajoutez une photo via le formulaire ci-dessus ou importez l’une des images
+                      déjà affichées sur vos pages ci-dessous.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {(mediaQuery.data ?? []).map((item) => {
+                      const isEditing = editingMediaId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4"
+                        >
+                          <div className="space-y-3">
+                            <MediaThumbnail src={item.url} alt={item.altText || item.label} />
+                            {isEditing ? (
+                              <div className="space-y-2.5">
+                                <Input
+                                  value={editMediaLabel}
+                                  onChange={(e) => setEditMediaLabel(e.target.value)}
+                                  placeholder="Nom"
+                                  aria-label="Nom de l'image"
+                                  className="min-h-[40px]"
+                                />
+                                <Input
+                                  value={editMediaAlt}
+                                  onChange={(e) => setEditMediaAlt(e.target.value)}
+                                  placeholder="Texte alternatif"
+                                  aria-label="Texte alternatif"
+                                  className="min-h-[40px]"
+                                />
+                                <Input
+                                  value={editMediaUrl}
+                                  onChange={(e) => setEditMediaUrl(e.target.value)}
+                                  placeholder="Nouvelle URL de l'image"
+                                  aria-label="Nouvelle URL"
+                                  className="min-h-[40px]"
+                                />
+                                <label className="flex items-center gap-2 text-xs text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={editMediaReplaceInPages}
+                                    onChange={(e) =>
+                                      setEditMediaReplaceInPages(e.target.checked)
+                                    }
+                                    className="h-4 w-4 rounded border-slate-300"
+                                  />
+                                  Remplacer automatiquement dans toutes les pages
+                                </label>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-semibold text-slate-900">{item.label}</p>
+                                <p className="mt-0.5 text-xs text-slate-600">{item.altText}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                            {isEditing ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={updateMediaMutation.isPending}
+                                  onClick={() =>
+                                    updateMediaMutation.mutate({
+                                      siteId,
+                                      mediaId: item.id,
+                                      label: editMediaLabel.trim() || item.label,
+                                      altText: editMediaAlt.trim() || item.altText,
+                                      newUrl: editMediaUrl.trim() || undefined,
+                                      replaceInPages: editMediaReplaceInPages,
+                                    })
+                                  }
+                                  className="min-h-[40px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"
+                                >
+                                  Enregistrer
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setEditingMediaId(null)}
+                                  className="min-h-[40px]"
+                                >
+                                  Annuler
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setDraftImage(item.url);
+                                    setDraftImageAlt(item.altText || item.label);
+                                    setTab("content");
+                                    setFeedbackBanner({
+                                      tone: "success",
+                                      message: `Image « ${item.label} » sélectionnée pour la page active. Cliquez sur « Enregistrer la page » pour valider.`,
+                                    });
+                                  }}
+                                  className="min-h-[40px] text-xs"
+                                >
+                                  Utiliser sur la page
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setEditingMediaId(item.id);
+                                    setEditMediaLabel(item.label);
+                                    setEditMediaAlt(item.altText);
+                                    setEditMediaUrl(item.url);
+                                    setEditMediaReplaceInPages(true);
+                                  }}
+                                  className="min-h-[40px] text-xs"
+                                >
+                                  Remplacer
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    setInlineConfirm({
+                                      title: `Retirer « ${item.label} » de la bibliothèque ?`,
+                                      description:
+                                        "L’image sera retirée de la liste des médias enregistrés.",
+                                      confirmLabel: "Retirer l’image",
+                                      tone: "danger",
+                                      onConfirm: () =>
+                                        deleteMediaMutation.mutate({ siteId, mediaId: item.id }),
+                                    })
+                                  }
+                                  aria-label={`Supprimer ${item.label}`}
+                                  className="min-h-[40px] text-rose-700 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* Images actuellement présentes dans les pages du site */}
+              {embeddedPageImages.length > 0 && (
+                <section className="rounded-xl border border-slate-200 bg-white p-6">
+                  <h2 className="text-base font-bold text-slate-900">
+                    Images actuellement affichées sur vos pages ({embeddedPageImages.length})
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Visualisez les visuels déjà utilisés sur votre site et modifiez-les facilement.
+                  </p>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {embeddedPageImages.map((img) => (
+                      <div
+                        key={img.src}
+                        className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 p-4"
+                      >
+                        <div className="space-y-2.5">
+                          <MediaThumbnail src={img.src} alt={img.alt} />
+                          <div>
+                            <p className="line-clamp-1 text-sm font-semibold text-slate-900">
+                              {img.alt}
+                            </p>
+                            <p className="text-xs text-slate-500">Page : {img.pageTitle}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedPageId(img.pageId);
+                              setDraftImage(img.src);
+                              setTab("content");
+                            }}
+                            className="min-h-[40px] text-xs"
+                          >
+                            Modifier dans la page
+                          </Button>
+                          {mediaQuery.data && mediaQuery.data.length > 0 && (
+                            <select
+                              aria-label={`Remplacer ${img.alt} par un média de la bibliothèque`}
+                              defaultValue=""
+                              onChange={(e) => {
+                                if (!e.target.value) return;
+                                handleReplaceEmbeddedImage(img.src, e.target.value);
+                                e.target.value = "";
+                              }}
+                              className="min-h-[40px] max-w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+                            >
+                              <option value="">Remplacer par…</option>
+                              {mediaQuery.data.map((m) => (
+                                <option key={m.id} value={m.url}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {/* ONGLET 4 : HISTORIQUE & VERSIONS */}
+          {tab === "versions" && (
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <h2 className="text-base font-bold text-slate-900">
+                Historique et versions sauvegardées
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Enregistrez des points de repère nommés avant une grande mise à jour et revenez à
+                une version antérieure en cas de besoin.
+              </p>
+
+              {!canAdminister ? (
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">
+                    Consultation réservée aux Administrateurs et au Propriétaire
+                  </p>
+                  <p className="mt-1 leading-relaxed text-slate-600">
+                    Votre rôle actuel (<strong>Éditeur</strong>) vous permet de modifier et
+                    sauvegarder les pages en brouillon. La gestion de l’historique et la
+                    restauration d’anciennes versions sont réservées aux rôles Administrateur et
+                    Propriétaire afin d’éviter tout retour arrière involontaire.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-6">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!siteId) return;
+                      createVersionMutation.mutate({
+                        siteId,
+                        label: versionLabelInput.trim() || "Sauvegarde manuelle",
+                      });
+                    }}
+                    className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="min-w-[220px] flex-1 space-y-1.5">
+                      <Label htmlFor="version-label">Nom du point de sauvegarde</Label>
+                      <Input
+                        id="version-label"
+                        value={versionLabelInput}
+                        onChange={(e) => setVersionLabelInput(e.target.value)}
+                        placeholder="Ex. Avant assemblée générale de juin"
+                        maxLength={150}
+                        className="min-h-[44px] bg-white"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={createVersionMutation.isPending}
+                      className="min-h-[44px] bg-[#1e3a2f] px-4 text-sm font-medium text-white hover:bg-[#162b23]"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {createVersionMutation.isPending
+                        ? "Création…"
+                        : "Créer une sauvegarde"}
+                    </Button>
+                  </form>
+
+                  {versionsQuery.isLoading ? (
+                    <p className="text-sm text-slate-500">Chargement de l’historique…</p>
+                  ) : (versionsQuery.data?.length ?? 0) === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Aucune version archivée pour le moment.
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Chaque sauvegarde majeure et chaque point de repère créé ci-dessus
+                        apparaîtront ici.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-200 rounded-xl border border-slate-200">
+                      {(versionsQuery.data ?? []).map((version) => (
+                        <div
+                          key={version.id}
+                          className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900">
+                              <span className="tabular-nums text-[#1e3a2f]">
+                                Version #{version.versionNumber}
+                              </span>{" "}
+                              — {version.label}
+                            </p>
+                            <p className="mt-0.5 text-xs tabular-nums text-slate-500">
+                              Enregistrée le {formatClientDateTime(version.createdAt)} ·{" "}
+                              {version.snapshot.pages.length} page(s)
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={restoreVersionMutation.isPending}
+                            onClick={() =>
+                              setInlineConfirm({
+                                title: `Restaurer la version #${version.versionNumber} ?`,
+                                description: `Les pages du site reviendront à l’état « ${version.label} ». L’état actuel restera conservé dans l’historique.`,
+                                confirmLabel: "Restaurer cette version",
+                                tone: "primary",
+                                onConfirm: () =>
+                                  restoreVersionMutation.mutate({
+                                    siteId,
+                                    versionId: version.id,
+                                  }),
+                              })
+                            }
+                            className="min-h-[40px] whitespace-nowrap text-xs"
+                          >
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                            Restaurer
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ONGLET 5 : ÉQUIPE, RÔLES & INVITATIONS */}
+          {tab === "team" && (
+            <div className="space-y-6">
+              {/* Matrice claire des 3 rôles existants */}
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Les 3 rôles d’accès à ce site
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Votre rôle actuel sur <strong>{currentProject.title}</strong> est{" "}
+                      <strong className="text-[#1e3a2f]">{roleInfo.shortLabel}</strong> (
+                      <code className="font-mono text-xs">{role}</code>). Aucun rôle client ne
+                      donne accès au constructeur visuel global.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-5 lg:grid-cols-3">
+                  {CLIENT_ADMIN_ROLE_MATRIX.map((item) => {
+                    const isCurrent = item.role === role;
+                    return (
+                      <div
+                        key={item.role}
+                        className={`flex flex-col justify-between rounded-xl border p-5 ${
+                          isCurrent
+                            ? "border-[#1e3a2f] bg-[#f4f7f5]"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="space-y-4">
+                          <div>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="text-sm font-bold text-slate-900">
+                                {item.label}{" "}
+                                <span className="font-mono text-xs font-normal text-slate-500">
+                                  ({item.codeLabel})
+                                </span>
+                              </h3>
+                              {isCurrent && (
+                                <span className="text-xs font-semibold text-[#1e3a2f]">
+                                  Votre rôle actuel
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-slate-600">{item.audience}</p>
+                            <p className="mt-2 text-xs leading-relaxed text-slate-700">
+                              {item.summary}
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5 border-t border-slate-200/80 pt-3">
+                            <p className="text-xs font-semibold text-slate-900">
+                              Peut consulter
+                            </p>
+                            <ul className="space-y-1 text-xs leading-relaxed text-slate-600">
+                              {item.canView.map((line) => (
+                                <li key={line}>• {line}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="space-y-1.5 border-t border-slate-200/80 pt-3">
+                            <p className="text-xs font-semibold text-emerald-900">
+                              Peut modifier
+                            </p>
+                            <ul className="space-y-1 text-xs leading-relaxed text-slate-700">
+                              {item.canEdit.map((line) => (
+                                <li key={line}>• {line}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="space-y-1.5 border-t border-slate-200/80 pt-3">
+                            <p className="text-xs font-semibold text-slate-800">
+                              Ne peut pas faire
+                            </p>
+                            <ul className="space-y-1 text-xs leading-relaxed text-slate-600">
+                              {item.cannotDo.map((line) => (
+                                <li key={line}>• {line}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        <p className="mt-4 border-t border-slate-200/80 pt-3 text-xs font-medium text-slate-700">
+                          {item.builderAccessNote}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Gestion des membres et invitations (Propriétaire uniquement) */}
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <h2 className="text-base font-bold text-slate-900">
+                  Membres et invitations du site
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Les droits d’accès sont vérifiés côté serveur et limités exclusivement au site
+                  « {currentProject.title} ».
+                </p>
+
+                {!canManageTeam ? (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    L’envoi d’invitations, la modification des rôles et la révocation d’un accès
+                    sont réservés au <strong>Propriétaire</strong> du site. Contactez le
+                    propriétaire si un nouveau membre de votre équipe doit obtenir un accès.
+                  </div>
+                ) : (
+                  <div className="mt-5 space-y-6">
+                    {/* Formulaire d'invitation client avec explications avant envoi */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!siteId || !inviteEmail.trim()) return;
+                        inviteAccessMutation.mutate({
+                          siteId,
+                          email: inviteEmail.trim(),
+                          role: inviteRole,
+                          expiresInHours: inviteExpiresHours,
+                        });
+                      }}
+                      className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-5"
+                    >
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Inviter un membre à administrer ce site
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                          La personne invitée recevra un lien personnel à usage unique pour
+                          accéder directement à l’administration de{" "}
+                          <strong>{currentProject.title}</strong>, sans voir d’autres projets ni
+                          le constructeur visuel global.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="invite-email">Adresse e-mail de la personne</Label>
+                          <Input
+                            id="invite-email"
+                            type="email"
+                            required
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            placeholder="responsable@association.org"
+                            className="min-h-[44px] bg-white"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor="invite-role">Rôle attribué</Label>
+                          <select
+                            id="invite-role"
+                            value={inviteRole}
+                            onChange={(e) =>
+                              setInviteRole(e.target.value as "admin" | "editor")
+                            }
+                            className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+                          >
+                            <option value="editor">Éditeur (contenus et brouillons)</option>
+                            <option value="admin">
+                              Administrateur (contenus, versions et publication)
+                            </option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor="invite-expiry">Validité du lien</Label>
+                          <select
+                            id="invite-expiry"
+                            value={inviteExpiresHours}
+                            onChange={(e) => setInviteExpiresHours(Number(e.target.value))}
+                            className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+                          >
+                            <option value={24}>24 heures</option>
+                            <option value={72}>3 jours (recommandé)</option>
+                            <option value={168}>7 jours</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Aperçu du rôle sélectionné avant l'envoi */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-3.5 text-xs text-slate-700">
+                        <p className="font-semibold text-slate-900">
+                          Résumé avant envoi — {selectedInviteRoleDetail.label} (
+                          {selectedInviteRoleDetail.codeLabel})
+                        </p>
+                        <p className="mt-1 text-slate-600">{selectedInviteRoleDetail.summary}</p>
+                        <p className="mt-1.5 font-medium text-slate-700">
+                          {selectedInviteRoleDetail.builderAccessNote}
+                        </p>
+                      </div>
+
+                      <Button
+                        type="submit"
+                        disabled={!inviteEmail.trim() || inviteAccessMutation.isPending}
+                        className="min-h-[44px] bg-[#1e3a2f] px-5 text-sm font-medium text-white hover:bg-[#162b23]"
+                      >
+                        <MailPlus className="mr-2 h-4 w-4" />
+                        {inviteAccessMutation.isPending
+                          ? "Création de l’invitation…"
+                          : "Créer le lien d’invitation"}
+                      </Button>
+                    </form>
+
+                    {/* Lien d'activation fraîchement créé */}
+                    {lastInvitation && (
+                      <div className="space-y-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-bold">
+                            Invitation prête pour {lastInvitation.email} (
+                            {lastInvitation.role === "admin" ? "Administrateur" : "Éditeur"})
+                          </p>
+                          <span className="text-xs tabular-nums text-emerald-900">
+                            Valide jusqu’au {formatClientDateTime(lastInvitation.expiresAt)}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-relaxed">
+                          {lastInvitation.delivery === "delivered"
+                            ? "Un e-mail d’invitation a été envoyé. Vous pouvez également copier le lien ci-dessous pour le transmettre directement."
+                            : "Transmettez ce lien personnel à la personne invitée. Elle devra se connecter avec cette adresse e-mail exacte pour activer son accès."}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all rounded-lg border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-800">
+                            {lastInvitation.invitationUrl}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleCopyInviteLink(lastInvitation.invitationUrl)}
+                            className="min-h-[40px] whitespace-nowrap border-emerald-300 bg-white text-xs text-emerald-950 hover:bg-emerald-100"
+                          >
+                            {copiedInviteUrl ? (
+                              <>
+                                <Check className="mr-1.5 h-3.5 w-3.5" />
+                                Copié
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="mr-1.5 h-3.5 w-3.5" />
+                                Copier le lien
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Liste des membres et invitations */}
+                    {accessQuery.isLoading ? (
+                      <p className="text-sm text-slate-500">Chargement de l’équipe…</p>
+                    ) : (accessQuery.data?.length ?? 0) === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-600">
+                        Aucun membre supplémentaire n’a encore été invité sur ce site.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-200 rounded-xl border border-slate-200">
+                        {(accessQuery.data ?? []).map((member) => {
+                          const memberStatus = formatClientMemberStatus(member);
+                          const isOwnerRow = member.role === "owner";
+                          return (
+                            <div
+                              key={member.id}
+                              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+                            >
+                              <div className="min-w-0">
+                                <p className="break-all text-sm font-semibold text-slate-900">
+                                  {member.email}
+                                </p>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
+                                  <span>
+                                    {getIndependentSiteRolePresentation(member.role).shortLabel} (
+                                    <code className="font-mono">{member.role}</code>)
+                                  </span>
+                                  <span aria-hidden="true">·</span>
+                                  <span
+                                    className={
+                                      memberStatus.tone === "emerald"
+                                        ? "font-semibold text-emerald-800"
+                                        : memberStatus.tone === "amber"
+                                          ? "font-semibold text-amber-800"
+                                          : memberStatus.tone === "rose"
+                                            ? "font-semibold text-rose-800"
+                                            : "text-slate-600"
+                                    }
+                                  >
+                                    {memberStatus.label}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {!isOwnerRow && member.status !== "blocked" && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <select
+                                    aria-label={`Rôle de ${member.email}`}
+                                    value={member.role === "admin" ? "admin" : "editor"}
+                                    disabled={updateAccessRoleMutation.isPending}
+                                    onChange={(e) =>
+                                      updateAccessRoleMutation.mutate({
+                                        siteId,
+                                        memberId: member.id,
+                                        role: e.target.value as "admin" | "editor",
+                                      })
+                                    }
+                                    className="min-h-[40px] rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800"
+                                  >
+                                    <option value="editor">Éditeur</option>
+                                    <option value="admin">Administrateur</option>
+                                  </select>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={revokeAccessMutation.isPending}
+                                    onClick={() =>
+                                      setInlineConfirm({
+                                        title: `Révoquer l’accès de ${member.email} ?`,
+                                        description:
+                                          "Cette personne ne pourra plus consulter ni modifier ce site, et son lien d’invitation deviendra inutilisable.",
+                                        confirmLabel: "Révoquer l’accès",
+                                        tone: "danger",
+                                        onConfirm: () =>
+                                          revokeAccessMutation.mutate({
+                                            siteId,
+                                            memberId: member.id,
+                                          }),
+                                      })
+                                    }
+                                    className="min-h-[40px] whitespace-nowrap border-rose-200 text-xs text-rose-700 hover:bg-rose-50"
+                                  >
+                                    Révoquer
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+        </main>
       </div>
-    </header>
-    <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 md:grid-cols-[230px_1fr] md:px-8 md:py-8">
-      <aside className="rounded-2xl border border-[#d9dfcf] bg-white p-3 shadow-sm"><p className="px-3 pb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Espace de gestion</p><nav className="space-y-1">{tabs.map(item => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${tab === item.id ? "bg-[#59634c] text-white" : "text-slate-600 hover:bg-[#f1f4ec]"}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav><div className="mt-5 rounded-xl bg-[#f4f6f1] p-3 text-xs leading-5 text-slate-600"><ShieldCheck className="mb-1 h-4 w-4 text-[#59634c]" />Cet espace ne donne accès qu’au site <strong>{currentProject.title}</strong>. Le constructeur MAZIGHO reste privé.</div></aside>
-      <main className="space-y-6">
-        {tab === "overview" && <><div className="grid gap-4 md:grid-cols-3"><Card><CardContent className="p-5"><p className="text-sm text-slate-500">Statut</p><p className="mt-2 text-xl font-bold">{currentProject.status === "published" ? "Publié" : "Brouillon"}</p></CardContent></Card><Card><CardContent className="p-5"><p className="text-sm text-slate-500">Pages</p><p className="mt-2 text-xl font-bold">{pages.length}</p></CardContent></Card><Card><CardContent className="p-5"><p className="text-sm text-slate-500">Votre rôle</p><p className="mt-2 text-xl font-bold">{roleInfo.title}</p></CardContent></Card></div><Card><CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-[#9b563e]" />Bienvenue dans votre espace</CardTitle><CardDescription>Modifiez les textes et les images de votre site avec des formulaires simples. Aucun constructeur visuel ni autre projet ne sont exposés ici.</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-3"><Button type="button" onClick={() => setTab("content")}>Modifier les contenus</Button><Button type="button" variant="outline" onClick={() => setTab("media")}>Gérer les images</Button></CardContent></Card></>}
-        {tab === "content" && <Card><CardHeader><CardTitle>Contenus du site</CardTitle><CardDescription>Choisissez une page puis modifiez son titre, son introduction et son image principale.</CardDescription></CardHeader><CardContent className="space-y-6"><div className="flex flex-wrap gap-2">{pages.map(page => <Button key={page.id} type="button" size="sm" variant={page.id === activePage?.id ? "default" : "outline"} onClick={() => setSelectedPageId(page.id)}>{page.title}</Button>)}</div>{activePage && <div className="grid gap-5 lg:grid-cols-[1fr_280px]"><div className="space-y-4"><div><Label htmlFor="admin-title">Titre principal</Label><Input id="admin-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} disabled={!canEdit} /></div><div><Label htmlFor="admin-intro">Texte d’introduction</Label><Textarea id="admin-intro" rows={6} value={draftIntro} onChange={event => setDraftIntro(event.target.value)} disabled={!canEdit} /></div><div><Label htmlFor="admin-image">URL de l’image principale</Label><Input id="admin-image" value={draftImage} onChange={event => setDraftImage(event.target.value)} disabled={!canEdit} placeholder="https://…" /></div><Button type="button" onClick={saveContent} disabled={!canEdit || saveMutation.isPending}><Save className="mr-2 h-4 w-4" />Enregistrer les changements</Button></div><div className="rounded-2xl border border-[#d9dfcf] bg-[#f7f9f4] p-4"><p className="text-sm font-semibold">Ajouter une section</p><p className="mt-1 text-xs leading-5 text-slate-500">Ajoutez une section texte simple sans ouvrir le constructeur.</p><Input className="mt-3" value={newSectionTitle} onChange={event => setNewSectionTitle(event.target.value)} placeholder="Titre de la section" disabled={!canEdit} /><Textarea className="mt-2" rows={4} value={newSectionText} onChange={event => setNewSectionText(event.target.value)} placeholder="Votre texte…" disabled={!canEdit} /><Button className="mt-3 w-full" type="button" variant="outline" onClick={addSection} disabled={!canEdit || !newSectionTitle.trim() || !newSectionText.trim()}>Ajouter la section</Button></div></div>}</CardContent></Card>}
-        {tab === "media" && <Card><CardHeader><CardTitle>Images & médias</CardTitle><CardDescription>La bibliothèque média du site sera enrichie ici. Pour l’instant, l’image principale se modifie depuis l’onglet Contenus.</CardDescription></CardHeader><CardContent><Button type="button" onClick={() => setTab("content")}><ImagePlus className="mr-2 h-4 w-4" />Modifier l’image principale</Button></CardContent></Card>}
-        {tab === "team" && <Card><CardHeader><CardTitle>Accès & équipe</CardTitle><CardDescription>Les droits appliqués à ce site sont contrôlés côté serveur.</CardDescription></CardHeader><CardContent className="space-y-3"><p className="rounded-xl bg-[#f4f6f1] p-4 text-sm leading-6">Votre rôle : <strong>{roleInfo.title}</strong>. {roleInfo.description}</p>{role === "owner" ? <div className="space-y-2">{(accessQuery.data ?? []).map(member => <div key={member.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-sm"><span>{member.email}</span><Badge variant="outline">{member.role}</Badge></div>)}</div> : <p className="text-sm text-slate-500">La gestion des invitations et des rôles est réservée au propriétaire du site.</p>}</CardContent></Card>}
-      </main>
+
+      {/* PIED DE PAGE SOBRE — ZÉRO LIEN BOUTIQUE OU CONSTRUCTEUR PRIVÉ */}
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-[1360px] flex-wrap items-center justify-between gap-3 px-4 py-4 text-xs text-slate-600 sm:px-6 lg:px-8">
+          <span>
+            Administration dédiée de <strong className="text-slate-900">{currentProject.title}</strong>
+          </span>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              className="font-medium text-slate-700 hover:text-slate-900 hover:underline"
+            >
+              Aperçu avant publication
+            </button>
+            <Link
+              href={`/sites/${currentProject.slug}`}
+              className="font-medium text-[#1e3a2f] hover:underline"
+            >
+              Ouvrir la vitrine publique
+            </Link>
+          </div>
+        </div>
+      </footer>
+
+      {/* MODALE D'APERÇU INTÉGRÉ AVANT PUBLICATION (SANS QUITTER L'ADMINISTRATION CLIENT) */}
+      {previewOpen && activePage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Aperçu avant publication"
+          className="fixed inset-0 z-50 flex flex-col bg-slate-950/75 p-2 sm:p-5"
+        >
+          <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 text-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">
+                  Aperçu — {draftPageTitle || activePage.title} ({currentProject.title})
+                </p>
+                <p className="text-xs text-slate-300">
+                  {hasAnyUnsavedChanges
+                    ? "Inclut vos modifications en cours avant enregistrement."
+                    : "Rendu fidèle de la dernière version sauvegardée."}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label="Taille d’écran de l’aperçu"
+                  className="flex items-center gap-1 rounded-lg bg-slate-800 p-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setPreviewViewport("desktop")}
+                    aria-pressed={previewViewport === "desktop"}
+                    className={`inline-flex min-h-[36px] items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium ${
+                      previewViewport === "desktop"
+                        ? "bg-white text-slate-900"
+                        : "text-slate-200 hover:text-white"
+                    }`}
+                  >
+                    <Laptop className="h-3.5 w-3.5" />
+                    Ordinateur
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewViewport("tablet")}
+                    aria-pressed={previewViewport === "tablet"}
+                    className={`inline-flex min-h-[36px] items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium ${
+                      previewViewport === "tablet"
+                        ? "bg-white text-slate-900"
+                        : "text-slate-200 hover:text-white"
+                    }`}
+                  >
+                    <Tablet className="h-3.5 w-3.5" />
+                    Tablette
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewViewport("mobile")}
+                    aria-pressed={previewViewport === "mobile"}
+                    className={`inline-flex min-h-[36px] items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium ${
+                      previewViewport === "mobile"
+                        ? "bg-white text-slate-900"
+                        : "text-slate-200 hover:text-white"
+                    }`}
+                  >
+                    <Smartphone className="h-3.5 w-3.5" />
+                    Mobile
+                  </button>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPreviewOpen(false)}
+                  className="min-h-[40px] border-slate-600 bg-slate-800 text-white hover:bg-slate-700"
+                >
+                  <X className="mr-1.5 h-4 w-4" />
+                  Fermer l’aperçu
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-1 justify-center overflow-auto bg-slate-950 p-3 sm:p-5">
+              <iframe
+                title={`Aperçu de ${draftPageTitle || activePage.title}`}
+                srcDoc={previewSrcDoc}
+                sandbox="allow-same-origin"
+                style={{
+                  width:
+                    previewViewport === "mobile"
+                      ? "375px"
+                      : previewViewport === "tablet"
+                        ? "768px"
+                        : "100%",
+                  maxWidth: "1280px",
+                }}
+                className="h-full min-h-[520px] rounded-lg border border-slate-700 bg-white"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-    <footer className="mx-auto flex max-w-7xl items-center gap-2 px-4 pb-8 text-xs text-slate-500 md:px-8"><ArrowLeft className="h-3.5 w-3.5" /><Link href={`/sites/${currentProject.slug}`} className="hover:underline">Retour à la vitrine publique</Link></footer>
-  </div>;
+  );
 }
