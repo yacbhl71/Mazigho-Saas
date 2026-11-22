@@ -73,6 +73,14 @@ describe("Nouveautés MAZIGHO — analytics, inbox & composed blocks", () => {
     });
     expect(record3.recorded).toBe(true);
 
+    const ctaClick = await publicCaller.recordPageView({
+      slug: draftSite.slug,
+      path: "cta:/contact:Nous contacter",
+      visitorKey: "0102030405060708090a0b0c0d0e0f10",
+      eventType: "cta_click",
+    });
+    expect(ctaClick.recorded).toBe(true);
+
     const summary = await ownerCaller.getAnalyticsSummary({ siteId: draftSite.id });
     expect(summary.visitors).toBe(2);
     expect(summary.pageViews).toBe(3);
@@ -80,6 +88,8 @@ describe("Nouveautés MAZIGHO — analytics, inbox & composed blocks", () => {
     expect(summary.dailyViews[6]?.views).toBe(3);
     expect(summary.lastRecordedAt).toBeTypeOf("string");
     expect(summary.popularPages[0]).toEqual({ path: "/", views: 2 });
+    expect(summary.ctaClicks).toBe(1);
+    expect(summary.popularCtas[0]).toEqual({ path: "cta:/contact:Nous contacter", clicks: 1 });
   });
 
   it("updates form submission status (read / archived / restored) with strict site isolation", async () => {

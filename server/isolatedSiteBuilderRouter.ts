@@ -265,10 +265,11 @@ export const isolatedSiteBuilderRouter = router({
     slug: z.string().trim().min(1).max(120),
     visitorKey: z.string().regex(/^[a-f0-9]{16,64}$/i),
     path: z.string().trim().max(240).default("/"),
+    eventType: z.enum(["page_view", "cta_click"]).default("page_view"),
   })).mutation(async ({ input }) => {
     const siteId = await resolveIndependentSiteIdForAnalytics(input.slug);
     if (!siteId) return { recorded: false } as const;
-    return recordIndependentSitePageView({ siteId, visitorKey: input.visitorKey, path: input.path });
+    return recordIndependentSitePageView({ siteId, visitorKey: input.visitorKey, path: input.path, eventType: input.eventType });
   }),
 
   getAnalyticsSummary: protectedProcedure.input(z.object({ siteId: z.number().int().positive() })).query(async ({ ctx, input }) => {

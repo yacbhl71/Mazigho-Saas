@@ -2789,7 +2789,7 @@ export default function IndependentSiteAdminPage() {
                       {analyticsQuery.isFetching ? "Actualisation…" : "Actualiser les données"}
                     </Button>
                   </div>
-                  <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <p className="font-medium text-slate-600">Visiteurs uniques</p>
@@ -2819,6 +2819,16 @@ export default function IndependentSiteAdminPage() {
                         {analyticsQuery.isLoading ? "…" : analyticsQuery.data?.formsReceived ?? 0}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">Demandes soumises via vos formulaires</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <p className="font-medium text-slate-600">Clics sur les actions</p>
+                        <span className="font-semibold text-[#1e3a2f]">CTA</span>
+                      </div>
+                      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+                        {analyticsQuery.isLoading ? "…" : analyticsQuery.data?.ctaClicks ?? 0}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Boutons et liens d’action consultés</p>
                     </div>
                   </div>
                 </div>
@@ -2874,6 +2884,21 @@ export default function IndependentSiteAdminPage() {
                           <strong className="text-xs font-bold tabular-nums text-slate-900">
                             {page.views} {page.views > 1 ? "vues" : "vue"}
                           </strong>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <h3 className="font-bold text-slate-900">Actions les plus utilisées</h3>
+                  {!analyticsQuery.data?.popularCtas?.length ? (
+                    <p className="mt-3 text-sm text-slate-500">Aucun clic CTA enregistré pour le moment.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {analyticsQuery.data.popularCtas.map((cta) => (
+                        <li key={cta.path} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-slate-50 px-3.5 py-2.5 text-sm">
+                          <span className="max-w-[75%] truncate text-xs text-slate-700">{cta.path.replace(/^cta:[^:]*:/, "")}</span>
+                          <strong className="text-xs font-bold tabular-nums text-slate-900">{cta.clicks} {cta.clicks > 1 ? "clics" : "clic"}</strong>
                         </li>
                       ))}
                     </ul>

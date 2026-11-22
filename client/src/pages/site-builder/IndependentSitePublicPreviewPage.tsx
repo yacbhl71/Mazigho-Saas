@@ -150,6 +150,30 @@ export default function IndependentSitePublicPreviewPage() {
 
   useEffect(() => {
     const container = publicContentRef.current;
+    if (!container || isPreviewRoute || !site || !activePage || typeof window === "undefined") return;
+    const storageKey = "mazigho:independent:visitor-key";
+    let visitorKey = window.sessionStorage.getItem(storageKey) || "";
+    if (!/^[a-f0-9]{32}$/i.test(visitorKey)) return;
+    const handleClick = (event: Event) => {
+      const target = event.target instanceof Element ? event.target.closest("a,button") : null;
+      if (!target) return;
+      const label = (target.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+      if (!label) return;
+      const href = target instanceof HTMLAnchorElement ? target.getAttribute("href") || "" : "button";
+      const actionPath = `cta:${href}:${label}`.slice(0, 240);
+      recordPageViewMutation.mutate({
+        slug: site.slug,
+        visitorKey,
+        path: actionPath,
+        eventType: "cta_click",
+      });
+    };
+    container.addEventListener("click", handleClick);
+    return () => container.removeEventListener("click", handleClick);
+  }, [activePage, isPreviewRoute, recordPageViewMutation, site]);
+
+  useEffect(() => {
+    const container = publicContentRef.current;
     if (!container || !site || !activePage) return;
     const imageElements = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
     imageElements.forEach((image) => {

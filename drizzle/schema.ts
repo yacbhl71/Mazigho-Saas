@@ -1311,7 +1311,7 @@ export type InsertIndependentSiteFormSubmissionRow = typeof independentSiteFormS
 export const independentSiteAnalyticsEvents = mysqlTable("independentSiteAnalyticsEvents", {
   id: int("id").autoincrement().primaryKey(),
   siteId: int("siteId").notNull(),
-  eventType: mysqlEnum("eventType", ["page_view"]).default("page_view").notNull(),
+  eventType: mysqlEnum("eventType", ["page_view", "cta_click"]).default("page_view").notNull(),
   visitorKey: varchar("visitorKey", { length: 64 }).notNull(),
   path: varchar("path", { length: 240 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

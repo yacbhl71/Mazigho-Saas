@@ -189,7 +189,7 @@ export interface IndependentSiteFormSubmissionDto {
 }
 const memoryFormSubmissions = new Map<number, IndependentSiteFormSubmissionDto[]>();
 let nextMemoryFormSubmissionId = 12001;
-const memoryAnalyticsEvents = new Map<number, Array<{ visitorKey: string; path: string; createdAt: string }>>();
+const memoryAnalyticsEvents = new Map<number, Array<{ eventType: "page_view" | "cta_click"; visitorKey: string; path: string; createdAt: string }>>();
 const memoryAccessAudit: Array<Record<string, unknown>> = [];
 const memoryInvitationTokens = new Map<
   string,
@@ -1962,18 +1962,19 @@ export async function resolveIndependentSiteIdForAnalytics(slug: string): Promis
   return rows[0]?.id ?? null;
 }
 
-export async function recordIndependentSitePageView(input: { siteId: number; visitorKey: string; path: string }) {
+export async function recordIndependentSitePageView(input: { siteId: number; visitorKey: string; path: string; eventType?: "page_view" | "cta_click" }) {
   const visitorKey = input.visitorKey.trim().slice(0, 64);
   const path = input.path.trim().slice(0, 240) || "/";
   if (!/^[a-f0-9]{16,64}$/i.test(visitorKey)) throw new Error("INDEPENDENT_ANALYTICS_VISITOR_KEY_INVALID");
+  const eventType = input.eventType ?? "page_view";
   const db = await getDb();
   if (!db) {
     const list = memoryAnalyticsEvents.get(input.siteId) ?? [];
-    list.unshift({ visitorKey, path, createdAt: new Date().toISOString() });
+    list.unshift({ eventType, visitorKey, path, createdAt: new Date().toISOString() });
     memoryAnalyticsEvents.set(input.siteId, list.slice(0, 10000));
     return { recorded: true } as const;
   }
-  await db.insert(independentSiteAnalyticsEvents).values({ siteId: input.siteId, eventType: "page_view", visitorKey, path });
+  await db.insert(independentSiteAnalyticsEvents).values({ siteId: input.siteId, eventType, visitorKey, path });
   return { recorded: true } as const;
 }
 
@@ -1985,6 +1986,7 @@ export async function getIndependentSiteAnalyticsSummary(siteId: number) {
     ? await db.select().from(independentSiteAnalyticsEvents).where(and(eq(independentSiteAnalyticsEvents.siteId, siteId), gt(independentSiteAnalyticsEvents.createdAt, since)))
     : (memoryAnalyticsEvents.get(siteId) ?? []).filter((event) => new Date(event.createdAt) > since);
   const pageViews = events.filter((event) => !("eventType" in event) || event.eventType === "page_view");
+  const ctaClicks = events.filter((event) => "eventType" in event && event.eventType === "cta_click");
   const visitors = new Set(pageViews.map((event) => event.visitorKey)).size;
   const byPath = new Map<string, number>();
   let latestTimestamp = 0;
@@ -2020,10 +2022,15 @@ export async function getIndependentSiteAnalyticsSummary(siteId: number) {
   }));
   const popularPages = Array.from(byPath.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, views]) => ({ path, views }));
   const submissions = await listIndependentSiteFormSubmissions(siteId);
+  const byCta = new Map<string, number>();
+  for (const event of ctaClicks) byCta.set(event.path, (byCta.get(event.path) ?? 0) + 1);
+  const popularCtas = Array.from(byCta.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, clicks]) => ({ path, clicks }));
   return {
     visitors,
     pageViews: pageViews.length,
     popularPages,
+    ctaClicks: ctaClicks.length,
+    popularCtas,
     dailyViews,
     lastRecordedAt: latestTimestamp > 0 ? new Date(latestTimestamp).toISOString() : null,
     formsReceived: submissions.filter((item) => new Date(item.createdAt) > since).length,
