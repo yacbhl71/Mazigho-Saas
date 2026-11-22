@@ -58,6 +58,7 @@ export default function IndependentSitePublicPreviewPage() {
   const [activePageSlug, setActivePageSlug] = useState<string>(queryParams.pageSlug || "/");
   const [showSeoBanner, setShowSeoBanner] = useState<boolean>(false);
   const publicContentRef = useRef<HTMLDivElement>(null);
+  const trackedPageViewRef = useRef<string | null>(null);
   const submitFormMutation = trpc.independentSiteBuilder.submitForm.useMutation();
   const recordPageViewMutation = trpc.independentSiteBuilder.recordPageView.useMutation();
 
@@ -125,6 +126,8 @@ export default function IndependentSitePublicPreviewPage() {
   useEffect(() => {
     if (isPreviewRoute || !site || !activePage || typeof window === "undefined") return;
     try {
+      const pageViewKey = `${site.slug}:${activePage.slug || "/"}`;
+      if (trackedPageViewRef.current === pageViewKey) return;
       const storageKey = "mazigho:independent:visitor-key";
       let visitorKey = window.sessionStorage.getItem(storageKey) || "";
       if (!/^[a-f0-9]{32}$/i.test(visitorKey)) {
@@ -133,6 +136,7 @@ export default function IndependentSitePublicPreviewPage() {
         visitorKey = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
         window.sessionStorage.setItem(storageKey, visitorKey);
       }
+      trackedPageViewRef.current = pageViewKey;
       recordPageViewMutation.mutate({ slug: site.slug, visitorKey, path: activePage.slug || "/" });
     } catch {
       // Le suivi est facultatif : un navigateur qui bloque sessionStorage reste pleinement utilisable.
