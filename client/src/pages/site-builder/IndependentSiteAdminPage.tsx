@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   AlertTriangle,
@@ -79,6 +79,77 @@ import {
 
 type AdminTab = "overview" | "content" | "media" | "messages" | "theme" | "settings" | "stats" | "versions" | "team";
 type PreviewViewport = "desktop" | "tablet" | "mobile";
+
+function hexToHsv(hex: string): { hue: number; saturation: number; value: number } {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex : "#172033";
+  const red = Number.parseInt(normalized.slice(1, 3), 16) / 255;
+  const green = Number.parseInt(normalized.slice(3, 5), 16) / 255;
+  const blue = Number.parseInt(normalized.slice(5, 7), 16) / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+    else if (max === green) hue = 60 * ((blue - red) / delta + 2);
+    else hue = 60 * ((red - green) / delta + 4);
+  }
+  return { hue: hue < 0 ? hue + 360 : hue, saturation: max ? delta / max : 0, value: max };
+}
+
+function hsvToHex(hue: number, saturation: number, value: number): string {
+  const chroma = value * saturation;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const match = value - chroma;
+  const [red, green, blue] = hue < 60 ? [chroma, x, 0] : hue < 120 ? [x, chroma, 0] : hue < 180 ? [0, chroma, x] : hue < 240 ? [0, x, chroma] : hue < 300 ? [x, 0, chroma] : [chroma, 0, x];
+  return `#${[red, green, blue].map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function FullColorPicker({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const spectrumRef = useRef<HTMLDivElement>(null);
+  const hsv = hexToHsv(value);
+  const updateSpectrum = (clientX: number, clientY: number) => {
+    const bounds = spectrumRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const saturation = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
+    const brightness = 1 - Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height));
+    onChange(hsvToHex(hsv.hue, saturation, brightness));
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (event: PointerEvent) => updateSpectrum(event.clientX, event.clientY);
+    const stop = () => setDragging(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [dragging, hsv.hue]);
+
+  return (
+    <div className="relative">
+      <span className="block">{label}</span>
+      <div className="mt-2 flex items-center gap-2">
+        <button type="button" aria-label={`${label} — ouvrir le sélecteur complet`} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="h-12 w-12 shrink-0 cursor-pointer rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(148,163,184,0.7)]" style={{ backgroundColor: value }} />
+        <Input aria-label={`${label} — valeur hexadécimale`} value={value} onChange={(event) => { const next = event.target.value; if (/^#[0-9a-f]{0,6}$/i.test(next)) onChange(next); }} onBlur={() => { if (!/^#[0-9a-f]{6}$/i.test(value)) onChange("#172033"); }} />
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+          <div className="mb-3 flex items-center justify-between"><p className="text-sm font-semibold text-slate-900">Choisir une couleur</p><button type="button" className="text-xs text-slate-500 underline" onClick={() => setOpen(false)}>Fermer</button></div>
+          <div ref={spectrumRef} role="slider" aria-label={`${label} — saturation et luminosité`} aria-valuetext={value} tabIndex={0} className="relative h-36 cursor-crosshair overflow-hidden rounded-lg" style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.hue} 100% 50%))` }} onPointerDown={(event) => { setDragging(true); updateSpectrum(event.clientX, event.clientY); }}>
+            <span className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(15,23,42,0.8)]" style={{ left: `${hsv.saturation * 100}%`, top: `${(1 - hsv.value) * 100}%` }} />
+          </div>
+          <input aria-label={`${label} — teinte`} type="range" min="0" max="360" value={hsv.hue} onChange={(event) => onChange(hsvToHex(Number(event.target.value), hsv.saturation, hsv.value))} className="mt-4 h-4 w-full cursor-pointer appearance-none rounded-full" style={{ background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)" }} />
+          <div className="mt-3 flex items-center gap-2"><span className="h-7 w-7 rounded border border-slate-200" style={{ backgroundColor: value }} /><span className="text-xs font-medium text-slate-600">{value.toUpperCase()}</span></div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface InlineConfirmState {
   title: string;
@@ -2412,7 +2483,7 @@ export default function IndependentSiteAdminPage() {
                 <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">Modifiez les couleurs et les typographies une seule fois. Les blocs du site utilisent cette charte sans devoir être repris un par un.</p>
                 <form onSubmit={handleSaveTheme} className="mt-6 grid gap-5 md:grid-cols-2">
                   {([['primaryColor','Couleur principale'],['accentColor','Couleur d’accent'],['backgroundColor','Couleur de fond']] as const).map(([key,label]) => (
-                    <label key={key} className="space-y-2 text-sm font-medium text-slate-800"><span>{label}</span><div className="flex items-center gap-2"><input type="color" aria-label={`${label} — choisir une couleur`} title={`Choisir ${label.toLowerCase()}`} value={draftTheme[key]} onChange={(e) => setDraftTheme((v) => ({ ...v, [key]: e.target.value }))} className="h-12 w-12 cursor-pointer appearance-none rounded-full border-2 border-white bg-white p-0 shadow-[0_0_0_1px_rgba(148,163,184,0.7)]" /><Input aria-label={`${label} — valeur hexadécimale`} value={draftTheme[key]} onChange={(e) => setDraftTheme((v) => ({ ...v, [key]: e.target.value }))} /></div></label>
+                    <FullColorPicker key={key} label={label} value={draftTheme[key]} onChange={(next) => setDraftTheme((v) => ({ ...v, [key]: next }))} />
                   ))}
                   <label className="space-y-2 text-sm font-medium text-slate-800"><span>Police des titres</span><Input value={draftTheme.headingFont} onChange={(e) => setDraftTheme((v) => ({ ...v, headingFont: e.target.value }))} /></label>
                   <label className="space-y-2 text-sm font-medium text-slate-800"><span>Police des textes</span><Input value={draftTheme.bodyFont} onChange={(e) => setDraftTheme((v) => ({ ...v, bodyFont: e.target.value }))} /></label>
