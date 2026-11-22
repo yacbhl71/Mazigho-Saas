@@ -630,6 +630,9 @@ export default function IndependentSitePublicPreviewPage() {
                 if (targetPage) {
                   e.preventDefault();
                   setActivePageSlug(targetPage.slug);
+                } else {
+                  e.preventDefault();
+                  toast.error("Cette page n’est pas encore disponible sur ce site indépendant.");
                 }
               }
             }}
