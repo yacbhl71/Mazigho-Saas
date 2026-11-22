@@ -1,10 +1,10 @@
 # Rapport d'Audit Technique — Analytics du Constructeur Indépendant MAZIGHO
 
-**Date** : 22 novembre 2026  
-**Projet** : `mazigho-independent-sites`  
-**Domaine de production** : `https://mazigho-independent-sites-187ea4sfv-mazigho.vercel.app`  
-**Branche d'audit dédiée** : `audit/independent-site-analytics-investigation`  
-**Commit de référence main** : `1e7930771288eaa7724d000ae55414e957632c8c`  
+**Date** : 22 novembre 2026
+**Projet** : `mazigho-independent-sites`
+**Domaine de production** : `https://mazigho-independent-sites-187ea4sfv-mazigho.vercel.app`
+**Branche d'audit dédiée** : `audit/independent-site-analytics-investigation`
+**Commit de référence main** : `1e7930771288eaa7724d000ae55414e957632c8c`
 
 ---
 
