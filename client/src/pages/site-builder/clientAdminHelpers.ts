@@ -241,10 +241,48 @@ export function buildClientPreviewSrcDoc(input: {
   siteTitle: string;
   html: string;
   css: string;
+  theme?: {
+    primaryColor: string;
+    accentColor: string;
+    backgroundColor: string;
+    headingFont: string;
+    bodyFont: string;
+  };
 }): string {
   const safeHtml = sanitizeIndependentHtml(input.html || "");
   const safeCss = sanitizeIndependentCss(input.css || "");
   const title = escapeHtmlText(`${input.pageTitle} — ${input.siteTitle}`);
+  const theme = input.theme ?? {
+    primaryColor: "#172033",
+    accentColor: "#9b563e",
+    backgroundColor: "#faf8f5",
+    headingFont: "Georgia, serif",
+    bodyFont: "Inter, system-ui, sans-serif",
+  };
+  const safeThemeColor = (value: string, fallback: string) =>
+    /^#[0-9a-f]{6}$/i.test(value.trim()) ? value.trim() : fallback;
+  const safeThemeFont = (value: string, fallback: string) => {
+    const sanitized = value.replace(/[^a-zA-Z0-9\s,'"_-]/g, "").trim().slice(0, 120);
+    return sanitized || fallback;
+  };
+  const primaryColor = safeThemeColor(theme.primaryColor, "#172033");
+  const accentColor = safeThemeColor(theme.accentColor, "#9b563e");
+  const backgroundColor = safeThemeColor(theme.backgroundColor, "#faf8f5");
+  const headingFont = safeThemeFont(theme.headingFont, "Georgia, serif");
+  const bodyFont = safeThemeFont(theme.bodyFont, "Inter, system-ui, sans-serif");
+  const themeCss = `
+    :root {
+      --site-primary: ${primaryColor};
+      --site-accent: ${accentColor};
+      --site-background: ${backgroundColor};
+      --site-heading-font: ${headingFont};
+      --site-body-font: ${bodyFont};
+    }
+    body { background: var(--site-background) !important; color: var(--site-primary) !important; font-family: var(--site-body-font); }
+    h1, h2, h3, h4, h5, h6 { color: var(--site-primary) !important; font-family: var(--site-heading-font) !important; }
+    a { color: var(--site-primary); }
+    button, [role="button"] { background-color: var(--site-accent); }
+  `;
   return `<!doctype html>
 <html lang="fr">
 <head>
@@ -254,9 +292,10 @@ export function buildClientPreviewSrcDoc(input: {
   <style>
     ${INDEPENDENT_RESPONSIVE_BASE_CSS}
     ${safeCss}
+    ${themeCss}
   </style>
 </head>
-<body style="margin:0;background:#ffffff;color:#0f172a">
+<body style="margin:0">
   ${safeHtml}
 </body>
 </html>`;

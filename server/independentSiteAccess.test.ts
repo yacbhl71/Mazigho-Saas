@@ -602,6 +602,39 @@ describe("independent site access isolation", () => {
     expect(previewDoc).toContain("Association familiale ATH VAHLOUL");
     expect(previewDoc).toContain("Assemblée générale");
 
+    const themedPreviewDoc = buildClientPreviewSrcDoc({
+      siteTitle: "Association familiale ATH VAHLOUL",
+      pageTitle: "Accueil",
+      html: sampleHtml,
+      css: "",
+      theme: {
+        primaryColor: "#123456",
+        accentColor: "#abcdef",
+        backgroundColor: "#fefefe",
+        headingFont: "'Playfair Display', serif",
+        bodyFont: "Inter, system-ui, sans-serif",
+      },
+    });
+    expect(themedPreviewDoc).toContain("--site-primary: #123456");
+    expect(themedPreviewDoc).toContain("--site-accent: #abcdef");
+    expect(themedPreviewDoc).toContain("--site-heading-font: 'Playfair Display', serif");
+
+    const unsafePreviewDoc = buildClientPreviewSrcDoc({
+      siteTitle: "Test",
+      pageTitle: "Accueil",
+      html: sampleHtml,
+      css: "",
+      theme: {
+        primaryColor: "#123456; color:red",
+        accentColor: "#abcdef",
+        backgroundColor: "#fefefe",
+        headingFont: "Arial; } body { display:none }",
+        bodyFont: "Inter, system-ui, sans-serif",
+      },
+    });
+    expect(unsafePreviewDoc).toContain("--site-primary: #172033");
+    expect(unsafePreviewDoc).not.toContain("display:none");
+
     expect(formatClientStatusSummary("draft", true, null)).toMatchObject({
       statusLabel: "Brouillon",
       saveStateLabel: "Modifications non enregistrées",
