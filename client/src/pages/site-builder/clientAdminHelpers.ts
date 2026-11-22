@@ -278,7 +278,8 @@ export function buildClientPreviewSrcDoc(input: {
       --site-heading-font: ${headingFont};
       --site-body-font: ${bodyFont};
     }
-    body { background: var(--site-background) !important; color: var(--site-primary) !important; font-family: var(--site-body-font); }
+    html, body { background: var(--site-background) !important; }
+    body { color: var(--site-primary) !important; font-family: var(--site-body-font); }
     h1, h2, h3, h4, h5, h6 { color: var(--site-primary) !important; font-family: var(--site-heading-font) !important; }
     a { color: var(--site-primary); }
     button, [role="button"] { background-color: var(--site-accent); }

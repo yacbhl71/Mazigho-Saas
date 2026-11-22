@@ -652,7 +652,7 @@ export default function IndependentSitePublicPreviewPage() {
           className={isPreviewRoute ? "min-h-[82vh] overflow-x-hidden rounded-2xl border border-slate-700 bg-white text-slate-900 shadow-2xl transition-all duration-200 motion-reduce:transition-none" : "min-h-screen overflow-x-hidden bg-white text-slate-900"}
         >
           <style>
-            {`:root { --site-primary: ${site.theme.primaryColor}; --site-accent: ${site.theme.accentColor}; --site-background: ${site.theme.backgroundColor}; --site-heading-font: ${site.theme.headingFont}; --site-body-font: ${site.theme.bodyFont}; }\n            h1, h2, h3, h4, h5, h6 { font-family: var(--site-heading-font); }\n            body, p, li, label, input, textarea, button { font-family: var(--site-body-font); }\n            a { color: var(--site-primary); }\n            `}
+            {`:root { --site-primary: ${site.theme.primaryColor}; --site-accent: ${site.theme.accentColor}; --site-background: ${site.theme.backgroundColor}; --site-heading-font: ${site.theme.headingFont}; --site-body-font: ${site.theme.bodyFont}; }\n            html, body, #root { background-color: var(--site-background); }\n            h1, h2, h3, h4, h5, h6 { font-family: var(--site-heading-font); }\n            body, p, li, label, input, textarea, button { font-family: var(--site-body-font); }\n            a { color: var(--site-primary); }\n            `}
             {INDEPENDENT_RESPONSIVE_BASE_CSS}
             {"\n"}
             {sanitizeIndependentCss(activePage.css)}
