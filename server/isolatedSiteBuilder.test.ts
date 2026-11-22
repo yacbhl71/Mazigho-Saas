@@ -83,12 +83,14 @@ import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
   createIndependentCollaboratorPreviewShare,
+  createIndependentSiteFormSubmission,
   createIndependentSiteProject,
   deleteIndependentSiteMedia,
   duplicateIndependentSiteProject,
   ensureAthVahloulDemoProject,
   exportIndependentSiteProjectJson,
   getIndependentSiteProject,
+  getIndependentSiteAnalyticsSummary,
   getPublicIndependentSiteBySlug,
   importIndependentSiteProjectJson,
   listIndependentCollaboratorPreviewShares,
@@ -98,6 +100,7 @@ import {
   listIndependentSiteProjects,
   listIndependentSiteVersions,
   publishIndependentSiteProject,
+  recordIndependentSitePageView,
   repairKnownIndependentSiteLinks,
   removeIndependentSiteDomain,
   restoreIndependentSiteVersion,
@@ -1555,5 +1558,36 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(builderSource).not.toContain("trpc.visualBuilder");
     expect(builderSource).not.toContain("trpc.shopify");
     expect(builderSource).not.toContain("trpc.orders");
+  });
+
+  it("27. enregistre les pages vues anonymes, agrège les pages populaires et isole les sites", async () => {
+    const siteA = await createIndependentSiteProject(99101, { title: "Analytics A" });
+    const siteB = await createIndependentSiteProject(99102, { title: "Analytics B" });
+
+    await recordIndependentSitePageView({ siteId: siteA.id, visitorKey: "a".repeat(32), path: "/" });
+    await recordIndependentSitePageView({ siteId: siteA.id, visitorKey: "a".repeat(32), path: "/contact" });
+    await recordIndependentSitePageView({ siteId: siteA.id, visitorKey: "b".repeat(32), path: "/" });
+    await recordIndependentSitePageView({ siteId: siteB.id, visitorKey: "c".repeat(32), path: "/autre-site" });
+    await createIndependentSiteFormSubmission({
+      siteId: siteA.id,
+      name: "Visiteur",
+      email: "visiteur@example.test",
+      message: "Bonjour",
+    });
+
+    const summaryA = await getIndependentSiteAnalyticsSummary(siteA.id);
+    expect(summaryA).toMatchObject({ visitors: 2, pageViews: 3, formsReceived: 1 });
+    expect(summaryA.popularPages).toEqual([
+      { path: "/", views: 2 },
+      { path: "/contact", views: 1 },
+    ]);
+    const summaryB = await getIndependentSiteAnalyticsSummary(siteB.id);
+    expect(summaryB).toMatchObject({ visitors: 1, pageViews: 1, formsReceived: 0 });
+  });
+
+  it("28. refuse les clés visiteur invalides avant toute écriture", async () => {
+    await expect(
+      recordIndependentSitePageView({ siteId: 99103, visitorKey: "not-a-valid-key", path: "/" }),
+    ).rejects.toThrow("INDEPENDENT_ANALYTICS_VISITOR_KEY_INVALID");
   });
 });

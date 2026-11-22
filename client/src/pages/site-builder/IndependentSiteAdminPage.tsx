@@ -316,6 +316,10 @@ export default function IndependentSiteAdminPage() {
     { siteId: siteId ?? 0 },
     { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
   );
+  const analyticsQuery = trpc.independentSiteBuilder.getAnalyticsSummary.useQuery(
+    { siteId: siteId ?? 0 },
+    { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
+  );
   const markFormReadMutation = trpc.independentSiteBuilder.markFormSubmissionRead.useMutation({
     onSuccess: () => void formSubmissionsQuery.refetch(),
     onError: (error) => toast.error(error.message || "Impossible de marquer ce message comme lu."),
@@ -2216,7 +2220,7 @@ export default function IndependentSiteAdminPage() {
           )}
 
           {tab === "stats" && (
-            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><div className="flex items-start gap-3"><BarChart3 className="mt-1 h-5 w-5 text-[#1e3a2f]" /><div><h2 className="text-xl font-bold text-slate-900">Statistiques</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">Les statistiques indépendantes par site seront affichées ici dès que le module de mesure respectueux de la vie privée sera activé.</p></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Visiteurs — 30 jours</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Pages populaires</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Formulaires reçus</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div></div></div></section>
+            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><div className="flex items-start gap-3"><BarChart3 className="mt-1 h-5 w-5 text-[#1e3a2f]" /><div><h2 className="text-xl font-bold text-slate-900">Statistiques</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">Mesure privée et limitée à ce site : aucune adresse IP, aucun compte visiteur et aucun cookie publicitaire.</p></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Visiteurs — 30 jours</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.visitors ?? 0}</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Pages vues</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.pageViews ?? 0}</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Formulaires reçus</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.formsReceived ?? 0}</p></div></div></div><div className="rounded-xl border border-slate-200 bg-white p-6"><h3 className="font-bold text-slate-900">Pages les plus consultées</h3>{!analyticsQuery.data?.popularPages.length ? <p className="mt-3 text-sm text-slate-500">Aucune visite enregistrée pour le moment.</p> : <ul className="mt-3 space-y-2">{analyticsQuery.data.popularPages.map((page) => <li key={page.path} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="break-all text-slate-700">{page.path}</span><strong className="text-slate-900">{page.views} vues</strong></li>)}</ul>}</div></section>
           )}
 
           {/* ONGLET 4 : HISTORIQUE & VERSIONS */}

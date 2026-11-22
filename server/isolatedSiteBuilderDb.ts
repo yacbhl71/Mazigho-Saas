@@ -9,6 +9,7 @@ import {
   independentSiteMembers,
   independentSiteAccessAuditLogs,
   independentSiteFormSubmissions,
+  independentSiteAnalyticsEvents,
   users,
 } from "../drizzle/schema";
 import {
@@ -185,6 +186,7 @@ export interface IndependentSiteFormSubmissionDto {
 }
 const memoryFormSubmissions = new Map<number, IndependentSiteFormSubmissionDto[]>();
 let nextMemoryFormSubmissionId = 12001;
+const memoryAnalyticsEvents = new Map<number, Array<{ visitorKey: string; path: string; createdAt: string }>>();
 const memoryAccessAudit: Array<Record<string, unknown>> = [];
 const memoryInvitationTokens = new Map<
   string,
@@ -1870,6 +1872,36 @@ export async function markIndependentSiteFormSubmissionRead(siteId: number, subm
   }
   await db.update(independentSiteFormSubmissions).set({ status: "read", readAt: now }).where(and(eq(independentSiteFormSubmissions.id, submissionId), eq(independentSiteFormSubmissions.siteId, siteId)));
   return (await listIndependentSiteFormSubmissions(siteId)).find((item) => item.id === submissionId) ?? null;
+}
+
+export async function recordIndependentSitePageView(input: { siteId: number; visitorKey: string; path: string }) {
+  const visitorKey = input.visitorKey.trim().slice(0, 64);
+  const path = input.path.trim().slice(0, 240) || "/";
+  if (!/^[a-f0-9]{16,64}$/i.test(visitorKey)) throw new Error("INDEPENDENT_ANALYTICS_VISITOR_KEY_INVALID");
+  const db = await getDb();
+  if (!db) {
+    const list = memoryAnalyticsEvents.get(input.siteId) ?? [];
+    list.unshift({ visitorKey, path, createdAt: new Date().toISOString() });
+    memoryAnalyticsEvents.set(input.siteId, list.slice(0, 10000));
+    return { recorded: true } as const;
+  }
+  await db.insert(independentSiteAnalyticsEvents).values({ siteId: input.siteId, eventType: "page_view", visitorKey, path });
+  return { recorded: true } as const;
+}
+
+export async function getIndependentSiteAnalyticsSummary(siteId: number) {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const db = await getDb();
+  const events = db
+    ? await db.select().from(independentSiteAnalyticsEvents).where(and(eq(independentSiteAnalyticsEvents.siteId, siteId), gt(independentSiteAnalyticsEvents.createdAt, since)))
+    : (memoryAnalyticsEvents.get(siteId) ?? []).filter((event) => new Date(event.createdAt) > since);
+  const pageViews = events.filter((event) => !("eventType" in event) || event.eventType === "page_view");
+  const visitors = new Set(pageViews.map((event) => event.visitorKey)).size;
+  const byPath = new Map<string, number>();
+  for (const event of pageViews) byPath.set(event.path, (byPath.get(event.path) ?? 0) + 1);
+  const popularPages = Array.from(byPath.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, views]) => ({ path, views }));
+  const submissions = await listIndependentSiteFormSubmissions(siteId);
+  return { visitors, pageViews: pageViews.length, popularPages, formsReceived: submissions.filter((item) => new Date(item.createdAt) > since).length, since: since.toISOString() };
 }
 
 // ---------------------------------------------------------------------------

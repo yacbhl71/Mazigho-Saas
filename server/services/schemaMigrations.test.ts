@@ -161,3 +161,15 @@ describe("independent site access migration", () => {
     expect(migration).not.toMatch(/`storeId`|payment|order|stock/i);
   });
 });
+
+describe("independent site analytics migration", () => {
+  it("registers additive, anonymized analytics events without destructive operations", () => {
+    const runner = worktreeFile("scripts/apply-schema-migrations.mjs");
+    const migration = worktreeFile("drizzle/0066_independent_site_analytics.sql");
+    expect(runner).toContain('["0066_independent_site_analytics", "drizzle/0066_independent_site_analytics.sql"]');
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS `independentSiteAnalyticsEvents`");
+    expect(migration).toContain("`visitorKey` varchar(64) NOT NULL");
+    expect(migration).toContain("`path` varchar(240) NOT NULL");
+    expect(migration).not.toMatch(/DROP|TRUNCATE|DELETE|ipAddress|email|userId/i);
+  });
+});

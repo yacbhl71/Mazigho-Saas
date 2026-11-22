@@ -1305,3 +1305,19 @@ export const independentSiteFormSubmissions = mysqlTable("independentSiteFormSub
 }));
 export type IndependentSiteFormSubmissionRow = typeof independentSiteFormSubmissions.$inferSelect;
 export type InsertIndependentSiteFormSubmissionRow = typeof independentSiteFormSubmissions.$inferInsert;
+
+// Événements anonymisés de fréquentation : aucune adresse IP ni donnée de compte.
+export const independentSiteAnalyticsEvents = mysqlTable("independentSiteAnalyticsEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  eventType: mysqlEnum("eventType", ["page_view"]).default("page_view").notNull(),
+  visitorKey: varchar("visitorKey", { length: 64 }).notNull(),
+  path: varchar("path", { length: 240 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  siteCreatedIndex: index("independent_site_analytics_site_created_idx").on(table.siteId, table.createdAt),
+  sitePathCreatedIndex: index("independent_site_analytics_site_path_created_idx").on(table.siteId, table.path, table.createdAt),
+  siteVisitorCreatedIndex: index("independent_site_analytics_site_visitor_created_idx").on(table.siteId, table.visitorKey, table.createdAt),
+}));
+export type IndependentSiteAnalyticsEventRow = typeof independentSiteAnalyticsEvents.$inferSelect;
+export type InsertIndependentSiteAnalyticsEventRow = typeof independentSiteAnalyticsEvents.$inferInsert;

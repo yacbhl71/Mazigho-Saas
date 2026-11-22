@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acceptIndependentSiteInvitation,
   assertIndependentSiteAccess,
+  getIndependentSiteAnalyticsSummary,
   createIndependentSiteProject,
   getIndependentSiteProject,
   inspectIndependentSiteInvitation,
@@ -163,6 +164,28 @@ describe("independent site access isolation", () => {
       "editor",
     );
     expect(editor.status).toBe("active");
+  });
+
+  it("réserve le résumé analytics aux membres autorisés et au site attribué", async () => {
+    const siteA = await createIndependentSiteProject(99401, { title: "Analytics protégées" });
+    const siteB = await createIndependentSiteProject(99402, { title: "Analytics autre site" });
+    const invite = await inviteIndependentSiteAccess(99401, {
+      siteId: siteA.id,
+      email: "analytics-editor@example.test",
+      role: "editor",
+    });
+    await acceptIndependentSiteInvitation(99403, invite.developmentOnlyToken!, "analytics-editor@example.test");
+
+    await expect(
+      makeCaller({ id: 99403, email: "analytics-editor@example.test" }).getAnalyticsSummary({ siteId: siteA.id }),
+    ).resolves.toMatchObject({ visitors: 0, pageViews: 0, formsReceived: 0 });
+    await expect(
+      makeCaller({ id: 99403, email: "analytics-editor@example.test" }).getAnalyticsSummary({ siteId: siteB.id }),
+    ).rejects.toThrow();
+    await expect(
+      makeCaller({ id: 99404, email: "outsider@example.test" }).getAnalyticsSummary({ siteId: siteA.id }),
+    ).rejects.toThrow();
+    await expect(getIndependentSiteAnalyticsSummary(siteB.id)).resolves.toMatchObject({ pageViews: 0 });
   });
 
   it("inspects invitations and reports clear UX diagnostics for valid, mismatched email, already used, revoked, expired, and unknown tokens", async () => {

@@ -35,6 +35,8 @@ import {
   listIndependentSiteDomains,
   listIndependentSiteMedia,
   listIndependentSiteFormSubmissions,
+  recordIndependentSitePageView,
+  getIndependentSiteAnalyticsSummary,
   listIndependentSiteProjects,
   listIndependentSiteProjectsAccessible,
   listIndependentSiteAccess,
@@ -210,6 +212,21 @@ export const isolatedSiteBuilderRouter = router({
     const { honeypot: _honeypot, ...submission } = input;
     await createIndependentSiteFormSubmission({ ...submission, siteId: site.id });
     return { success: true };
+  }),
+
+  recordPageView: publicProcedure.input(z.object({
+    slug: z.string().trim().min(1).max(120),
+    visitorKey: z.string().regex(/^[a-f0-9]{16,64}$/i),
+    path: z.string().trim().max(240).default("/"),
+  })).mutation(async ({ input }) => {
+    const site = await getPublicIndependentSiteBySlug(input.slug, { allowDraftForOwnerUserId: undefined });
+    if (!site) return { recorded: false } as const;
+    return recordIndependentSitePageView({ siteId: site.id, visitorKey: input.visitorKey, path: input.path });
+  }),
+
+  getAnalyticsSummary: protectedProcedure.input(z.object({ siteId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+    return getIndependentSiteAnalyticsSummary(input.siteId);
   }),
 
   listFormSubmissions: protectedProcedure.input(z.object({ siteId: z.number().int().positive(), status: z.enum(["new", "read", "archived"]).optional() })).query(async ({ ctx, input }) => {

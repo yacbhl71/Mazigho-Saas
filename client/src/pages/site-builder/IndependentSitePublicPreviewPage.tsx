@@ -59,6 +59,7 @@ export default function IndependentSitePublicPreviewPage() {
   const [showSeoBanner, setShowSeoBanner] = useState<boolean>(false);
   const publicContentRef = useRef<HTMLDivElement>(null);
   const submitFormMutation = trpc.independentSiteBuilder.submitForm.useMutation();
+  const recordPageViewMutation = trpc.independentSiteBuilder.recordPageView.useMutation();
 
   useEffect(() => {
     if (queryParams.pageSlug) {
@@ -120,6 +121,23 @@ export default function IndependentSitePublicPreviewPage() {
     if (!safePages.length) return null;
     return safePages.find((p) => p.slug === activePageSlug) ?? safePages[0];
   }, [safePages, activePageSlug]);
+
+  useEffect(() => {
+    if (isPreviewRoute || !site || !activePage || typeof window === "undefined") return;
+    try {
+      const storageKey = "mazigho:independent:visitor-key";
+      let visitorKey = window.sessionStorage.getItem(storageKey) || "";
+      if (!/^[a-f0-9]{32}$/i.test(visitorKey)) {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        visitorKey = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+        window.sessionStorage.setItem(storageKey, visitorKey);
+      }
+      recordPageViewMutation.mutate({ slug: site.slug, visitorKey, path: activePage.slug || "/" });
+    } catch {
+      // Le suivi est facultatif : un navigateur qui bloque sessionStorage reste pleinement utilisable.
+    }
+  }, [activePage?.slug, isPreviewRoute, recordPageViewMutation, site?.slug]);
 
   useEffect(() => {
     const container = publicContentRef.current;
