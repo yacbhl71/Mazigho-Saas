@@ -238,6 +238,10 @@ export default function IndependentSiteAdminPage() {
   const [newMediaLabel, setNewMediaLabel] = useState("");
   const [newMediaAlt, setNewMediaAlt] = useState("");
   const [newMediaUrl, setNewMediaUrl] = useState("");
+  const [imageAiSubject, setImageAiSubject] = useState("");
+  const [imageAiFormat, setImageAiFormat] = useState<"hero" | "story" | "square">("hero");
+  const [imageAiStyle, setImageAiStyle] = useState<"editorial" | "soft" | "bold">("editorial");
+  const [generatedSiteImage, setGeneratedSiteImage] = useState<string | null>(null);
   const [editingMediaId, setEditingMediaId] = useState<number | null>(null);
   const [editMediaLabel, setEditMediaLabel] = useState("");
   const [editMediaAlt, setEditMediaAlt] = useState("");
@@ -620,6 +624,14 @@ export default function IndependentSiteAdminPage() {
       setFeedbackBanner({ tone: "error", message: msg });
       toast.error(msg);
     },
+  });
+
+  const generateSiteImageMutation = trpc.independentSiteBuilder.generateIndependentSiteImage.useMutation({
+    onSuccess: (result) => {
+      setGeneratedSiteImage(result.url);
+      toast.success("Visuel généré. Vérifiez-le avant de l’ajouter à la bibliothèque.");
+    },
+    onError: (error) => toast.error(error.message || "Impossible de générer ce visuel."),
   });
 
   const addMediaMutation = trpc.independentSiteBuilder.addMedia.useMutation({
@@ -2144,6 +2156,70 @@ export default function IndependentSiteAdminPage() {
           {/* ONGLET 3 : IMAGES & MÉDIAS (RÉELLEMENT CONNECTÉ À LA BIBLIOTHÈQUE SERVEUR) */}
           {tab === "media" && (
             <div className="space-y-6">
+              <section className="rounded-xl border border-fuchsia-200 bg-gradient-to-br from-fuchsia-50 via-white to-violet-50 p-6">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h2 className="flex items-center gap-2 text-base font-bold text-fuchsia-950">
+                      <Sparkles className="h-4 w-4 text-fuchsia-700" /> Générer un visuel original
+                    </h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                      Créez une image adaptée à votre site, vérifiez-la, puis ajoutez-la vous-même à la bibliothèque. Rien n’est enregistré automatiquement.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-fuchsia-200 bg-white px-3 py-1 text-xs font-semibold text-fuchsia-900">3 générations / minute</span>
+                </div>
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_1fr_1fr_auto] lg:items-end">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="site-image-ai-subject">Sujet et ambiance</Label>
+                    <Textarea
+                      id="site-image-ai-subject"
+                      value={imageAiSubject}
+                      onChange={(event) => setImageAiSubject(event.target.value)}
+                      placeholder="Ex. Une rencontre familiale chaleureuse en plein air, matières naturelles, lumière douce, sans texte."
+                      maxLength={420}
+                      rows={3}
+                      disabled={!canEdit || generateSiteImageMutation.isPending}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="site-image-ai-format">Format</Label>
+                    <select id="site-image-ai-format" value={imageAiFormat} onChange={(event) => setImageAiFormat(event.target.value as typeof imageAiFormat)} className="flex h-11 w-full rounded-md border border-input bg-white px-3 text-sm" disabled={!canEdit}>
+                      <option value="hero">Hero 16:9</option>
+                      <option value="story">Mobile 9:16</option>
+                      <option value="square">Carré 1:1</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="site-image-ai-style">Style</Label>
+                    <select id="site-image-ai-style" value={imageAiStyle} onChange={(event) => setImageAiStyle(event.target.value as typeof imageAiStyle)} className="flex h-11 w-full rounded-md border border-input bg-white px-3 text-sm" disabled={!canEdit}>
+                      <option value="editorial">Éditorial</option>
+                      <option value="soft">Doux et chaleureux</option>
+                      <option value="bold">Moderne et contrasté</option>
+                    </select>
+                  </div>
+                  <Button
+                    type="button"
+                    className="min-h-[44px] bg-fuchsia-700 text-white hover:bg-fuchsia-800"
+                    disabled={!canEdit || !siteId || imageAiSubject.trim().length < 12 || generateSiteImageMutation.isPending}
+                    onClick={() => siteId && generateSiteImageMutation.mutate({ siteId, subject: imageAiSubject.trim(), format: imageAiFormat, style: imageAiStyle })}
+                  >
+                    {generateSiteImageMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    {generateSiteImageMutation.isPending ? "Génération…" : "Générer"}
+                  </Button>
+                </div>
+                {generatedSiteImage && (
+                  <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                      <img src={generatedSiteImage} alt="Visuel généré à vérifier" className="max-h-64 w-full rounded-lg border border-emerald-100 bg-white object-contain lg:w-80" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button type="button" className="min-h-[42px] bg-emerald-700 text-white hover:bg-emerald-800" disabled={!canEdit || !siteId || addMediaMutation.isPending} onClick={() => siteId && addMediaMutation.mutate({ siteId, label: imageAiSubject.trim().slice(0, 160) || "Visuel généré", altText: imageAiSubject.trim().slice(0, 240) || "Visuel généré", url: generatedSiteImage })}>Ajouter à la bibliothèque</Button>
+                        <Button type="button" variant="outline" className="min-h-[42px]" onClick={() => setGeneratedSiteImage(null)}>Écarter</Button>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-emerald-900">Le visuel reste une proposition tant que vous ne cliquez pas sur « Ajouter à la bibliothèque ».</p>
+                  </div>
+                )}
+              </section>
               <section className="rounded-xl border border-slate-200 bg-white p-6">
                 <h2 className="text-base font-bold text-slate-900">
                   Ajouter une image à la bibliothèque du site

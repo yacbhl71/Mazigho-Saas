@@ -17,6 +17,7 @@ import { platformProcedure, protectedProcedure, publicProcedure, router } from "
 import { invokeLLM, listLLMModels } from "./_core/llm";
 import { consumeIndependentFormRateLimit } from "./independentFormRateLimit";
 import { consumeIndependentContentAiRateLimit } from "./independentContentAiRateLimit";
+import { consumeIndependentImageAiRateLimit } from "./independentImageAiRateLimit";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
@@ -438,6 +439,59 @@ export const isolatedSiteBuilderRouter = router({
       const text = typeof raw === "string" ? sanitizeContentAiSuggestion(raw, maxLength) : "";
       if (!text) throw new TRPCError({ code: "BAD_GATEWAY", message: "La suggestion reçue est vide ou invalide." });
       return { text, kind: input.kind, maxLength, model };
+    }),
+
+  generateIndependentSiteImage: protectedProcedure
+    .input(z.object({
+      siteId: z.number().int().positive(),
+      subject: z.string().trim().min(12).max(420),
+      format: z.enum(["hero", "story", "square"]),
+      style: z.enum(["editorial", "soft", "bold"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      const rateLimit = consumeIndependentImageAiRateLimit(`site:${input.siteId}:user:${ctx.user.id}`);
+      if (!rateLimit.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: `Trop de générations rapprochées. Réessayez dans ${rateLimit.retryAfterSeconds} secondes.`,
+        });
+      }
+      const project = await getIndependentSiteProject(
+        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+        input.siteId,
+      );
+      if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projet de site indépendant introuvable." });
+      const formatGuides = {
+        hero: "Horizontal 16:9 banner composition, wide visual with safe whitespace for a website hero.",
+        story: "Vertical 9:16 composition, clear focal point suitable for a mobile story card.",
+        square: "Square 1:1 composition, balanced focal point suitable for a media card.",
+      };
+      const styleGuides = {
+        editorial: "Refined editorial photography, natural light, restrained organic colors.",
+        soft: "Warm gentle lighting, welcoming atmosphere, soft natural palette.",
+        bold: "Contemporary contrast, crisp lighting, confident modern composition.",
+      };
+      try {
+        const { generateImage } = await import("./_core/imageGeneration");
+        const generated = await generateImage({
+          prompt: [
+            "Create an original, professional website visual for an independent site.",
+            `Site context: ${project.title}`,
+            `Subject: ${input.subject.trim()}`,
+            `Composition: ${formatGuides[input.format]}`,
+            `Art direction: ${styleGuides[input.style]}`,
+            "No text overlays, no typography, no watermarks, no logos, no invented brand marks.",
+          ].join("\n"),
+        });
+        if (!generated.url) throw new Error("INDEPENDENT_IMAGE_GENERATION_EMPTY_RESULT");
+        return { url: generated.url, format: input.format, style: input.style };
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error && error.message ? error.message : "La génération du visuel a échoué. Veuillez réessayer.",
+        });
+      }
     }),
 
   repairKnownInternalLinks: protectedProcedure
