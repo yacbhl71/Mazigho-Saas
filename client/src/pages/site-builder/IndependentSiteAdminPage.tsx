@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  BarChart3,
   Eye,
   FilePlus2,
   FileText,
@@ -21,10 +22,12 @@ import {
   Lock,
   LogOut,
   MailPlus,
+  Palette,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  Settings,
   ShieldCheck,
   Smartphone,
   Tablet,
@@ -70,7 +73,7 @@ import {
   type TrainingModalMode,
 } from "@/components/site-guides/SiteTrainingModal";
 
-type AdminTab = "overview" | "content" | "media" | "versions" | "team";
+type AdminTab = "overview" | "content" | "media" | "theme" | "settings" | "stats" | "versions" | "team";
 type PreviewViewport = "desktop" | "tablet" | "mobile";
 
 interface InlineConfirmState {
@@ -125,6 +128,13 @@ export default function IndependentSiteAdminPage() {
   const [draftImageAlt, setDraftImageAlt] = useState("");
   const [draftSeoTitle, setDraftSeoTitle] = useState("");
   const [draftSeoDescription, setDraftSeoDescription] = useState("");
+  const [draftTheme, setDraftTheme] = useState({
+    primaryColor: "#1e3a2f",
+    accentColor: "#6b8e6e",
+    backgroundColor: "#f8fafc",
+    headingFont: "Georgia, serif",
+    bodyFont: "system-ui, sans-serif",
+  });
 
   // Ajout de section / actualité dans la page active
   const [newSectionKind, setNewSectionKind] = useState<"section" | "actualite">("actualite");
@@ -319,10 +329,17 @@ export default function IndependentSiteAdminPage() {
   useEffect(() => {
     if (!project) return;
     setDraftSiteTitle(project.title);
+    setDraftTheme(project.theme);
     if (typeof document !== "undefined") {
       document.title = `Administration — ${project.title}`;
     }
   }, [project?.id, project?.title]);
+
+  const handleSaveTheme = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!siteId || !canEdit) return;
+    saveMutation.mutate({ siteId, theme: draftTheme });
+  };
 
   // Synchronisation des champs de la page active
   useEffect(() => {
@@ -894,6 +911,9 @@ export default function IndependentSiteAdminPage() {
       icon: ImagePlus,
       count: (mediaQuery.data?.length ?? 0) || embeddedPageImages.length,
     },
+    { id: "theme", label: "Apparence / thème", icon: Palette },
+    { id: "settings", label: "Paramètres & domaine", icon: Settings },
+    { id: "stats", label: "Statistiques", icon: BarChart3 },
     {
       id: "versions",
       label: "Historique",
@@ -2094,6 +2114,33 @@ export default function IndependentSiteAdminPage() {
                 </section>
               )}
             </div>
+          )}
+
+          {tab === "theme" && (
+            <section className="space-y-6">
+              <div className="rounded-xl border border-slate-200 bg-white p-6">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a2f]">Design system simplifié</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-900">Charte graphique globale</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">Modifiez les couleurs et les typographies une seule fois. Les blocs du site utilisent cette charte sans devoir être repris un par un.</p>
+                <form onSubmit={handleSaveTheme} className="mt-6 grid gap-5 md:grid-cols-2">
+                  {([['primaryColor','Couleur principale'],['accentColor','Couleur d’accent'],['backgroundColor','Couleur de fond']] as const).map(([key,label]) => (
+                    <label key={key} className="space-y-2 text-sm font-medium text-slate-800"><span>{label}</span><div className="flex gap-2"><input type="color" value={draftTheme[key]} onChange={(e) => setDraftTheme((v) => ({ ...v, [key]: e.target.value }))} className="h-11 w-14 cursor-pointer rounded-lg border border-slate-300 bg-white p-1" /><Input value={draftTheme[key]} onChange={(e) => setDraftTheme((v) => ({ ...v, [key]: e.target.value }))} /></div></label>
+                  ))}
+                  <label className="space-y-2 text-sm font-medium text-slate-800"><span>Police des titres</span><Input value={draftTheme.headingFont} onChange={(e) => setDraftTheme((v) => ({ ...v, headingFont: e.target.value }))} /></label>
+                  <label className="space-y-2 text-sm font-medium text-slate-800"><span>Police des textes</span><Input value={draftTheme.bodyFont} onChange={(e) => setDraftTheme((v) => ({ ...v, bodyFont: e.target.value }))} /></label>
+                  <div className="flex flex-wrap items-center gap-3 md:col-span-2"><Button type="submit" disabled={!canEdit || saveMutation.isPending} className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"><Save className="mr-2 h-4 w-4" />{saveMutation.isPending ? "Enregistrement…" : "Appliquer la charte au site"}</Button><span className="text-xs text-slate-500">Les éditeurs peuvent modifier le brouillon ; la publication reste soumise aux droits du site.</span></div>
+                </form>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-6"><h3 className="font-bold text-slate-900">Aperçu de la hiérarchie</h3><div className="mt-4 rounded-xl p-6" style={{ backgroundColor: draftTheme.backgroundColor, color: draftTheme.primaryColor }}><h4 className="text-2xl font-bold" style={{ fontFamily: draftTheme.headingFont }}>Titre de votre site</h4><p className="mt-2" style={{ fontFamily: draftTheme.bodyFont }}>Un aperçu simple de l’apparence appliquée aux pages et aux modules.</p><span className="mt-4 inline-flex rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: draftTheme.accentColor }}>Bouton d’action</span></div></div>
+            </section>
+          )}
+
+          {tab === "settings" && (
+            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><h2 className="text-xl font-bold text-slate-900">Paramètres & domaine</h2><p className="mt-2 text-sm text-slate-600">Gérez les informations durables du site, son adresse publique et les futures options légales.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Adresse actuelle</p>{currentProject.status === "published" ? <a className="mt-2 inline-flex items-center gap-2 break-all text-sm font-semibold text-[#1e3a2f] underline" href={`/sites/${currentProject.slug}`} target="_blank" rel="noreferrer"><Globe className="h-4 w-4 shrink-0" />/sites/{currentProject.slug}</a> : <p className="mt-2 text-sm text-slate-700">Le site sera accessible après publication.</p>}</div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Identité du site</p><Button type="button" variant="outline" className="mt-2" onClick={() => setTab("overview")}>Modifier le titre dans l’accueil</Button></div></div><p className="mt-4 text-xs text-slate-500">La connexion de domaines personnalisés, le favicon, les réseaux sociaux et les mentions légales sont planifiés ici ; aucune modification de DNS n’est exécutée depuis cet espace.</p></div></section>
+          )}
+
+          {tab === "stats" && (
+            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><div className="flex items-start gap-3"><BarChart3 className="mt-1 h-5 w-5 text-[#1e3a2f]" /><div><h2 className="text-xl font-bold text-slate-900">Statistiques</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">Les statistiques indépendantes par site seront affichées ici dès que le module de mesure respectueux de la vie privée sera activé.</p></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Visiteurs — 30 jours</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Pages populaires</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Formulaires reçus</p><p className="mt-2 text-2xl font-bold text-slate-400">—</p></div></div></div></section>
           )}
 
           {/* ONGLET 4 : HISTORIQUE & VERSIONS */}
