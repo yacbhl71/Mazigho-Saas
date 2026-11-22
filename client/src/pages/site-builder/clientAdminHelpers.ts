@@ -1,5 +1,6 @@
 import {
   INDEPENDENT_RESPONSIVE_BASE_CSS,
+  VISUAL_CARD_SAMPLE_IMAGES,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   type IndependentSiteClientRole,
@@ -270,6 +271,7 @@ export function buildClientPreviewSrcDoc(input: {
   const backgroundColor = safeThemeColor(theme.backgroundColor, "#faf8f5");
   const headingFont = safeThemeFont(theme.headingFont, "Georgia, serif");
   const bodyFont = safeThemeFont(theme.bodyFont, "Inter, system-ui, sans-serif");
+  const previewImageFallback = JSON.stringify(VISUAL_CARD_SAMPLE_IMAGES[0]?.url || "");
   const themeCss = `
     :root {
       --site-primary: ${primaryColor};
@@ -307,6 +309,19 @@ export function buildClientPreviewSrcDoc(input: {
 </head>
 <body style="margin:0">
   ${safeHtml}
+  <script>
+    (() => {
+      const fallback = ${previewImageFallback};
+      if (!fallback) return;
+      document.querySelectorAll("img").forEach((image) => {
+        image.addEventListener("error", () => {
+          if (image.dataset.previewFallbackApplied === "true") return;
+          image.dataset.previewFallbackApplied = "true";
+          image.src = fallback;
+        }, { once: true });
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }

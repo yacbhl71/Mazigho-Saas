@@ -366,10 +366,24 @@ img, video, figure { max-width: 100%; }
   min-height: 270px !important;
 }
 [data-site-visual-card="true"] .ath-card-media,
-[data-site-card-grid-items="true"] > article > div:first-child:has(img) {
+[data-site-card-grid-items="true"] > article > .ath-card-media {
   flex: 0 0 auto !important;
   margin: 0 !important;
   line-height: 0;
+}
+[data-site-visual-card="true"] .ath-card-media {
+  min-height: 178px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: linear-gradient(135deg, #e8e2d9, #faf8f5);
+}
+[data-site-visual-card="true"][data-card-shape="square"] .ath-card-media {
+  min-height: 210px;
+}
+[data-site-visual-card="true"][data-card-shape="round"] .ath-card-media {
+  min-height: 186px;
+  align-items: center;
 }
 [data-site-visual-card="true"]:not([data-card-shape="round"]):not([data-card-text="inside"]) img,
 [data-site-card-grid-items="true"] > article:not([data-card-shape="round"]):not([data-card-text="inside"]) img {
@@ -1376,7 +1390,7 @@ export function renderVisualCardHtml(card: VisualCardItem): string {
     return `<article class="ath-card" data-site-visual-card="true" data-card-id="${card.id}" data-card-shape="${card.shape}" data-card-text="inside" style="position:relative;overflow:hidden;border-radius:${card.shape === "round" ? "28px" : "16px"};min-height:270px;display:flex;align-items:flex-end;background:#172033;color:#fff;box-shadow:0 12px 28px rgba(23,32,51,.12)"><img src="${safeImgSrc}" alt="${safeAlt}" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55" /><div style="position:relative;z-index:2;width:100%;background:linear-gradient(180deg,transparent 0%,rgba(23,32,51,.88) 100%)">${textBlock}</div></article>`;
   }
 
-  const imgBlock = `<div class="ath-card-media" style="padding:${card.shape === "round" ? "12px 14px 0" : "0"};text-align:center;line-height:0"><img src="${safeImgSrc}" alt="${safeAlt}" loading="lazy" decoding="async" style="display:block;width:${imageWidth};max-width:100%;height:${imageHeight};margin:${imageMargin};object-fit:cover;border-radius:${imageRadius}" /></div>`;
+  const imgBlock = `<div class="ath-card-media" data-site-card-media="true" style="padding:${card.shape === "round" ? "12px 14px 0" : "0"};text-align:center;line-height:0;min-height:${card.shape === "square" ? "210px" : card.shape === "round" ? "186px" : "178px"}"><img src="${safeImgSrc}" alt="${safeAlt}" loading="lazy" decoding="async" style="display:block;width:${imageWidth};max-width:100%;height:${imageHeight};margin:${imageMargin};object-fit:cover;border-radius:${imageRadius};background:#e8e2d9" /></div>`;
 
   return `<article class="ath-card" data-site-visual-card="true" data-card-id="${card.id}" data-card-shape="${card.shape}" data-card-text="${card.textPlacement}" style="background:#ffffff;border:1px solid #e6dfd5;border-radius:16px;overflow:hidden;height:100%;display:flex;flex-direction:column;justify-content:flex-start;box-shadow:0 8px 22px rgba(23,32,51,.06)">${
     card.textPlacement === "top" ? `${textBlock}${imgBlock}` : `${imgBlock}${textBlock}`
