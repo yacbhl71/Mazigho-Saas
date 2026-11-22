@@ -121,6 +121,23 @@ const themeSchema = z.object({
   bodyFont: z.string().min(2).max(120),
 });
 
+const siteSettingsSchema = z.object({
+  faviconUrl: z.string().max(2048).optional(),
+  socialLinks: z.object({
+    facebook: z.string().max(2048).optional(),
+    instagram: z.string().max(2048).optional(),
+    linkedin: z.string().max(2048).optional(),
+    youtube: z.string().max(2048).optional(),
+  }).partial().optional(),
+  legal: z.object({
+    organizationName: z.string().max(180).optional(),
+    contactEmail: z.string().max(320).optional(),
+    country: z.string().max(80).optional(),
+    legalNoticeUrl: z.string().max(2048).optional(),
+    privacyUrl: z.string().max(2048).optional(),
+  }).partial().optional(),
+}).partial();
+
 const reusableBlockSchema = z.object({
   id: z.string().min(1).max(80),
   name: z.string().min(1).max(140),
@@ -320,6 +337,7 @@ export const isolatedSiteBuilderRouter = router({
         title: z.string().min(1).max(160).optional(),
         siteType: siteTypeSchema.optional(),
         theme: themeSchema.optional(),
+        settings: siteSettingsSchema.optional(),
         navigation: z.array(menuItemSchema).optional(),
         pages: z.array(pageSchema).optional(),
         reusableBlocks: z.array(reusableBlockSchema).optional(),

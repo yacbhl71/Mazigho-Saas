@@ -1993,6 +1993,35 @@ export interface IndependentSiteThemeConfig {
   bodyFont: string;
 }
 
+export interface IndependentSiteSettingsConfig {
+  faviconUrl: string;
+  socialLinks: {
+    facebook: string;
+    instagram: string;
+    linkedin: string;
+    youtube: string;
+  };
+  legal: {
+    organizationName: string;
+    contactEmail: string;
+    country: string;
+    legalNoticeUrl: string;
+    privacyUrl: string;
+  };
+}
+
+export const DEFAULT_SITE_SETTINGS: IndependentSiteSettingsConfig = {
+  faviconUrl: "",
+  socialLinks: { facebook: "", instagram: "", linkedin: "", youtube: "" },
+  legal: {
+    organizationName: "",
+    contactEmail: "",
+    country: "",
+    legalNoticeUrl: "",
+    privacyUrl: "",
+  },
+};
+
 export interface IndependentSiteTemplate {
   id: string;
   name: string;

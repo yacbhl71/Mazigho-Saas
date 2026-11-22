@@ -1185,6 +1185,7 @@ export const independentSites = mysqlTable("independentSites", {
   status: mysqlEnum("status", ["draft", "published", "archived"]).default("draft").notNull(),
   templateId: varchar("templateId", { length: 80 }),
   themeJson: text("themeJson").notNull(),
+  settingsJson: text("settingsJson").notNull(),
   navigationJson: mediumtext("navigationJson").notNull(),
   pagesJson: mediumtext("pagesJson").notNull(),
   reusableBlocksJson: mediumtext("reusableBlocksJson").notNull(),

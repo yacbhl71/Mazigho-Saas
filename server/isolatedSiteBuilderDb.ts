@@ -15,6 +15,7 @@ import {
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   DEFAULT_IMAGE_TRANSFORMS,
+  DEFAULT_SITE_SETTINGS,
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_SITE_TEMPLATES,
   assertNoSecretsInIndependentSite,
@@ -39,6 +40,7 @@ import {
   type IndependentSitePage,
   type IndependentSiteReusableBlock,
   type IndependentSiteStatus,
+  type IndependentSiteSettingsConfig,
   type IndependentSiteThemeConfig,
   type IndependentSiteType,
   type RepairedInternalLinkChange,
@@ -60,6 +62,7 @@ export interface IndependentSiteProjectDto {
   status: IndependentSiteStatus;
   templateId: string | null;
   theme: IndependentSiteThemeConfig;
+  settings: IndependentSiteSettingsConfig;
   navigation: IndependentSiteMenuItem[];
   pages: IndependentSitePage[];
   reusableBlocks: IndependentSiteReusableBlock[];
@@ -1168,6 +1171,22 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
+function normalizeSiteSettings(
+  value: Partial<IndependentSiteSettingsConfig> | null | undefined,
+): IndependentSiteSettingsConfig {
+  return {
+    faviconUrl: typeof value?.faviconUrl === "string" ? value.faviconUrl : DEFAULT_SITE_SETTINGS.faviconUrl,
+    socialLinks: {
+      ...DEFAULT_SITE_SETTINGS.socialLinks,
+      ...(value?.socialLinks ?? {}),
+    },
+    legal: {
+      ...DEFAULT_SITE_SETTINGS.legal,
+      ...(value?.legal ?? {}),
+    },
+  };
+}
+
 function rowToProjectDto(
   row: typeof independentSites.$inferSelect,
 ): IndependentSiteProjectDto {
@@ -1182,6 +1201,9 @@ function rowToProjectDto(
     theme: safeJsonParse<IndependentSiteThemeConfig>(
       row.themeJson,
       DEFAULT_THEME,
+    ),
+    settings: normalizeSiteSettings(
+      safeJsonParse<Partial<IndependentSiteSettingsConfig>>(row.settingsJson, {}),
     ),
     navigation: safeJsonParse<IndependentSiteMenuItem[]>(
       row.navigationJson,
@@ -1469,6 +1491,7 @@ export async function createIndependentSiteProject(
       status: "draft",
       templateId: template?.id ?? null,
       theme,
+      settings: normalizeSiteSettings(DEFAULT_SITE_SETTINGS),
       navigation,
       pages,
       reusableBlocks: [],
@@ -1496,6 +1519,7 @@ export async function createIndependentSiteProject(
     status: "draft",
     templateId: template?.id ?? null,
     themeJson: JSON.stringify(theme),
+    settingsJson: JSON.stringify(DEFAULT_SITE_SETTINGS),
     navigationJson: JSON.stringify(navigation),
     pagesJson: JSON.stringify(pages),
     reusableBlocksJson: JSON.stringify([]),
@@ -1523,6 +1547,11 @@ export async function saveIndependentSiteProject(
     title?: string;
     siteType?: IndependentSiteType;
     theme?: IndependentSiteThemeConfig;
+    settings?: {
+      faviconUrl?: string;
+      socialLinks?: Partial<IndependentSiteSettingsConfig["socialLinks"]>;
+      legal?: Partial<IndependentSiteSettingsConfig["legal"]>;
+    };
     navigation?: IndependentSiteMenuItem[];
     pages?: IndependentSitePage[];
     reusableBlocks?: IndependentSiteReusableBlock[];
@@ -1544,6 +1573,14 @@ export async function saveIndependentSiteProject(
   const nextTheme = input.theme
     ? { ...current.theme, ...input.theme }
     : current.theme;
+  const nextSettings = input.settings
+    ? normalizeSiteSettings({
+        ...current.settings,
+        ...input.settings,
+        socialLinks: { ...current.settings.socialLinks, ...input.settings.socialLinks },
+        legal: { ...current.settings.legal, ...input.settings.legal },
+      })
+    : current.settings;
   const nextPages: IndependentSitePage[] = input.pages
     ? input.pages.map((p, idx) => ({
         ...p,
@@ -1599,6 +1636,7 @@ export async function saveIndependentSiteProject(
       title: nextTitle,
       siteType: nextSiteType,
       theme: nextTheme,
+      settings: nextSettings,
       pages: nextPages,
       navigation: nextNavigation,
       reusableBlocks: nextReusableBlocks,
@@ -1621,6 +1659,7 @@ export async function saveIndependentSiteProject(
       title: nextTitle,
       siteType: nextSiteType,
       themeJson: JSON.stringify(nextTheme),
+      settingsJson: JSON.stringify(nextSettings),
       pagesJson: JSON.stringify(nextPages),
       navigationJson: JSON.stringify(nextNavigation),
       reusableBlocksJson: JSON.stringify(nextReusableBlocks),

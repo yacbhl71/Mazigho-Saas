@@ -210,6 +210,11 @@ export default function IndependentSiteAdminPage() {
     headingFont: "Georgia, serif",
     bodyFont: "system-ui, sans-serif",
   });
+  const [draftSettings, setDraftSettings] = useState({
+    faviconUrl: "",
+    socialLinks: { facebook: "", instagram: "", linkedin: "", youtube: "" },
+    legal: { organizationName: "", contactEmail: "", country: "", legalNoticeUrl: "", privacyUrl: "" },
+  });
 
   // Ajout de section / actualité dans la page active
   const [newSectionKind, setNewSectionKind] = useState<"section" | "actualite">("actualite");
@@ -450,15 +455,22 @@ export default function IndependentSiteAdminPage() {
     if (!project) return;
     setDraftSiteTitle(project.title);
     setDraftTheme(project.theme);
+    setDraftSettings(project.settings);
     if (typeof document !== "undefined") {
       document.title = `Administration — ${project.title}`;
     }
-  }, [project?.id, project?.title]);
+  }, [project?.id, project?.title, project?.settings]);
 
   const handleSaveTheme = (event: React.FormEvent) => {
     event.preventDefault();
     if (!siteId || !canEdit) return;
     saveMutation.mutate({ siteId, theme: draftTheme });
+  };
+
+  const handleSaveSettings = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!siteId || !canAdminister) return;
+    saveMutation.mutate({ siteId, settings: draftSettings });
   };
 
   // Synchronisation des champs de la page active
@@ -2495,9 +2507,24 @@ export default function IndependentSiteAdminPage() {
           )}
 
           {tab === "settings" && (
-            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><h2 className="text-xl font-bold text-slate-900">Paramètres & domaine</h2><p className="mt-2 text-sm text-slate-600">Gérez les informations durables du site, son adresse publique et les futures options légales.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Adresse actuelle</p>{currentProject.status === "published" ? <a className="mt-2 inline-flex items-center gap-2 break-all text-sm font-semibold text-[#1e3a2f] underline" href={`/sites/${currentProject.slug}`} target="_blank" rel="noreferrer"><Globe className="h-4 w-4 shrink-0" />/sites/{currentProject.slug}</a> : <p className="mt-2 text-sm text-slate-700">Le site sera accessible après publication.</p>}</div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Identité du site</p><Button type="button" variant="outline" className="mt-2" onClick={() => setTab("overview")}>Modifier le titre dans l’accueil</Button></div></div><div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold text-slate-900">Domaines personnalisés</p><p className="mt-1 text-sm text-slate-600">Aucun domaine personnalisé n’est encore connecté à ce site.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Non configuré</span></div><p className="mt-3 text-xs leading-relaxed text-slate-500">La connexion .ch ou .com nécessitera une configuration DNS chez votre registrar. Cette page affichera ici le domaine, son statut SSL et les instructions de pointage lorsqu’un domaine sera attribué.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-800">Favicon</p><p className="mt-1 text-xs text-slate-500">À définir</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-800">Réseaux sociaux</p><p className="mt-1 text-xs text-slate-500">À renseigner</p></div><div className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-800">Mentions légales</p><p className="mt-1 text-xs text-slate-500">À compléter</p></div></div><p className="mt-4 text-xs text-slate-500">Aucune modification DNS n’est exécutée depuis cet espace.</p></div></section>
+            <section className="space-y-6">
+              <div className="rounded-xl border border-slate-200 bg-white p-6">
+                <h2 className="text-xl font-bold text-slate-900">Paramètres & domaine</h2>
+                <p className="mt-2 text-sm text-slate-600">Gérez les informations durables du site. Les réglages sont propres à ce site indépendant et ne modifient aucun domaine automatiquement.</p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Adresse actuelle</p>{currentProject.status === "published" ? <a className="mt-2 inline-flex items-center gap-2 break-all text-sm font-semibold text-[#1e3a2f] underline" href={`/sites/${currentProject.slug}`} target="_blank" rel="noreferrer"><Globe className="h-4 w-4 shrink-0" />/sites/{currentProject.slug}</a> : <p className="mt-2 text-sm text-slate-700">Le site sera accessible après publication.</p>}</div>
+                  <div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Identité du site</p><Button type="button" variant="outline" className="mt-2" onClick={() => setTab("overview")}>Modifier le titre dans l’accueil</Button></div>
+                </div>
+                <form onSubmit={handleSaveSettings} className="mt-6 space-y-6">
+                  <div className="rounded-lg border border-slate-200 p-5"><h3 className="font-bold text-slate-900">Identité visuelle</h3><label className="mt-4 block space-y-2 text-sm font-medium text-slate-800"><span>URL du favicon</span><Input type="url" placeholder="https://…/favicon.png" value={draftSettings.faviconUrl} onChange={(e) => setDraftSettings((v) => ({ ...v, faviconUrl: e.target.value }))} /></label></div>
+                  <div className="rounded-lg border border-slate-200 p-5"><h3 className="font-bold text-slate-900">Réseaux sociaux</h3><div className="mt-4 grid gap-4 sm:grid-cols-2">{([['facebook','Facebook'],['instagram','Instagram'],['linkedin','LinkedIn'],['youtube','YouTube']] as const).map(([key,label]) => <label key={key} className="space-y-2 text-sm font-medium text-slate-800"><span>{label}</span><Input type="url" placeholder="https://…" value={draftSettings.socialLinks[key]} onChange={(e) => setDraftSettings((v) => ({ ...v, socialLinks: { ...v.socialLinks, [key]: e.target.value } }))} /></label>)}</div></div>
+                  <div className="rounded-lg border border-slate-200 p-5"><h3 className="font-bold text-slate-900">Informations légales</h3><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-medium text-slate-800"><span>Nom de l’organisation</span><Input value={draftSettings.legal.organizationName} onChange={(e) => setDraftSettings((v) => ({ ...v, legal: { ...v.legal, organizationName: e.target.value } }))} /></label><label className="space-y-2 text-sm font-medium text-slate-800"><span>E-mail de contact</span><Input type="email" value={draftSettings.legal.contactEmail} onChange={(e) => setDraftSettings((v) => ({ ...v, legal: { ...v.legal, contactEmail: e.target.value } }))} /></label><label className="space-y-2 text-sm font-medium text-slate-800"><span>Pays</span><Input placeholder="Suisse" value={draftSettings.legal.country} onChange={(e) => setDraftSettings((v) => ({ ...v, legal: { ...v.legal, country: e.target.value } }))} /></label><label className="space-y-2 text-sm font-medium text-slate-800"><span>URL des mentions légales</span><Input type="url" placeholder="https://…" value={draftSettings.legal.legalNoticeUrl} onChange={(e) => setDraftSettings((v) => ({ ...v, legal: { ...v.legal, legalNoticeUrl: e.target.value } }))} /></label><label className="space-y-2 text-sm font-medium text-slate-800 sm:col-span-2"><span>URL de la politique de confidentialité</span><Input type="url" placeholder="https://…" value={draftSettings.legal.privacyUrl} onChange={(e) => setDraftSettings((v) => ({ ...v, legal: { ...v.legal, privacyUrl: e.target.value } }))} /></label></div></div>
+                  <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={!canAdminister || saveMutation.isPending} className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"><Save className="mr-2 h-4 w-4" />{saveMutation.isPending ? "Enregistrement…" : "Enregistrer les paramètres"}</Button><span className="text-xs text-slate-500">Les réglages sont enregistrés uniquement pour ce site.</span></div>
+                </form>
+              </div>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold text-slate-900">Domaines personnalisés</p><p className="mt-1 text-sm text-slate-600">Aucun domaine personnalisé n’est encore connecté à ce site.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Non configuré</span></div><p className="mt-3 text-xs leading-relaxed text-slate-500">La connexion .ch ou .com nécessitera une configuration DNS chez votre registrar. Aucun DNS n’est exécuté depuis cet espace.</p></div>
+            </section>
           )}
-
           {tab === "stats" && (() => {
             const dailyViews = analyticsQuery.data?.dailyViews ?? [];
             const maxDailyViews = Math.max(1, ...dailyViews.map((entry) => entry.views));

@@ -1235,6 +1235,28 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(repaired.pages[0].html).toContain('href="/inconnu"');
   });
 
+  it("persists independent site settings with deep partial merges and site isolation", async () => {
+    const ownerId = 91001;
+    const site = await createIndependentSiteProject(ownerId, { title: "Réglages isolés" });
+    const otherSite = await createIndependentSiteProject(ownerId, { title: "Autre site" });
+
+    const saved = await saveIndependentSiteProject(ownerId, {
+      siteId: site.id,
+      settings: {
+        faviconUrl: "https://example.com/favicon.png",
+        socialLinks: { instagram: "https://instagram.com/example" },
+        legal: { organizationName: "Association Exemple", country: "CH" },
+      },
+    });
+
+    expect(saved.settings.faviconUrl).toBe("https://example.com/favicon.png");
+    expect(saved.settings.socialLinks.instagram).toBe("https://instagram.com/example");
+    expect(saved.settings.socialLinks.facebook).toBe("");
+    expect(saved.settings.legal.organizationName).toBe("Association Exemple");
+    expect(saved.settings.legal.privacyUrl).toBe("");
+    expect((await getIndependentSiteProject(ownerId, otherSite.id))?.settings.faviconUrl).toBe("");
+  });
+
   it("22. Phase 2 — Checklist avant publication (14 points), blocage en cas d’erreur critique, Dépublication, Journal de publication et Collaboration contrôlée en lecture seule", async () => {
     const ownerId = 1004;
     const site = await createIndependentSiteProject(ownerId, {
