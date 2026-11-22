@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   CheckCircle2,
   Clock,
@@ -9,6 +10,7 @@ import {
   Eye,
   FilePlus2,
   FileText,
+  Film,
   Globe,
   History,
   Image as ImageIcon,
@@ -17,6 +19,7 @@ import {
   LayoutDashboard,
   Loader2,
   Lock,
+  LogOut,
   MailPlus,
   Plus,
   RefreshCw,
@@ -58,6 +61,14 @@ import {
   replaceFirstHtmlImage,
   replaceFirstHtmlTag,
 } from "./clientAdminHelpers";
+import {
+  CLIENT_GUIDE_CONFIG,
+  CLIENT_ISOLATION_NOTICE,
+} from "@/components/site-guides/clientGuideContent";
+import {
+  SiteTrainingModal,
+  type TrainingModalMode,
+} from "@/components/site-guides/SiteTrainingModal";
 
 type AdminTab = "overview" | "content" | "media" | "versions" | "team";
 type PreviewViewport = "desktop" | "tablet" | "mobile";
@@ -93,13 +104,16 @@ function MediaThumbnail({ src, alt }: { src: string; alt: string }) {
   );
 }
 
+const CLIENT_ADMIN_STORAGE_KEY = "mazigho:client-admin:selectedSiteId";
+
 export default function IndependentSiteAdminPage() {
   const [, setLocation] = useLocation();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, logout } = useAuth();
   const utils = trpc.useUtils();
 
   const [tab, setTab] = useState<AdminTab>("overview");
   const [selectedSiteOverrideId, setSelectedSiteOverrideId] = useState<number | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState<string>("");
 
   // Champs éditoriaux : identité du site et page active
@@ -149,9 +163,11 @@ export default function IndependentSiteAdminPage() {
     delivery: "not_configured" | "delivered" | "failed";
   } | null>(null);
 
-  // Aperçu intégré avant publication + bandeaux + confirmation inline
+  // Aperçu intégré avant publication + bandeaux + confirmation inline + guide client
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewViewport, setPreviewViewport] = useState<PreviewViewport>("desktop");
+  const [trainingModalOpen, setTrainingModalOpen] = useState(false);
+  const [trainingModalMode, setTrainingModalMode] = useState<TrainingModalMode>("guide");
   const [feedbackBanner, setFeedbackBanner] = useState<{
     tone: "success" | "error";
     message: string;
@@ -177,6 +193,16 @@ export default function IndependentSiteAdminPage() {
     refetchOnWindowFocus: false,
   });
 
+  const storedSiteId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = Number(window.sessionStorage.getItem(CLIENT_ADMIN_STORAGE_KEY));
+      return Number.isInteger(raw) && raw > 0 ? raw : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const accessibleProjects = projectsQuery.data ?? [];
   const accessibleProject = useMemo(() => {
     if (accessibleProjects.length === 0) return null;
@@ -194,10 +220,49 @@ export default function IndependentSiteAdminPage() {
       );
       if (bySlug) return bySlug;
     }
+    if (storedSiteId) {
+      const byStored = accessibleProjects.find((p) => p.id === storedSiteId);
+      if (byStored) return byStored;
+    }
     return accessibleProjects[0];
-  }, [accessibleProjects, selectedSiteOverrideId, urlParams.siteId, urlParams.siteSlug]);
+  }, [accessibleProjects, selectedSiteOverrideId, storedSiteId, urlParams.siteId, urlParams.siteSlug]);
 
   const siteId = accessibleProject?.id ?? null;
+
+  useEffect(() => {
+    if (!siteId || typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(CLIENT_ADMIN_STORAGE_KEY, String(siteId));
+    } catch {
+      // ignore storage restrictions
+    }
+    const nextUrl = new URL(window.location.href);
+    if (nextUrl.searchParams.get("siteId") !== String(siteId)) {
+      nextUrl.searchParams.set("siteId", String(siteId));
+      window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}`);
+    }
+  }, [siteId]);
+
+  async function handleClientLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.removeItem(CLIENT_ADMIN_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+      }
+      await logout();
+      toast.success("Vous êtes déconnecté de l’administration de votre site.");
+      setLocation("/connexion-administration?returnTo=%2Fadministration-site");
+    } catch {
+      toast.error("Impossible de terminer la déconnexion. Réessayez.");
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   const projectQuery = trpc.independentSiteBuilder.getProject.useQuery(
     { siteId: siteId ?? 0 },
@@ -874,6 +939,18 @@ export default function IndependentSiteAdminPage() {
             <Button
               type="button"
               variant="outline"
+              onClick={() => {
+                setTrainingModalMode("guide");
+                setTrainingModalOpen(true);
+              }}
+              className="min-h-[44px] whitespace-nowrap border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-800 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+            >
+              <BookOpen className="mr-1.5 h-4 w-4 text-[#1e3a2f]" />
+              Guide & vidéo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => setPreviewOpen(true)}
               className="min-h-[44px] whitespace-nowrap border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
             >
@@ -891,6 +968,16 @@ export default function IndependentSiteAdminPage() {
                 </Link>
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loggingOut}
+              onClick={handleClientLogout}
+              className="min-h-[44px] whitespace-nowrap border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+            >
+              <LogOut className="mr-1.5 h-4 w-4 text-slate-500" />
+              {loggingOut ? "Déconnexion…" : "Se déconnecter"}
+            </Button>
           </div>
         </div>
       </header>
@@ -977,16 +1064,50 @@ export default function IndependentSiteAdminPage() {
               </ul>
             </nav>
 
+            <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs leading-relaxed text-slate-600 space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-slate-900">
+                <BookOpen className="h-4 w-4 shrink-0 text-[#1e3a2f]" />
+                <span>Prise en main rapide</span>
+              </div>
+              <p>
+                Suivez le guide illustré en 18 étapes ou visionnez la vidéo de présentation pour
+                administrer <strong className="text-slate-900">{currentProject.title}</strong> en
+                toute autonomie.
+              </p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setTrainingModalMode("guide");
+                    setTrainingModalOpen(true);
+                  }}
+                  className="min-h-[40px] w-full justify-start border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <BookOpen className="mr-2 h-3.5 w-3.5 text-[#1e3a2f]" />
+                  Guide illustré (18 étapes)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setTrainingModalMode("video");
+                    setTrainingModalOpen(true);
+                  }}
+                  className="min-h-[40px] w-full justify-start border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <Film className="mr-2 h-3.5 w-3.5 text-[#1e3a2f]" />
+                  Voir la vidéo (2 min 10)
+                </Button>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs leading-relaxed text-slate-600">
               <div className="flex items-center gap-2 font-semibold text-slate-900">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-[#1e3a2f]" />
                 <span>Espace dédié à votre site</span>
               </div>
-              <p className="mt-2">
-                Cet espace donne accès uniquement à{" "}
-                <strong className="text-slate-900">{currentProject.title}</strong>. Les autres
-                projets et le constructeur visuel global restent privés et séparés.
-              </p>
+              <p className="mt-2">{CLIENT_ISOLATION_NOTICE}</p>
             </div>
           </div>
         </aside>
@@ -2544,6 +2665,16 @@ export default function IndependentSiteAdminPage() {
           </div>
         </div>
       )}
+
+      {/* GUIDE ILLUSTRÉ & VIDÉO DÉDIÉS AU CLIENT (JAMAIS LE GUIDE DU CONSTRUCTEUR) */}
+      <SiteTrainingModal
+        open={trainingModalOpen}
+        mode={trainingModalMode}
+        onModeChange={setTrainingModalMode}
+        onClose={() => setTrainingModalOpen(false)}
+        config={CLIENT_GUIDE_CONFIG}
+        activeSiteName={currentProject.title}
+      />
     </div>
   );
 }

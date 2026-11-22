@@ -92,6 +92,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -99,6 +100,7 @@ import {
   Eye,
   EyeOff,
   FilePlus2,
+  Film,
   FlipHorizontal,
   FlipVertical,
   FolderKanban,
@@ -129,6 +131,11 @@ import {
   Unlock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { BUILDER_GUIDE_CONFIG } from "@/components/site-guides/builderGuideContent";
+import {
+  SiteTrainingModal,
+  type TrainingModalMode,
+} from "@/components/site-guides/SiteTrainingModal";
 
 interface LayerSummaryItem {
   id: string;
@@ -247,6 +254,8 @@ export default function IndependentSiteBuilderPage() {
   // Affichage repliable de l’espace "Mes sites & projets" et du guide d’aide utilisateur
   const [showProjectsDrawer, setShowProjectsDrawer] = useState<boolean>(false);
   const [showHelpGuideDrawer, setShowHelpGuideDrawer] = useState<boolean>(false);
+  const [trainingModalOpen, setTrainingModalOpen] = useState<boolean>(false);
+  const [trainingModalMode, setTrainingModalMode] = useState<TrainingModalMode>("guide");
   const [statusFilter, setStatusFilter] = useState<IndependentSiteStatus | "all">("all");
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
@@ -2276,6 +2285,34 @@ export default function IndependentSiteBuilderPage() {
                 : publishSiteMutation.isPending
                   ? "Publication…"
                   : "3. Publier"}
+            </Button>
+
+            {/* Guide illustré privé (18 étapes) et vidéo de prise en main (12 chapitres) */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTrainingModalMode("guide");
+                setTrainingModalOpen(true);
+              }}
+              className="h-8 border-[#e2dad0] bg-white text-xs font-semibold text-[#172033] hover:bg-[#faf8f5] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+            >
+              <BookOpen className="mr-1 h-3.5 w-3.5 text-[#1e3a2f]" />
+              Guide (18 étapes)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTrainingModalMode("video");
+                setTrainingModalOpen(true);
+              }}
+              className="h-8 border-[#e2dad0] bg-white text-xs font-semibold text-[#172033] hover:bg-[#faf8f5] focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+            >
+              <Film className="mr-1 h-3.5 w-3.5 text-[#1e3a2f]" />
+              Vidéo (3 min)
             </Button>
 
             {/* Bouton Aide contextuelle non intrusive */}
@@ -6727,6 +6764,16 @@ export default function IndependentSiteBuilderPage() {
           </div>
         </div>
       </div>
+
+      {/* GUIDE ILLUSTRÉ PRIVÉ & VIDÉO DU CONSTRUCTEUR (PROPRIÉTAIRE MAZIGHO UNIQUEMENT) */}
+      <SiteTrainingModal
+        open={trainingModalOpen}
+        mode={trainingModalMode}
+        onModeChange={setTrainingModalMode}
+        onClose={() => setTrainingModalOpen(false)}
+        config={BUILDER_GUIDE_CONFIG}
+        activeSiteName={siteTitle || undefined}
+      />
     </div>
   );
 }

@@ -21,7 +21,7 @@ import {
   sanitizeIndependentAdministrationReturnTo,
   verifyIndependentInternalLinks,
 } from "../shared/isolatedSiteBuilder";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { isolatedSiteBuilderRouter } from "./isolatedSiteBuilderRouter";
 import type { TrpcContext } from "./_core/context";
@@ -38,6 +38,11 @@ import {
   replaceFirstHtmlImage,
   replaceFirstHtmlTag,
 } from "../client/src/pages/site-builder/clientAdminHelpers";
+import { BUILDER_GUIDE_CONFIG } from "../client/src/components/site-guides/builderGuideContent";
+import {
+  CLIENT_GUIDE_CONFIG,
+  CLIENT_ISOLATION_NOTICE,
+} from "../client/src/components/site-guides/clientGuideContent";
 
 function makeCaller(user: {
   id: number;
@@ -570,5 +575,55 @@ describe("independent site access isolation", () => {
     expect(appSource).toContain('!location.startsWith("/administration-site")');
     expect(appSource).toContain('!location.startsWith("/constructeur-sites/invitation/")');
     expect(appSource).toContain('!location.startsWith("/connexion-administration")');
+
+    // Non-régression Phase 1 : le préfixe /admin ne doit JAMAIS capturer /administration-site sur studio.mazigho.ch
+    expect(appSource).not.toContain('isStudioHost && path.startsWith("/admin") && !path.startsWith("/admin/studio")');
+    expect(appSource).toContain('isStudioHost && path.startsWith("/admin/") && !path.startsWith("/admin/studio")');
+    expect(appSource).not.toContain('if (studioTitle || pathname.startsWith("/admin"))');
+
+    // Non-régression Phase 1 : déconnexion et persistance du site sélectionné dans /administration-site
+    expect(adminPageSource).toContain("Se déconnecter");
+    expect(adminPageSource).toContain("mazigho:client-admin:selectedSiteId");
+    expect(adminPageSource).toContain("window.history.replaceState");
+
+    // Non-régression Phase 2 : le guide client n'importe jamais le guide privé du constructeur
+    expect(adminPageSource).not.toContain("builderGuideContent");
+    expect(adminPageSource).not.toContain("BUILDER_GUIDE_CONFIG");
+  });
+
+  it("delivers strictly separated owner-builder and client-admin guides and verified HD video assets", () => {
+    expect(BUILDER_GUIDE_CONFIG.audience).toBe("owner-builder");
+    expect(BUILDER_GUIDE_CONFIG.steps).toHaveLength(18);
+    expect(BUILDER_GUIDE_CONFIG.video.chapters).toHaveLength(12);
+
+    expect(CLIENT_GUIDE_CONFIG.audience).toBe("client-admin");
+    expect(CLIENT_GUIDE_CONFIG.steps).toHaveLength(18);
+    expect(CLIENT_GUIDE_CONFIG.video.chapters).toHaveLength(10);
+
+    // Rappel obligatoire d'isolation dans le guide client
+    expect(CLIENT_GUIDE_CONFIG.isolationNotice).toBe(
+      "Vous administrez uniquement le site qui vous a été attribué. Vous n’avez pas accès au constructeur global, aux autres sites, à la boutique MAZIGHO ni aux données internes de MAZIGHO.",
+    );
+    expect(CLIENT_ISOLATION_NOTICE).toBe(CLIENT_GUIDE_CONFIG.isolationNotice);
+
+    // Aucun lien vers le constructeur global ou la boutique dans le contenu du guide client
+    const serializedClientGuide = JSON.stringify(CLIENT_GUIDE_CONFIG);
+    expect(serializedClientGuide).not.toContain("/constructeur-sites");
+    expect(serializedClientGuide).not.toContain("/demarrer-boutique");
+    expect(serializedClientGuide).not.toContain("mazighoshop");
+
+    // Vérification des 6 livrables médias réels dans client/public/guides/
+    const expectedFiles = [
+      "client/public/guides/video-constructeur-mazigho.mp4",
+      "client/public/guides/video-constructeur-mazigho.vtt",
+      "client/public/guides/poster-constructeur.png",
+      "client/public/guides/video-administration-client.mp4",
+      "client/public/guides/video-administration-client.vtt",
+      "client/public/guides/poster-client.png",
+    ];
+    for (const relPath of expectedFiles) {
+      const stats = statSync(resolve(process.cwd(), relPath));
+      expect(stats.size).toBeGreaterThan(1000);
+    }
   });
 });
