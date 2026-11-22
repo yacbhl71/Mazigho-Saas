@@ -279,6 +279,11 @@ export function buildClientPreviewSrcDoc(input: {
       --site-body-font: ${bodyFont};
     }
     html, body { background: var(--site-background) !important; }
+    [style*="background:#faf8f5"], [style*="background: #faf8f5"],
+    [style*="background:#f7f4ef"], [style*="background: #f7f4ef"],
+    [style*="background:#f3eee8"], [style*="background: #f3eee8"] {
+      background: var(--site-background) !important;
+    }
     body { color: var(--site-primary) !important; font-family: var(--site-body-font); }
     h1, h2, h3, h4, h5, h6 { color: var(--site-primary) !important; font-family: var(--site-heading-font) !important; }
     a { color: var(--site-primary); }

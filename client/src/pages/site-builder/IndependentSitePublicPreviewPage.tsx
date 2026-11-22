@@ -656,6 +656,7 @@ export default function IndependentSitePublicPreviewPage() {
             {INDEPENDENT_RESPONSIVE_BASE_CSS}
             {"\n"}
             {sanitizeIndependentCss(activePage.css)}
+            {`\n            [style*="background:#faf8f5"], [style*="background: #faf8f5"], [style*="background:#f7f4ef"], [style*="background: #f7f4ef"], [style*="background:#f3eee8"], [style*="background: #f3eee8"] { background: var(--site-background) !important; }\n            `}
           </style>
           <div
             ref={publicContentRef}
