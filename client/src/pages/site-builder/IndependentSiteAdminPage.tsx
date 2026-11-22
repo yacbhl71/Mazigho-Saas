@@ -185,6 +185,37 @@ function MediaThumbnail({ src, alt }: { src: string; alt: string }) {
 
 const CLIENT_ADMIN_STORAGE_KEY = "mazigho:client-admin:selectedSiteId";
 
+const INDEPENDENT_STOCK_IMAGES = [
+  {
+    id: "atelier-lumineux",
+    label: "Atelier lumineux",
+    altText: "Atelier lumineux avec matières naturelles",
+    url: "https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&w=1200&q=80&fm=webp",
+    sourceUrl: "https://unsplash.com/s/photos/fashion-studio",
+  },
+  {
+    id: "rencontre-nature",
+    label: "Rencontre en plein air",
+    altText: "Groupe réuni dans un environnement naturel",
+    url: "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=1200&q=80&fm=webp",
+    sourceUrl: "https://unsplash.com/s/photos/community",
+  },
+  {
+    id: "interieur-clair",
+    label: "Intérieur clair",
+    altText: "Intérieur lumineux aux lignes épurées",
+    url: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=80&fm=webp",
+    sourceUrl: "https://unsplash.com/s/photos/interior",
+  },
+  {
+    id: "botanique",
+    label: "Botanique",
+    altText: "Feuilles et végétation dans une lumière naturelle",
+    url: "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?auto=format&fit=crop&w=1200&q=80&fm=webp",
+    sourceUrl: "https://unsplash.com/s/photos/natural",
+  },
+] as const;
+
 export default function IndependentSiteAdminPage() {
   const [, setLocation] = useLocation();
   const { user, isLoading: authLoading, logout } = useAuth();
@@ -2219,6 +2250,29 @@ export default function IndependentSiteAdminPage() {
                     <p className="mt-3 text-xs text-emerald-900">Le visuel reste une proposition tant que vous ne cliquez pas sur « Ajouter à la bibliothèque ».</p>
                   </div>
                 )}
+              </section>
+              <section className="rounded-xl border border-sky-200 bg-sky-50/50 p-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-bold text-sky-950">Sélection d’images libres de droits</h2>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">Une petite sélection d’images Unsplash adaptées aux sites vitrines et associatifs. Ouvrez toujours la source pour vérifier les conditions et l’attribution avant publication.</p>
+                  </div>
+                  <span className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-900">Source affichée</span>
+                </div>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {INDEPENDENT_STOCK_IMAGES.map((image) => (
+                    <article key={image.id} className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-sm">
+                      <img src={image.url} alt={image.altText} className="h-36 w-full object-cover" loading="lazy" />
+                      <div className="space-y-3 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{image.label}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" className="min-h-[38px] bg-sky-700 text-white hover:bg-sky-800" disabled={!canEdit || !siteId || addMediaMutation.isPending} onClick={() => siteId && addMediaMutation.mutate({ siteId, label: image.label, altText: image.altText, url: image.url })}>Ajouter</Button>
+                          <Button type="button" size="sm" variant="outline" className="min-h-[38px]" asChild><a href={image.sourceUrl} target="_blank" rel="noreferrer">Source</a></Button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
               </section>
               <section className="rounded-xl border border-slate-200 bg-white p-6">
                 <h2 className="text-base font-bold text-slate-900">
