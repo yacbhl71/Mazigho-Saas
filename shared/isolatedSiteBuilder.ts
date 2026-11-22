@@ -3850,6 +3850,78 @@ export function parseBuilderQueryParams(search: string): {
   return baseResult;
 }
 
+export interface IndependentSiteSelectionCandidate {
+  id: number;
+  slug: string;
+  updatedAt?: string | Date | null;
+}
+
+/**
+ * Résout de manière déterministe le site actif uniquement parmi la liste de projets
+ * autorisés retournée par le serveur (préserve strictement l'isolation par siteId).
+ */
+export function resolveInitialIndependentSiteId(input: {
+  projects: ReadonlyArray<IndependentSiteSelectionCandidate>;
+  currentSiteId?: number | null;
+  requestedSiteId?: number | null;
+  requestedSlug?: string | null;
+  storedSiteId?: number | null;
+  preferredSlug?: string | null;
+}): number | null {
+  const validProjects = (input.projects || []).filter(
+    (project) => Number.isInteger(project.id) && project.id > 0,
+  );
+  if (validProjects.length === 0) return null;
+
+  const byId = new Map<number, IndependentSiteSelectionCandidate>();
+  const bySlug = new Map<string, IndependentSiteSelectionCandidate>();
+  for (const project of validProjects) {
+    byId.set(project.id, project);
+    const normalizedSlug = (project.slug || "").trim().toLowerCase();
+    if (normalizedSlug && !bySlug.has(normalizedSlug)) {
+      bySlug.set(normalizedSlug, project);
+    }
+  }
+
+  if (input.currentSiteId && byId.has(input.currentSiteId)) {
+    return input.currentSiteId;
+  }
+  if (input.requestedSiteId && byId.has(input.requestedSiteId)) {
+    return input.requestedSiteId;
+  }
+  const cleanRequestedSlug = (input.requestedSlug || "").trim().toLowerCase();
+  if (cleanRequestedSlug && bySlug.has(cleanRequestedSlug)) {
+    return bySlug.get(cleanRequestedSlug)!.id;
+  }
+  if (input.storedSiteId && byId.has(input.storedSiteId)) {
+    return input.storedSiteId;
+  }
+  const cleanPreferredSlug = (input.preferredSlug || "").trim().toLowerCase();
+  if (cleanPreferredSlug && bySlug.has(cleanPreferredSlug)) {
+    return bySlug.get(cleanPreferredSlug)!.id;
+  }
+  return validProjects[0].id;
+}
+
+export function buildIndependentBuilderSelectionUrl(
+  currentSearch: string,
+  siteId: number | null,
+): string {
+  const cleanSearch = (currentSearch || "").startsWith("?")
+    ? currentSearch.slice(1)
+    : currentSearch || "";
+  const params = new URLSearchParams(cleanSearch);
+  params.delete("siteSlug");
+  params.delete("slug");
+  if (typeof siteId === "number" && Number.isInteger(siteId) && siteId > 0) {
+    params.set("siteId", String(siteId));
+  } else {
+    params.delete("siteId");
+  }
+  const qs = params.toString();
+  return `/constructeur-sites${qs ? `?${qs}` : ""}`;
+}
+
 // ---------------------------------------------------------------------------
 // 10. PHASE 2 — Historique & Versions, Duplication, Import/Export JSON,
 //     Checklist Publication, Audit SEO / Accessibilité / Responsive,

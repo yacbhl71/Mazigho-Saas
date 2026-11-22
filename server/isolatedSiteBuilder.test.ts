@@ -23,6 +23,7 @@ import {
   assertZeroEcommerceInIndependentSite,
   buildEditorPreviewUrl,
   buildImageTransformCss,
+  buildIndependentBuilderSelectionUrl,
   buildLocalSafetyStorageKey,
   buildNavigationFromPages,
   buildPageSeoPreview,
@@ -42,6 +43,7 @@ import {
   removeCardFromVisualCardGrid,
   renderVisualCardGridHtml,
   resolveIndependentProjectMode,
+  resolveInitialIndependentSiteId,
   sanitizeBuilderImageSrc,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
@@ -96,6 +98,7 @@ import {
   listIndependentSiteProjects,
   listIndependentSiteVersions,
   publishIndependentSiteProject,
+  repairKnownIndependentSiteLinks,
   removeIndependentSiteDomain,
   restoreIndependentSiteVersion,
   revokeIndependentCollaboratorPreviewShare,
@@ -1361,5 +1364,196 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     });
     expect(customStatus.isDemoTemplate).toBe(false);
     expect(customStatus.hasUnchangedDemoMarkers).toBe(false);
+  });
+
+  it("24. Synchronisation déterministe de selectedSiteId au chargement, changement de projet, rechargement et isolation par siteId", () => {
+    const projects = [
+      { id: 101, slug: "cabinet-autre" },
+      { id: 202, slug: "association-familiale-ath-vahloul" },
+      { id: 303, slug: "collectif-montagne" },
+    ];
+
+    // 1. Chargement initial sans ?siteId= ni sessionStorage : préfère le slug actif (ATH VAHLOUL) s'il est accessible
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: null,
+        requestedSiteId: null,
+        requestedSlug: null,
+        storedSiteId: null,
+        preferredSlug: "association-familiale-ath-vahloul",
+      }),
+    ).toBe(202);
+
+    // 2. Sans slug préféré correspondant, retombe sur le premier projet autorisé
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: null,
+        preferredSlug: "inexistant",
+      }),
+    ).toBe(101);
+
+    // 3. Changement de projet actif : currentSiteId autorisé est préservé
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: 303,
+        requestedSiteId: 202,
+        storedSiteId: 101,
+      }),
+    ).toBe(303);
+
+    // 4. Rechargement complet : ?siteId= ou storedSiteId restaure exactement le projet ouvert
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: null,
+        requestedSiteId: 303,
+        storedSiteId: 202,
+      }),
+    ).toBe(303);
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: null,
+        requestedSiteId: null,
+        storedSiteId: 303,
+        preferredSlug: "association-familiale-ath-vahloul",
+      }),
+    ).toBe(303);
+
+    // 5. Ouverture par ?siteSlug= prioritaire sur sessionStorage
+    expect(
+      resolveInitialIndependentSiteId({
+        projects,
+        currentSiteId: null,
+        requestedSlug: "collectif-montagne",
+        storedSiteId: 202,
+      }),
+    ).toBe(303);
+
+    // 6. Isolation stricte : un siteId non présent dans la liste autorisée est rejeté
+    expect(
+      resolveInitialIndependentSiteId({
+        projects: [{ id: 202, slug: "association-familiale-ath-vahloul" }],
+        currentSiteId: 999,
+        requestedSiteId: 888,
+        storedSiteId: 777,
+      }),
+    ).toBe(202);
+
+    // 7. Aucun projet accessible -> null
+    expect(
+      resolveInitialIndependentSiteId({
+        projects: [],
+        currentSiteId: 202,
+        requestedSiteId: 202,
+      }),
+    ).toBeNull();
+
+    // 8. Synchronisation d'URL ?siteId= en supprimant les anciens siteSlug/slug tout en préservant page=
+    expect(
+      buildIndependentBuilderSelectionUrl("?siteSlug=association-familiale-ath-vahloul&page=/contact", 202),
+    ).toBe("/constructeur-sites?page=%2Fcontact&siteId=202");
+    expect(buildIndependentBuilderSelectionUrl("?siteId=202", null)).toBe(
+      "/constructeur-sites",
+    );
+  });
+
+  it("25. Réparation effective des alias connus ATH VAHLOUL (allowlist stricte) et conservation des liens inconnus", async () => {
+    const ownerId = 1091;
+    // Créer un projet ATH brut depuis le modèle (contient les 45 anciens liens connus)
+    const athProject = await createIndependentSiteProject(ownerId, {
+      title: "Association familiale ATH VAHLOUL",
+      siteType: "familial",
+      slug: "association-familiale-ath-vahloul-audit",
+      templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+    });
+
+    const initialReport = verifyIndependentInternalLinks(athProject.pages);
+    expect(initialReport.brokenLinks).toHaveLength(45);
+
+    // Injecter en plus un lien inconnu pour vérifier qu'il n'est JAMAIS remplacé automatiquement
+    const pagesWithUnknown = athProject.pages.map((p, idx) =>
+      idx === 0
+        ? {
+            ...p,
+            html: `${p.html}<a href="/lien-inconnu-editorial">Lien inconnu</a>`,
+          }
+        : p,
+    );
+    await saveIndependentSiteProject(ownerId, {
+      siteId: athProject.id,
+      pages: pagesWithUnknown,
+    });
+
+    const beforeRepair = verifyIndependentInternalLinks(pagesWithUnknown);
+    expect(beforeRepair.brokenLinks).toHaveLength(46);
+
+    // Exécuter la réparation serveur
+    const repairedResult = await repairKnownIndependentSiteLinks(ownerId, athProject.id);
+    expect(repairedResult.changes).toHaveLength(45);
+
+    // Tous les alias connus doivent être mappés selon l'allowlist exacte
+    const changeTargetsBySource = new Map<string, Set<string>>();
+    for (const ch of repairedResult.changes) {
+      if (!changeTargetsBySource.has(ch.sourceHref)) {
+        changeTargetsBySource.set(ch.sourceHref, new Set());
+      }
+      changeTargetsBySource.get(ch.sourceHref)!.add(ch.targetHref);
+    }
+    expect(Array.from(changeTargetsBySource.get("/a-propos") ?? [])).toEqual(["/notre-famille"]);
+    expect(Array.from(changeTargetsBySource.get("/histoire") ?? [])).toEqual(["/notre-famille"]);
+    expect(Array.from(changeTargetsBySource.get("/membres") ?? [])).toEqual(["/notre-famille"]);
+    expect(Array.from(changeTargetsBySource.get("/charte") ?? [])).toEqual(["/notre-famille"]);
+    expect(Array.from(changeTargetsBySource.get("/participer") ?? [])).toEqual(["/contact"]);
+    expect(Array.from(changeTargetsBySource.get("/mentions-legales") ?? [])).toEqual(["/contact"]);
+    expect(Array.from(changeTargetsBySource.get("/confidentialite") ?? [])).toEqual(["/contact"]);
+
+    // Le lien inconnu DOIT rester intact et signalé (jamais remplacé par /contact)
+    const afterRepairReport = verifyIndependentInternalLinks(repairedResult.project.pages);
+    expect(afterRepairReport.valid).toBe(false);
+    expect(afterRepairReport.brokenLinks).toHaveLength(1);
+    expect(afterRepairReport.brokenLinks[0]?.targetHref).toBe("/lien-inconnu-editorial");
+
+    // Rechargement depuis le store : persistance vérifiée
+    const reloaded = await getIndependentSiteProject(ownerId, athProject.id);
+    expect(reloaded).not.toBeNull();
+    const reloadedReport = verifyIndependentInternalLinks(reloaded!.pages);
+    expect(reloadedReport.brokenLinks).toHaveLength(1);
+    expect(reloadedReport.brokenLinks[0]?.targetHref).toBe("/lien-inconnu-editorial");
+
+    // Si des pages dédiées /mentions-legales et /confidentialite existent, les liens restent vers elles
+    const dedicatedPages = [
+      {
+        ...athProject.pages[0],
+        html: '<a href="/mentions-legales">Mentions</a><a href="/confidentialite">Vie privée</a><a href="/inconnu-test">Inconnu</a>',
+      },
+      { ...athProject.pages[0], id: "p-ml", title: "Mentions légales", slug: "/mentions-legales", html: "<p>Mentions</p>" },
+      { ...athProject.pages[0], id: "p-conf", title: "Confidentialité", slug: "/confidentialite", html: "<p>Conf</p>" },
+      { ...athProject.pages[0], id: "p-contact", title: "Contact", slug: "/contact", html: "<p>Contact</p>" },
+    ];
+    const dedicatedRepaired = repairKnownIndependentInternalLinks(dedicatedPages);
+    expect(dedicatedRepaired.changes).toHaveLength(0);
+    expect(dedicatedRepaired.pages[0].html).toContain('href="/mentions-legales"');
+    expect(dedicatedRepaired.pages[0].html).toContain('href="/confidentialite"');
+    expect(dedicatedRepaired.pages[0].html).toContain('href="/inconnu-test"');
+
+    // Absence de régression : zéro contamination boutique/e-commerce
+    expect(() => assertZeroEcommerceInIndependentSite(reloaded!)).not.toThrow();
+  });
+
+  it("26. Absence de régression du constructeur boutique : le produit indépendant reste strictement séparé des fichiers Studio/Boutique", () => {
+    const builderSource = readFileSync(
+      resolve(process.cwd(), "client/src/pages/site-builder/IndependentSiteBuilderPage.tsx"),
+      "utf8",
+    );
+    expect(builderSource).toContain("resolveInitialIndependentSiteId");
+    expect(builderSource).toContain("buildIndependentBuilderSelectionUrl");
+    expect(builderSource).toContain("repairKnownInternalLinks");
+    expect(builderSource).not.toContain("trpc.visualBuilder");
+    expect(builderSource).not.toContain("trpc.shopify");
+    expect(builderSource).not.toContain("trpc.orders");
   });
 });

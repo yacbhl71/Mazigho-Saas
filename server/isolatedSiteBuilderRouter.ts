@@ -190,19 +190,33 @@ export const isolatedSiteBuilderRouter = router({
   getProject: protectedProcedure
     .input(z.object({ siteId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
-      const project = await getIndependentSiteProject(
-        await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
-        input.siteId,
-      );
-      if (!project) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message:
-            "Projet de site indépendant introuvable ou accès non autorisé.",
-        });
+      try {
+        await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+        const project = await getIndependentSiteProject(
+          await resolveIndependentSiteOwnerUserId(ctx.user.id, input.siteId),
+          input.siteId,
+        );
+        if (!project) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message:
+              "Projet de site indépendant introuvable ou accès non autorisé.",
+          });
+        }
+        return project;
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        if (
+          err instanceof Error &&
+          err.message === "INDEPENDENT_SITE_ACCESS_DENIED"
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Accès refusé à ce projet de site indépendant.",
+          });
+        }
+        throw err;
       }
-      return project;
     }),
 
   ensureAthVahloulDemo: platformProcedure.mutation(async ({ ctx }) => {
@@ -244,7 +258,14 @@ export const isolatedSiteBuilderRouter = router({
           input,
         );
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
         const msg = err instanceof Error ? err.message : "Erreur de sauvegarde";
+        if (msg === "INDEPENDENT_SITE_ACCESS_DENIED") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Accès refusé pour la sauvegarde de ce projet.",
+          });
+        }
         if (msg === "INDEPENDENT_SITE_NOT_FOUND") {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -262,12 +283,27 @@ export const isolatedSiteBuilderRouter = router({
         await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
         return await repairKnownIndependentSiteLinks(ctx.user.id, input.siteId);
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Impossible de réparer les liens internes.";
+        if (msg === "INDEPENDENT_SITE_ACCESS_DENIED") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Accès refusé : vous n’avez pas l’autorisation de réparer les liens de ce site.",
+          });
+        }
+        if (msg === "INDEPENDENT_SITE_NOT_FOUND") {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Projet de site indépendant introuvable.",
+          });
+        }
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message:
-            err instanceof Error
-              ? err.message
-              : "Impossible de réparer les liens internes.",
+          message: msg,
         });
       }
     }),

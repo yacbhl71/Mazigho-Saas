@@ -31,6 +31,7 @@ import {
   auditIndependentPageSeo,
   buildEditorPreviewUrl,
   buildImageTransformCss,
+  buildIndependentBuilderSelectionUrl,
   buildIndependentVersionPreview,
   buildLocalSafetyStorageKey,
   buildNavigationFromPages,
@@ -58,6 +59,7 @@ import {
   renderVisualCardGridHtml,
   reorderIndependentPagesMenu,
   replaceMediaUrlAcrossPages,
+  resolveInitialIndependentSiteId,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
@@ -214,6 +216,23 @@ const LIBRARY_TAB_META: Record<
   },
 };
 
+const INDEPENDENT_BUILDER_SELECTED_SITE_STORAGE_KEY =
+  "mazigho_independent_builder_selected_site_id";
+
+function readStoredSelectedSiteId(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(
+      INDEPENDENT_BUILDER_SELECTED_SITE_STORAGE_KEY,
+    );
+    if (!raw || !/^\d+$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function IndependentSiteBuilderPage() {
   const utils = trpc.useUtils();
   const editorRef = useRef<Editor | null>(null);
@@ -223,12 +242,51 @@ export default function IndependentSiteBuilderPage() {
   const devicePresetRef = useRef<ResponsiveDevicePresetId>("desktop");
   const saveInFlightRef = useRef<boolean>(false);
   const requestedPageSlugRef = useRef<string | null>(null);
+  const lastLoadedProjectSignatureRef = useRef<string | null>(null);
 
   // Affichage repliable de l’espace "Mes sites & projets" et du guide d’aide utilisateur
   const [showProjectsDrawer, setShowProjectsDrawer] = useState<boolean>(false);
   const [showHelpGuideDrawer, setShowHelpGuideDrawer] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<IndependentSiteStatus | "all">("all");
-  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    return parseBuilderQueryParams(window.location.search).siteId;
+  });
+
+  function selectActiveSiteId(nextSiteId: number | null) {
+    const normalizedId =
+      typeof nextSiteId === "number" && Number.isInteger(nextSiteId) && nextSiteId > 0
+        ? nextSiteId
+        : null;
+    setSelectedSiteId(normalizedId);
+    if (typeof window === "undefined") return;
+    try {
+      if (normalizedId) {
+        window.sessionStorage.setItem(
+          INDEPENDENT_BUILDER_SELECTED_SITE_STORAGE_KEY,
+          String(normalizedId),
+        );
+      } else {
+        window.sessionStorage.removeItem(
+          INDEPENDENT_BUILDER_SELECTED_SITE_STORAGE_KEY,
+        );
+      }
+    } catch {
+      // Ignorer si sessionStorage est restreint
+    }
+    try {
+      const nextUrl = buildIndependentBuilderSelectionUrl(
+        window.location.search,
+        normalizedId,
+      );
+      const currentPathWithSearch = `${window.location.pathname}${window.location.search}`;
+      if (currentPathWithSearch !== nextUrl) {
+        window.history.replaceState(window.history.state, "", nextUrl);
+      }
+    } catch {
+      // Ignorer si replaceState est indisponible
+    }
+  }
 
   // Navigation dans la bibliothèque (7 espaces) + Recherche & Filtres par catégorie
   const [activeLibraryTab, setActiveLibraryTab] = useState<IndependentBuilderLibraryTab>("pages");
@@ -361,7 +419,7 @@ export default function IndependentSiteBuilderPage() {
     if (typeof window === "undefined") return;
     const parsed = parseBuilderQueryParams(window.location.search);
     if (parsed.siteId) {
-      setSelectedSiteId(parsed.siteId);
+      selectActiveSiteId(parsed.siteId);
     }
     if (parsed.pageSlug) {
       requestedPageSlugRef.current = parsed.pageSlug;
@@ -487,12 +545,44 @@ export default function IndependentSiteBuilderPage() {
   );
 
   useEffect(() => {
-    if (selectedSiteId || !projectsQuery.data || typeof window === "undefined") return;
-    const requestedSlug = new URLSearchParams(window.location.search).get("siteSlug")?.trim().toLowerCase();
-    if (!requestedSlug) return;
-    const requestedProject = projectsQuery.data.find((project) => project.slug.toLowerCase() === requestedSlug);
-    if (requestedProject) setSelectedSiteId(requestedProject.id);
-  }, [projectsQuery.data, selectedSiteId]);
+    const accessibleProjects = projectsQuery.data;
+    if (!accessibleProjects) return;
+    if (statusFilter !== "all" && selectedSiteId !== null) return;
+
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const parsed = parseBuilderQueryParams(search);
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const requestedSlug = params.get("siteSlug")?.trim() || parsed.slug || null;
+
+    const resolvedSiteId = resolveInitialIndependentSiteId({
+      projects: accessibleProjects,
+      currentSiteId: selectedSiteId,
+      requestedSiteId: parsed.siteId,
+      requestedSlug,
+      storedSiteId: readStoredSelectedSiteId(),
+      preferredSlug: siteSlug,
+    });
+
+    if (resolvedSiteId === null) {
+      if (statusFilter === "all" && selectedSiteId !== null) {
+        selectActiveSiteId(null);
+      }
+      return;
+    }
+
+    if (resolvedSiteId !== selectedSiteId) {
+      selectActiveSiteId(resolvedSiteId);
+    }
+
+    const matchedProject = accessibleProjects.find((p) => p.id === resolvedSiteId);
+    if (matchedProject) {
+      const signature = `${matchedProject.id}:${matchedProject.updatedAt ?? ""}`;
+      if (lastLoadedProjectSignatureRef.current !== signature) {
+        loadProjectIntoWorkspace(matchedProject);
+        setHasUnsavedChanges(false);
+      }
+    }
+  }, [projectsQuery.data, selectedSiteId, statusFilter]);
   const activeProjectQuery = trpc.independentSiteBuilder.getProject.useQuery(
     { siteId: selectedSiteId ?? 0 },
     { enabled: Boolean(selectedSiteId), retry: false, refetchOnWindowFocus: false }
@@ -612,7 +702,7 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listProjects.invalidate();
       clearLocalSafetySnapshotForProject(null, siteSlug);
       clearLocalSafetySnapshotForProject(created.id, created.slug);
-      setSelectedSiteId(created.id);
+      selectActiveSiteId(created.id);
       loadProjectIntoWorkspace(created);
       setHasUnsavedChanges(false);
       setLastSavedAt(
@@ -637,7 +727,7 @@ export default function IndependentSiteBuilderPage() {
   const ensureAthVahloulMutation = trpc.independentSiteBuilder.ensureAthVahloulDemo.useMutation({
     onSuccess: async (demo) => {
       await utils.independentSiteBuilder.listProjects.invalidate();
-      setSelectedSiteId(demo.id);
+      selectActiveSiteId(demo.id);
       loadProjectIntoWorkspace(demo);
       setHasUnsavedChanges(false);
       setLastSavedAt(
@@ -689,14 +779,25 @@ export default function IndependentSiteBuilderPage() {
 
   const repairKnownInternalLinksMutation = trpc.independentSiteBuilder.repairKnownInternalLinks.useMutation({
     onSuccess: async ({ project, changes }) => {
-      await utils.independentSiteBuilder.listProjects.invalidate();
+      utils.independentSiteBuilder.getProject.setData({ siteId: project.id }, project);
+      await Promise.all([
+        utils.independentSiteBuilder.listProjects.invalidate(),
+        utils.independentSiteBuilder.getProject.invalidate({ siteId: project.id }),
+        utils.independentSiteBuilder.listVersions.invalidate({ siteId: project.id }),
+      ]);
       loadProjectIntoWorkspace(project);
       setHasUnsavedChanges(false);
       setErrorBanner(null);
+      const remainingReport = verifyIndependentInternalLinks(project.pages);
+      const remainingCount = remainingReport.brokenLinks.length;
       setStatusBanner(
         changes.length > 0
-          ? `${changes.length} lien(s) connu(s) réparé(s) et sauvegardé(s) dans le projet privé.`
-          : "Aucun alias connu à réparer. Les liens restants nécessitent une vérification manuelle.",
+          ? remainingCount > 0
+            ? `${changes.length} lien(s) connu(s) réparé(s) et sauvegardé(s) sur « ${project.title} ». ${remainingCount} lien(s) inconnu(s) restant(s) à vérifier manuellement.`
+            : `${changes.length} lien(s) connu(s) réparé(s) et sauvegardé(s) sur « ${project.title} ». Tous les liens internes sont désormais valides.`
+          : remainingCount > 0
+            ? `Aucun alias connu à réparer. ${remainingCount} lien(s) inconnu(s) nécessitent une vérification manuelle.`
+            : "Aucun lien cassé détecté : tous les liens internes sont déjà valides.",
       );
     },
     onError: (err) => {
@@ -705,17 +806,33 @@ export default function IndependentSiteBuilderPage() {
   });
 
   const handleRepairKnownInternalLinks = () => {
-    if (!selectedSiteId) {
+    const resolvedSiteId =
+      selectedSiteId ??
+      activeProjectQuery.data?.id ??
+      (projectsQuery.data
+        ? resolveInitialIndependentSiteId({
+            projects: projectsQuery.data,
+            currentSiteId: selectedSiteId,
+            storedSiteId: readStoredSelectedSiteId(),
+            preferredSlug: siteSlug,
+          })
+        : null);
+
+    if (!resolvedSiteId) {
       setErrorBanner("Aucun site n’est sélectionné pour la réparation des liens.");
       return;
     }
-    repairKnownInternalLinksMutation.mutate({ siteId: selectedSiteId });
+    if (resolvedSiteId !== selectedSiteId) {
+      selectActiveSiteId(resolvedSiteId);
+    }
+    if (repairKnownInternalLinksMutation.isPending) return;
+    repairKnownInternalLinksMutation.mutate({ siteId: resolvedSiteId });
   };
 
   const duplicateProjectMutation = trpc.independentSiteBuilder.duplicateProject.useMutation({
     onSuccess: async (copy) => {
       await utils.independentSiteBuilder.listProjects.invalidate();
-      setSelectedSiteId(copy.id);
+      selectActiveSiteId(copy.id);
       loadProjectIntoWorkspace(copy);
       setDuplicateProjectCustomTitle("");
       setHasUnsavedChanges(false);
@@ -866,7 +983,7 @@ export default function IndependentSiteBuilderPage() {
       await utils.independentSiteBuilder.listPublicationLogs.invalidate({
         siteId: importedProject.id,
       });
-      setSelectedSiteId(importedProject.id);
+      selectActiveSiteId(importedProject.id);
       loadProjectIntoWorkspace(importedProject);
       setImportJsonRawInput("");
       setImportCustomTitleInput("");
@@ -976,7 +1093,8 @@ export default function IndependentSiteBuilderPage() {
     reusableBlocks: IndependentSiteReusableBlock[];
     updatedAt?: string | null;
   }) {
-    setSelectedSiteId(project.id);
+    selectActiveSiteId(project.id);
+    lastLoadedProjectSignatureRef.current = `${project.id}:${project.updatedAt ?? ""}`;
     setSiteTitle(project.title);
     setSiteSlug(project.slug);
     setSiteType(project.siteType);
@@ -1152,11 +1270,13 @@ export default function IndependentSiteBuilderPage() {
   }
 
   useEffect(() => {
-    if (activeProjectQuery.data) {
-      loadProjectIntoWorkspace(activeProjectQuery.data);
-      setHasUnsavedChanges(false);
-    }
-  }, [activeProjectQuery.data?.id]);
+    const project = activeProjectQuery.data;
+    if (!project) return;
+    const signature = `${project.id}:${project.updatedAt ?? ""}`;
+    if (lastLoadedProjectSignatureRef.current === signature) return;
+    loadProjectIntoWorkspace(project);
+    setHasUnsavedChanges(false);
+  }, [activeProjectQuery.data]);
 
   const activePage = useMemo(() => {
     return pages.find((p) => p.id === activePageId) ?? pages[0];
@@ -1844,7 +1964,11 @@ export default function IndependentSiteBuilderPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f6f3ee] text-[#172033]">
+    <div
+      className="min-h-screen bg-[#f6f3ee] text-[#172033]"
+      data-active-site-id={selectedSiteId ?? ""}
+      data-active-site-slug={siteSlug}
+    >
       {/* BANDEAU DE REPÉRAGE IMMÉDIAT DU SITE ADMINISTRÉ, DU RÔLE ACTIF & DU RETOUR AU SITE PUBLIC */}
       <div
         role="region"
@@ -1856,6 +1980,7 @@ export default function IndependentSiteBuilderPage() {
             <span className="inline-flex items-center gap-1.5 rounded-md bg-[#40552d] px-2.5 py-1 font-bold text-white">
               <ShieldCheck className="h-3.5 w-3.5" />
               Espace d’administration du site : « {siteTitle} »
+              {selectedSiteId ? ` (#${selectedSiteId})` : ""}
             </span>
             <Badge
               variant="outline"
@@ -2693,7 +2818,7 @@ export default function IndependentSiteBuilderPage() {
                               requestSwitchProjectWithGuard(
                                 `ouvrir le projet « ${proj.title} »`,
                                 () => {
-                                  setSelectedSiteId(proj.id);
+                                  selectActiveSiteId(proj.id);
                                   loadProjectIntoWorkspace(proj);
                                   setHasUnsavedChanges(false);
                                 }
@@ -3110,9 +3235,12 @@ export default function IndependentSiteBuilderPage() {
                             variant="outline"
                             className="mt-2 h-7 border-rose-300 bg-white text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
                             onClick={handleRepairKnownInternalLinks}
+                            disabled={repairKnownInternalLinksMutation.isPending}
                             aria-label="Corriger les anciens liens internes connus"
                           >
-                            Corriger les liens connus
+                            {repairKnownInternalLinksMutation.isPending
+                              ? "Réparation en cours…"
+                              : "Corriger les liens connus"}
                           </Button>
                           <p className="mt-1 text-[10px] text-rose-800">
                             Seuls les anciens alias documentés sont modifiés ; les autres erreurs restent visibles pour contrôle manuel.

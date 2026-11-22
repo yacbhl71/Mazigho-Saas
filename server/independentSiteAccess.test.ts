@@ -12,13 +12,42 @@ import {
   updateIndependentSiteAccessRole,
 } from "./isolatedSiteBuilderDb";
 import {
+  ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE,
   INDEPENDENT_SITE_ROLE_PRESENTATIONS,
   formatIndependentInvitationErrorMessage,
   formatIndependentInvitationStatusNotice,
   getIndependentSiteRolePresentation,
   sanitizeIndependentAdministrationReturnTo,
+  verifyIndependentInternalLinks,
 } from "../shared/isolatedSiteBuilder";
+import { isolatedSiteBuilderRouter } from "./isolatedSiteBuilderRouter";
+import type { TrpcContext } from "./_core/context";
+
+function makeCaller(user: {
+  id: number;
+  email: string;
+  role?: "admin" | "user";
+} | null) {
+  const ctx = {
+    req: {} as TrpcContext["req"],
+    res: {} as TrpcContext["res"],
+    user: user
+      ? ({
+          id: user.id,
+          openId: `test-user-${user.id}`,
+          name: `User ${user.id}`,
+          email: user.email,
+          role: user.role ?? "user",
+          accountStatus: "active",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          lastSignedIn: new Date(),
+        } as unknown as TrpcContext["user"])
+      : null,
+  } as TrpcContext;
+  return isolatedSiteBuilderRouter.createCaller(ctx);
+}
 
 describe("independent site access isolation", () => {
   it("keeps sites isolated and lets an invited editor access only the assigned site", async () => {
@@ -292,5 +321,119 @@ describe("independent site access isolation", () => {
         "https://mazighoshop.com/boutique",
       ),
     ).toBe("/administration-site");
+  });
+
+  it("enforces server-side siteId isolation and minimum editor role on repairKnownInternalLinks", async () => {
+    const ownerAId = 9801;
+    const ownerBId = 9802;
+    const editorAId = 9803;
+    const adminAId = 9804;
+    const outsiderId = 9805;
+
+    const siteA = await createIndependentSiteProject(ownerAId, {
+      title: "Association familiale ATH VAHLOUL",
+      siteType: "familial",
+      slug: "ath-vahloul-rbac-test",
+      templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+    });
+    const siteB = await createIndependentSiteProject(ownerBId, {
+      title: "Autre Association Privée",
+      siteType: "association",
+      slug: "autre-association-privee",
+      templateId: ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+    });
+
+    // Inviter et activer un Éditeur sur siteA uniquement
+    const editorInvite = await inviteIndependentSiteAccess(ownerAId, {
+      siteId: siteA.id,
+      email: "editeur.ath@example.test",
+      role: "editor",
+    });
+    await acceptIndependentSiteInvitation(
+      editorAId,
+      editorInvite.developmentOnlyToken!,
+      "editeur.ath@example.test",
+    );
+
+    // Inviter et activer un Admin sur siteA uniquement
+    const adminInvite = await inviteIndependentSiteAccess(ownerAId, {
+      siteId: siteA.id,
+      email: "admin.ath@example.test",
+      role: "admin",
+    });
+    await acceptIndependentSiteInvitation(
+      adminAId,
+      adminInvite.developmentOnlyToken!,
+      "admin.ath@example.test",
+    );
+
+    const editorCaller = makeCaller({
+      id: editorAId,
+      email: "editeur.ath@example.test",
+    });
+    const adminCaller = makeCaller({
+      id: adminAId,
+      email: "admin.ath@example.test",
+    });
+    const outsiderCaller = makeCaller({
+      id: outsiderId,
+      email: "client.externe@example.test",
+    });
+    const anonymousCaller = makeCaller(null);
+
+    // 1. Appelant non authentifié -> UNAUTHORIZED
+    await expect(
+      anonymousCaller.repairKnownInternalLinks({ siteId: siteA.id }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    // 2. Utilisateur externe (client sans accès) -> FORBIDDEN
+    await expect(
+      outsiderCaller.repairKnownInternalLinks({ siteId: siteA.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      outsiderCaller.getProject({ siteId: siteA.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // 3. Isolation stricte par siteId : l'éditeur de siteA ne peut PAS réparer ni lire siteB -> FORBIDDEN
+    await expect(
+      editorCaller.repairKnownInternalLinks({ siteId: siteB.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      editorCaller.getProject({ siteId: siteB.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // 4. L'éditeur de siteA PEUT réparer les liens connus de siteA
+    expect(verifyIndependentInternalLinks(siteA.pages).brokenLinks).toHaveLength(45);
+    const repairedByEditor = await editorCaller.repairKnownInternalLinks({
+      siteId: siteA.id,
+    });
+    expect(repairedByEditor.changes).toHaveLength(45);
+    expect(
+      verifyIndependentInternalLinks(repairedByEditor.project.pages).brokenLinks,
+    ).toHaveLength(0);
+
+    // 5. L'éditeur reste bloqué sur les actions réservées admin/owner (publishSite, listAccess)
+    await expect(
+      editorCaller.publishSite({ siteId: siteA.id }),
+    ).rejects.toThrow();
+    await expect(
+      editorCaller.listAccess({ siteId: siteA.id }),
+    ).rejects.toThrow();
+
+    // 6. L'admin de siteA peut également appeler repairKnownInternalLinks sur siteA (idempotent -> 0 changes)
+    const repairedByAdmin = await adminCaller.repairKnownInternalLinks({
+      siteId: siteA.id,
+    });
+    expect(repairedByAdmin.changes).toHaveLength(0);
+
+    // 7. Révocation de l'éditeur -> immédiatement FORBIDDEN sur siteA
+    const members = await listIndependentSiteAccess(ownerAId, siteA.id);
+    const editorMember = members.find(
+      (m) => m.email === "editeur.ath@example.test",
+    )!;
+    await revokeIndependentSiteAccess(ownerAId, siteA.id, editorMember.id);
+    await expect(
+      editorCaller.repairKnownInternalLinks({ siteId: siteA.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
