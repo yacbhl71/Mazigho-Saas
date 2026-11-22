@@ -248,6 +248,7 @@ export default function IndependentSiteAdminPage() {
   });
   const [draftSettings, setDraftSettings] = useState({
     faviconUrl: "",
+    cookieBannerEnabled: false,
     maintenanceMode: false,
     maintenanceMessage: "Le site est momentanément en maintenance. Merci de revenir bientôt.",
     socialLinks: { facebook: "", instagram: "", linkedin: "", youtube: "" },
@@ -2734,6 +2735,19 @@ export default function IndependentSiteAdminPage() {
                 </div>
                 <form onSubmit={handleSaveSettings} className="mt-6 space-y-6">
                   <div className="rounded-lg border border-slate-200 p-5"><h3 className="font-bold text-slate-900">Identité visuelle</h3><label className="mt-4 block space-y-2 text-sm font-medium text-slate-800"><span>URL du favicon</span><Input type="url" placeholder="https://…/favicon.png" value={draftSettings.faviconUrl} onChange={(e) => setDraftSettings((v) => ({ ...v, faviconUrl: e.target.value }))} /></label></div>
+                  <div className={`rounded-lg border p-5 ${draftSettings.cookieBannerEnabled ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <h3 className="font-bold text-slate-900">Bandeau cookies & confidentialité</h3>
+                        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">Affichez un choix clair aux visiteurs avant d’ajouter d’éventuels services nécessitant leur consentement. Aucun cookie publicitaire n’est créé par défaut.</p>
+                      </div>
+                      <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800">
+                        <input type="checkbox" checked={draftSettings.cookieBannerEnabled} onChange={(e) => setDraftSettings((v) => ({ ...v, cookieBannerEnabled: e.target.checked }))} disabled={!canAdminister} className="h-4 w-4 rounded border-slate-300 text-[#1e3a2f] focus:ring-[#1e3a2f]" />
+                        {draftSettings.cookieBannerEnabled ? "Activé" : "Désactivé"}
+                      </label>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">Le visiteur pourra accepter ou refuser. Son choix reste local à son navigateur et ne contient aucune donnée personnelle.</p>
+                  </div>
                   <div className={`rounded-lg border p-5 ${draftSettings.maintenanceMode ? "border-amber-300 bg-amber-50/60" : "border-slate-200"}`}>
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>

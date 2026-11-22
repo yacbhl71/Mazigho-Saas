@@ -126,6 +126,7 @@ const themeSchema = z.object({
 
 const siteSettingsSchema = z.object({
   faviconUrl: z.string().max(2048).optional(),
+  cookieBannerEnabled: z.boolean().optional(),
   maintenanceMode: z.boolean().optional(),
   maintenanceMessage: z.string().max(240).optional(),
   socialLinks: z.object({

@@ -61,6 +61,7 @@ export default function IndependentSitePublicPreviewPage() {
   const [devicePresetId, setDevicePresetId] = useState<ResponsiveDevicePresetId>("desktop");
   const [activePageSlug, setActivePageSlug] = useState<string>(queryParams.pageSlug || "/");
   const [showSeoBanner, setShowSeoBanner] = useState<boolean>(false);
+  const [cookieConsent, setCookieConsent] = useState<"accepted" | "refused" | null>(null);
   const publicContentRef = useRef<HTMLDivElement>(null);
   const trackedPageViewRef = useRef<string | null>(null);
   const submitFormMutation = trpc.independentSiteBuilder.submitForm.useMutation();
@@ -80,6 +81,16 @@ export default function IndependentSitePublicPreviewPage() {
     { siteId: siteQuery.data?.id ?? 0 },
     { enabled: Boolean(user && siteQuery.data?.id), retry: false, refetchOnWindowFocus: false },
   );
+
+  useEffect(() => {
+    if (isPreviewRoute || !siteQuery.data || typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(`mazigho:independent:cookie-consent:${siteQuery.data.id}`);
+      if (stored === "accepted" || stored === "refused") setCookieConsent(stored);
+    } catch {
+      // Le site reste utilisable si le navigateur bloque le stockage local.
+    }
+  }, [isPreviewRoute, siteQuery.data?.id]);
 
   // En mode prévisualisation privée (/constructeur-sites/apercu/:slug),
   // si le projet n'a pas encore été sauvegardé en base, on propose un aperçu de brouillon.
@@ -321,6 +332,15 @@ export default function IndependentSitePublicPreviewPage() {
   const siteLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/administration-site?siteSlug=${site.slug}`)}`;
   const siteAdminLoginHref = `/connexion-administration?returnTo=${encodeURIComponent(`/administration-site?siteSlug=${site.slug}`)}`;
   const hasSiteAdministrationAccess = Boolean(user && (siteAccessQuery.data?.role || isPublicAthVahloulDemo));
+  const showCookieBanner = !isPreviewRoute && site.settings.cookieBannerEnabled && cookieConsent === null;
+  const saveCookieConsent = (choice: "accepted" | "refused") => {
+    setCookieConsent(choice);
+    try {
+      window.localStorage.setItem(`mazigho:independent:cookie-consent:${site.id}`, choice);
+    } catch {
+      // Le choix est aussi conservé en mémoire pour cette page.
+    }
+  };
 
   return (
     <div className={isPreviewRoute ? "min-h-screen bg-[#111827] text-slate-100" : "min-h-screen bg-white text-slate-900"}>
@@ -593,6 +613,7 @@ export default function IndependentSitePublicPreviewPage() {
           className={isPreviewRoute ? "min-h-[82vh] overflow-x-hidden rounded-2xl border border-slate-700 bg-white text-slate-900 shadow-2xl transition-all duration-200 motion-reduce:transition-none" : "min-h-screen overflow-x-hidden bg-white text-slate-900"}
         >
           <style>
+            {`:root { --site-primary: ${site.theme.primaryColor}; --site-accent: ${site.theme.accentColor}; --site-background: ${site.theme.backgroundColor}; --site-heading-font: ${site.theme.headingFont}; --site-body-font: ${site.theme.bodyFont}; }\n            h1, h2, h3, h4, h5, h6 { font-family: var(--site-heading-font); }\n            body, p, li, label, input, textarea, button { font-family: var(--site-body-font); }\n            a { color: var(--site-primary); }\n            `}
             {INDEPENDENT_RESPONSIVE_BASE_CSS}
             {"\n"}
             {sanitizeIndependentCss(activePage.css)}
@@ -616,6 +637,16 @@ export default function IndependentSitePublicPreviewPage() {
           />
         </div>
       </main>
+      {showCookieBanner && (
+        <aside role="dialog" aria-label="Préférences de confidentialité" className="fixed inset-x-4 bottom-4 z-[60] mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl sm:inset-x-auto sm:right-6 sm:w-[min(42rem,calc(100vw-3rem))]">
+          <h2 className="text-base font-bold">Votre confidentialité</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Ce site n’utilise pas de cookies publicitaires par défaut. Vous pouvez accepter ou refuser les services optionnels qui pourraient être ajoutés ultérieurement.</p>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => saveCookieConsent("refused")}>Refuser</Button>
+            <Button type="button" onClick={() => saveCookieConsent("accepted")} className="bg-[#1e3a2f] text-white hover:bg-[#162b23]">Accepter</Button>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

@@ -1176,6 +1176,7 @@ function normalizeSiteSettings(
 ): IndependentSiteSettingsConfig {
   return {
     faviconUrl: typeof value?.faviconUrl === "string" ? value.faviconUrl : DEFAULT_SITE_SETTINGS.faviconUrl,
+    cookieBannerEnabled: typeof value?.cookieBannerEnabled === "boolean" ? value.cookieBannerEnabled : DEFAULT_SITE_SETTINGS.cookieBannerEnabled,
     maintenanceMode: typeof value?.maintenanceMode === "boolean" ? value.maintenanceMode : DEFAULT_SITE_SETTINGS.maintenanceMode,
     maintenanceMessage: typeof value?.maintenanceMessage === "string" && value.maintenanceMessage.trim().length > 0
       ? value.maintenanceMessage.trim().slice(0, 240)
