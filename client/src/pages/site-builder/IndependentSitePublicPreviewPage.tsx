@@ -15,6 +15,7 @@ import {
   parseBuilderQueryParams,
   sanitizeIndependentCss,
   sanitizeIndependentHtml,
+  type IndependentSitePage,
   type ResponsiveDevicePresetId,
   type ResponsiveViewportMode,
 } from "@shared/isolatedSiteBuilder";
@@ -36,6 +37,16 @@ import {
 
 const PUBLIC_IMAGE_FALLBACK =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23263653'/%3E%3Ccircle cx='320' cy='210' r='92' fill='%23f5b98f' fill-opacity='.65'/%3E%3Cpath d='M0 390 Q160 280 320 390 T640 390 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E";
+
+function addPublicLegalPages(pages: IndependentSitePage[], siteTitle: string): IndependentSitePage[] {
+  const existing = new Set(pages.map((page) => page.slug));
+  const makePage = (kind: "notice" | "privacy"): IndependentSitePage => {
+    const title = kind === "notice" ? "Mentions légales" : "Politique de confidentialité";
+    const slug = kind === "notice" ? "/mentions-legales" : "/confidentialite";
+    return { id: kind === "notice" ? "legal-notice" : "privacy-policy", title, slug, parentPageId: null, showInMenu: false, menuOrder: 900, visibility: "public", seoTitle: `${title} | ${siteTitle}`, seoDescription: `${title} du site indépendant.`, indexable: false, html: `<main class="legal-document"><div class="legal-document-inner"><h1>${title}</h1><p>Cette page est un brouillon à compléter par le propriétaire du site avant publication.</p><p>Utilisez le générateur contrôlé des paramètres légaux pour préparer une version adaptée à votre situation.</p></div></main>`, css: ".legal-document { padding: 4rem 1.25rem; } .legal-document-inner { max-width: 48rem; margin: 0 auto; } .legal-document h1 { margin-bottom: 2rem; } .legal-document p { margin: 0 0 1.25rem; line-height: 1.75; }" };
+  };
+  return [...pages, ...(["notice", "privacy"] as const).map(makePage).filter((page) => !existing.has(page.slug))];
+}
 
 export default function IndependentSitePublicPreviewPage() {
   const [, previewParams] = useRoute("/constructeur-sites/apercu/:slug");
@@ -131,7 +142,7 @@ export default function IndependentSitePublicPreviewPage() {
 
   const safePages = useMemo(() => {
     if (!site) return [];
-    return ensureNonEmptyIndependentPages(site.pages, site.title);
+    return addPublicLegalPages(ensureNonEmptyIndependentPages(site.pages, site.title), site.title);
   }, [site]);
 
   const activePage = useMemo(() => {
@@ -626,7 +637,7 @@ export default function IndependentSitePublicPreviewPage() {
               const href = anchor.getAttribute("href") || "";
               if (href.startsWith("/")) {
                 const targetSlug = href.split("#")[0] || "/";
-                const targetPage = site.pages.find((p) => p.slug === targetSlug);
+                const targetPage = safePages.find((p) => p.slug === targetSlug);
                 if (targetPage) {
                   e.preventDefault();
                   setActivePageSlug(targetPage.slug);
