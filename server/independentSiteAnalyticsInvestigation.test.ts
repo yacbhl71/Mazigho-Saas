@@ -30,8 +30,8 @@ function makeCaller(userId: number) {
   return isolatedSiteBuilderRouter.createCaller(ctx);
 }
 
-describe("Audit Analytics - Reproduction du problème des statistiques à zéro", () => {
-  it("REPRODUCTION : recordPageView retourne { recorded: false } pour un site en brouillon (ex: ATH VAHLOUL non publié)", async () => {
+describe("Analytics des sites indépendants", () => {
+  it("enregistre une visite pour un site en brouillon sans exposer son contenu public", async () => {
     // 1. Un site indépendant est créé (par défaut en statut 'draft', comme ATH VAHLOUL avant publication)
     const ownerId = 88001;
     const site = await createIndependentSiteProject(ownerId, {
@@ -54,20 +54,18 @@ describe("Audit Analytics - Reproduction du problème des statistiques à zéro"
       path: "/",
     });
 
-    // Constat de la cause racine :
-    // getPublicIndependentSiteBySlug retourne null car le site n'est pas "published".
-    // La mutation répond { recorded: false } avec un HTTP 200 (silencieux pour Vercel).
-    expect(recordResult).toEqual({ recorded: false });
+    // La télémétrie résout le site par son slug sans utiliser la lecture publique,
+    // qui doit continuer à refuser le contenu d'un brouillon.
+    expect(recordResult).toEqual({ recorded: true });
 
     // 3. Dans l'administration, l'administrateur consulte l'onglet Statistiques
     const adminCaller = makeCaller(ownerId);
     const summary = await adminCaller.getAnalyticsSummary({ siteId: site.id });
 
-    // Les statistiques restent donc figées à 0 malgré la visite publique constatée dans les logs Vercel
-    expect(summary.visitors).toBe(0);
-    expect(summary.pageViews).toBe(0);
+    expect(summary.visitors).toBe(1);
+    expect(summary.pageViews).toBe(1);
     expect(summary.formsReceived).toBe(0);
-    expect(summary.popularPages).toEqual([]);
+    expect(summary.popularPages).toEqual([{ path: "/", views: 1 }]);
   });
 
   it("CORRECTION DEMONTREE : Résoudre le site par son slug permet d'enregistrer la visite et de peupler les statistiques", async () => {

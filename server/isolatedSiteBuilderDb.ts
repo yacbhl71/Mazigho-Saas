@@ -1289,6 +1289,23 @@ export async function getIndependentSiteProject(
   return rows[0] ? rowToProjectDto(rows[0]) : null;
 }
 
+export async function resolveIndependentSiteIdForAnalytics(slug: string): Promise<number | null> {
+  const normalizedSlug = slugifyIndependentSite(slug);
+  const db = await getDb();
+  if (!db) {
+    for (const candidate of Array.from(memorySites.values())) {
+      if (candidate.slug === normalizedSlug) return candidate.id;
+    }
+    return null;
+  }
+  const rows = await db
+    .select({ id: independentSites.id })
+    .from(independentSites)
+    .where(eq(independentSites.slug, normalizedSlug))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 export async function getPublicIndependentSiteBySlug(
   slug: string,
   options?: { allowDraftForOwnerUserId?: number; previewToken?: string | null },

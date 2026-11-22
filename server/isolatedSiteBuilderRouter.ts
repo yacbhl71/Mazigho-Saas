@@ -37,6 +37,7 @@ import {
   listIndependentSiteFormSubmissions,
   recordIndependentSitePageView,
   getIndependentSiteAnalyticsSummary,
+  resolveIndependentSiteIdForAnalytics,
   listIndependentSiteProjects,
   listIndependentSiteProjectsAccessible,
   listIndependentSiteAccess,
@@ -219,9 +220,9 @@ export const isolatedSiteBuilderRouter = router({
     visitorKey: z.string().regex(/^[a-f0-9]{16,64}$/i),
     path: z.string().trim().max(240).default("/"),
   })).mutation(async ({ input }) => {
-    const site = await getPublicIndependentSiteBySlug(input.slug, { allowDraftForOwnerUserId: undefined });
-    if (!site) return { recorded: false } as const;
-    return recordIndependentSitePageView({ siteId: site.id, visitorKey: input.visitorKey, path: input.path });
+    const siteId = await resolveIndependentSiteIdForAnalytics(input.slug);
+    if (!siteId) return { recorded: false } as const;
+    return recordIndependentSitePageView({ siteId, visitorKey: input.visitorKey, path: input.path });
   }),
 
   getAnalyticsSummary: protectedProcedure.input(z.object({ siteId: z.number().int().positive() })).query(async ({ ctx, input }) => {
