@@ -1287,3 +1287,21 @@ export const independentSiteAccessAuditLogs = mysqlTable("independentSiteAccessA
 }));
 export type IndependentSiteAccessAuditLogRow = typeof independentSiteAccessAuditLogs.$inferSelect;
 export type InsertIndependentSiteAccessAuditLogRow = typeof independentSiteAccessAuditLogs.$inferInsert;
+
+export const independentSiteFormSubmissions = mysqlTable("independentSiteFormSubmissions", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  formType: varchar("formType", { length: 64 }).default("contact").notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  phone: varchar("phone", { length: 64 }),
+  message: text("message").notNull(),
+  payloadJson: text("payloadJson"),
+  status: mysqlEnum("status", ["new", "read", "archived"]).default("new").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  readAt: timestamp("readAt"),
+}, (table) => ({
+  siteStatusCreatedIndex: index("independent_site_forms_site_status_created_idx").on(table.siteId, table.status, table.createdAt),
+}));
+export type IndependentSiteFormSubmissionRow = typeof independentSiteFormSubmissions.$inferSelect;
+export type InsertIndependentSiteFormSubmissionRow = typeof independentSiteFormSubmissions.$inferInsert;

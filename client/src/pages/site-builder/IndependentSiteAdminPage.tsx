@@ -73,7 +73,7 @@ import {
   type TrainingModalMode,
 } from "@/components/site-guides/SiteTrainingModal";
 
-type AdminTab = "overview" | "content" | "media" | "theme" | "settings" | "stats" | "versions" | "team";
+type AdminTab = "overview" | "content" | "media" | "messages" | "theme" | "settings" | "stats" | "versions" | "team";
 type PreviewViewport = "desktop" | "tablet" | "mobile";
 
 interface InlineConfirmState {
@@ -159,6 +159,7 @@ export default function IndependentSiteAdminPage() {
 
   // Versions
   const [versionLabelInput, setVersionLabelInput] = useState("");
+  const [messageFilter, setMessageFilter] = useState<"all" | "new" | "read" | "archived">("all");
 
   // Invitations client (Propriétaire uniquement)
   const [inviteEmail, setInviteEmail] = useState("");
@@ -306,6 +307,15 @@ export default function IndependentSiteAdminPage() {
     { siteId: siteId ?? 0 },
     { enabled: Boolean(siteId) && canManageTeam, retry: false, refetchOnWindowFocus: false },
   );
+
+  const formSubmissionsQuery = trpc.independentSiteBuilder.listFormSubmissions.useQuery(
+    { siteId: siteId ?? 0 },
+    { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
+  );
+  const markFormReadMutation = trpc.independentSiteBuilder.markFormSubmissionRead.useMutation({
+    onSuccess: () => void formSubmissionsQuery.refetch(),
+    onError: (error) => toast.error(error.message || "Impossible de marquer ce message comme lu."),
+  });
 
   const project = projectQuery.data ?? null;
   const pages = (project?.pages ?? []) as IndependentSitePage[];
@@ -909,6 +919,15 @@ export default function IndependentSiteAdminPage() {
     });
   }
 
+  function handleExportFormSubmissions() {
+    const rows = formSubmissionsQuery.data ?? [];
+    const csv = [["Date", "Statut", "Type", "Nom", "E-mail", "Téléphone", "Message"], ...rows.map((item) => [item.createdAt, item.status, item.formType, item.name, item.email, item.phone ?? "", item.message])]
+      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = `${currentProject.slug}-messages.csv`; link.click(); URL.revokeObjectURL(url);
+  }
+
   const navItems: Array<{
     id: AdminTab;
     label: string;
@@ -922,6 +941,12 @@ export default function IndependentSiteAdminPage() {
       label: "Images & médias",
       icon: ImagePlus,
       count: (mediaQuery.data?.length ?? 0) || embeddedPageImages.length,
+    },
+    {
+      id: "messages",
+      label: "Messages & formulaires",
+      icon: MailPlus,
+      count: (formSubmissionsQuery.data ?? []).filter((item) => item.status === "new").length,
     },
     { id: "theme", label: "Apparence / thème", icon: Palette },
     { id: "settings", label: "Paramètres & domaine", icon: Settings },
@@ -2137,6 +2162,14 @@ export default function IndependentSiteAdminPage() {
                 </section>
               )}
             </div>
+          )}
+
+          {tab === "messages" && (
+            <section className="space-y-6">
+              <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-slate-200 bg-white p-6"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a2f]">Mini-CRM du site</p><h2 className="mt-1 text-2xl font-bold text-slate-900">Messages & formulaires</h2><p className="mt-2 text-sm text-slate-600">Les demandes reçues sont isolées de MAZIGOSHOP et limitées à ce site.</p></div><Button type="button" variant="outline" onClick={handleExportFormSubmissions} disabled={!formSubmissionsQuery.data?.length}><Copy className="mr-2 h-4 w-4" />Exporter CSV</Button></div>
+              <div className="flex flex-wrap gap-2">{(["all", "new", "read", "archived"] as const).map((filter) => <Button key={filter} type="button" variant={messageFilter === filter ? "default" : "outline"} onClick={() => setMessageFilter(filter)} className={messageFilter === filter ? "bg-[#1e3a2f] text-white" : ""}>{filter === "all" ? "Tous" : filter === "new" ? "Nouveaux" : filter === "read" ? "Lus" : "Archivés"}</Button>)}</div>
+              <div className="space-y-3">{formSubmissionsQuery.isLoading ? <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Chargement des demandes…</div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center"><MailPlus className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-semibold text-slate-800">Aucune demande dans cette vue</p><p className="mt-1 text-sm text-slate-500">Les messages envoyés depuis les formulaires du site apparaîtront ici.</p></div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).map((item) => <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold text-slate-900">{item.name}</h3><p className="mt-1 text-sm text-slate-600"><a className="underline" href={`mailto:${item.email}`}>{item.email}</a>{item.phone ? ` · ${item.phone}` : ""}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{item.status}</span></div><p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{item.message}</p><div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-500"><span>{item.formType} · {formatClientDateTime(item.createdAt)}</span>{item.status === "new" && <Button type="button" size="sm" variant="outline" onClick={() => markFormReadMutation.mutate({ siteId: siteId!, submissionId: item.id })}>Marquer comme lu</Button>}</div></article>)}</div>
+            </section>
           )}
 
           {tab === "theme" && (

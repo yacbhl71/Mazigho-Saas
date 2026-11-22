@@ -8,6 +8,7 @@ import {
   independentSites,
   independentSiteMembers,
   independentSiteAccessAuditLogs,
+  independentSiteFormSubmissions,
   users,
 } from "../drizzle/schema";
 import {
@@ -168,6 +169,21 @@ export interface IndependentSiteAccessDto {
   createdAt: string;
 }
 const memoryMembers = new Map<number, IndependentSiteAccessDto[]>();
+export interface IndependentSiteFormSubmissionDto {
+  id: number;
+  siteId: number;
+  formType: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  message: string;
+  payload: Record<string, unknown>;
+  status: "new" | "read" | "archived";
+  createdAt: string;
+  readAt: string | null;
+}
+const memoryFormSubmissions = new Map<number, IndependentSiteFormSubmissionDto[]>();
+let nextMemoryFormSubmissionId = 12001;
 const memoryAccessAudit: Array<Record<string, unknown>> = [];
 const memoryInvitationTokens = new Map<
   string,
@@ -1752,6 +1768,53 @@ export async function publishIndependentSiteProject(
   const reloaded = await getIndependentSiteProject(ownerUserId, siteId);
   if (!reloaded) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
   return reloaded;
+}
+
+export async function createIndependentSiteFormSubmission(input: {
+  siteId: number;
+  formType?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  message: string;
+  payload?: Record<string, unknown>;
+}) {
+  const now = new Date().toISOString();
+  const item: IndependentSiteFormSubmissionDto = {
+    id: nextMemoryFormSubmissionId++, siteId: input.siteId, formType: input.formType?.trim() || "contact",
+    name: input.name.trim(), email: input.email.trim().toLowerCase(), phone: input.phone?.trim() || null,
+    message: input.message.trim(), payload: input.payload ?? {}, status: "new", createdAt: now, readAt: null,
+  };
+  const db = await getDb();
+  if (!db) {
+    memoryFormSubmissions.set(input.siteId, [item, ...(memoryFormSubmissions.get(input.siteId) ?? [])]);
+    return item;
+  }
+  const [result] = await db.insert(independentSiteFormSubmissions).values({
+    siteId: input.siteId, formType: item.formType, name: item.name, email: item.email, phone: item.phone,
+    message: item.message, payloadJson: JSON.stringify(item.payload), status: item.status,
+  });
+  return { ...item, id: Number(result.insertId) };
+}
+
+export async function listIndependentSiteFormSubmissions(siteId: number, status?: "new" | "read" | "archived") {
+  const db = await getDb();
+  if (!db) return (memoryFormSubmissions.get(siteId) ?? []).filter((item) => !status || item.status === status);
+  const rows = await db.select().from(independentSiteFormSubmissions).where(status ? and(eq(independentSiteFormSubmissions.siteId, siteId), eq(independentSiteFormSubmissions.status, status)) : eq(independentSiteFormSubmissions.siteId, siteId)).orderBy(desc(independentSiteFormSubmissions.createdAt));
+  return rows.map((row) => ({ id: row.id, siteId: row.siteId, formType: row.formType, name: row.name, email: row.email, phone: row.phone, message: row.message, payload: safeJsonParse(row.payloadJson, {}), status: row.status, createdAt: new Date(row.createdAt).toISOString(), readAt: row.readAt ? new Date(row.readAt).toISOString() : null }));
+}
+
+export async function markIndependentSiteFormSubmissionRead(siteId: number, submissionId: number) {
+  const now = new Date();
+  const db = await getDb();
+  if (!db) {
+    const items = memoryFormSubmissions.get(siteId) ?? [];
+    const item = items.find((entry) => entry.id === submissionId);
+    if (!item) throw new Error("INDEPENDENT_FORM_NOT_FOUND");
+    item.status = "read"; item.readAt = now.toISOString(); return item;
+  }
+  await db.update(independentSiteFormSubmissions).set({ status: "read", readAt: now }).where(and(eq(independentSiteFormSubmissions.id, submissionId), eq(independentSiteFormSubmissions.siteId, siteId)));
+  return (await listIndependentSiteFormSubmissions(siteId)).find((item) => item.id === submissionId) ?? null;
 }
 
 // ---------------------------------------------------------------------------

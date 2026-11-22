@@ -19,6 +19,7 @@ import {
   addIndependentSiteMedia,
   createIndependentCollaboratorPreviewShare,
   createIndependentSiteProject,
+  createIndependentSiteFormSubmission,
   createIndependentSiteVersion,
   deleteIndependentSiteMedia,
   duplicateIndependentSiteProject,
@@ -31,6 +32,7 @@ import {
   listIndependentPublicationLogs,
   listIndependentSiteDomains,
   listIndependentSiteMedia,
+  listIndependentSiteFormSubmissions,
   listIndependentSiteProjects,
   listIndependentSiteProjectsAccessible,
   listIndependentSiteAccess,
@@ -44,6 +46,7 @@ import {
   assertIndependentSiteAccess,
   resolveIndependentSiteOwnerUserId,
   listIndependentSiteVersions,
+  markIndependentSiteFormSubmissionRead,
   publishIndependentSiteProject,
   repairKnownIndependentSiteLinks,
   removeIndependentSiteDomain,
@@ -174,6 +177,31 @@ export const isolatedSiteBuilderRouter = router({
       }
       return site;
     }),
+
+  submitForm: publicProcedure.input(z.object({
+    slug: z.string().trim().min(1).max(120),
+    formType: z.string().trim().min(1).max(64).optional(),
+    name: z.string().trim().min(2).max(160),
+    email: z.string().trim().email().max(320),
+    phone: z.string().trim().max(64).optional(),
+    message: z.string().trim().min(1).max(10000),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })).mutation(async ({ input }) => {
+    const site = await getPublicIndependentSiteBySlug(input.slug, { allowDraftForOwnerUserId: undefined });
+    if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site indépendant introuvable." });
+    await createIndependentSiteFormSubmission({ ...input, siteId: site.id });
+    return { success: true };
+  }),
+
+  listFormSubmissions: protectedProcedure.input(z.object({ siteId: z.number().int().positive(), status: z.enum(["new", "read", "archived"]).optional() })).query(async ({ ctx, input }) => {
+    await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+    return listIndependentSiteFormSubmissions(input.siteId, input.status);
+  }),
+
+  markFormSubmissionRead: protectedProcedure.input(z.object({ siteId: z.number().int().positive(), submissionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+    return markIndependentSiteFormSubmissionRead(input.siteId, input.submissionId);
+  }),
 
   listProjects: protectedProcedure
     .input(
