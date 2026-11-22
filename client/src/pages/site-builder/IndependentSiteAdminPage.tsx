@@ -544,7 +544,9 @@ export default function IndependentSiteAdminPage() {
       slug,
       parentPageId: null,
       showInMenu: false,
-      menuOrder: 900,
+      // Les pages légales restent hors menu, mais leur ordre doit respecter
+      // la limite serveur commune à toutes les pages (0..500).
+      menuOrder: 500,
       visibility: "public",
       seoTitle: title,
       seoDescription: `${title} de ${project.title}`,
