@@ -1995,6 +1995,8 @@ export interface IndependentSiteThemeConfig {
 
 export interface IndependentSiteSettingsConfig {
   faviconUrl: string;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
   socialLinks: {
     facebook: string;
     instagram: string;
@@ -2012,6 +2014,8 @@ export interface IndependentSiteSettingsConfig {
 
 export const DEFAULT_SITE_SETTINGS: IndependentSiteSettingsConfig = {
   faviconUrl: "",
+  maintenanceMode: false,
+  maintenanceMessage: "Le site est momentanément en maintenance. Merci de revenir bientôt.",
   socialLinks: { facebook: "", instagram: "", linkedin: "", youtube: "" },
   legal: {
     organizationName: "",

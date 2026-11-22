@@ -1244,17 +1244,22 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
       siteId: site.id,
       settings: {
         faviconUrl: "https://example.com/favicon.png",
+        maintenanceMode: true,
+        maintenanceMessage: "Mise à jour en cours.",
         socialLinks: { instagram: "https://instagram.com/example" },
         legal: { organizationName: "Association Exemple", country: "CH" },
       },
     });
 
     expect(saved.settings.faviconUrl).toBe("https://example.com/favicon.png");
+    expect(saved.settings.maintenanceMode).toBe(true);
+    expect(saved.settings.maintenanceMessage).toBe("Mise à jour en cours.");
     expect(saved.settings.socialLinks.instagram).toBe("https://instagram.com/example");
     expect(saved.settings.socialLinks.facebook).toBe("");
     expect(saved.settings.legal.organizationName).toBe("Association Exemple");
     expect(saved.settings.legal.privacyUrl).toBe("");
     expect((await getIndependentSiteProject(ownerId, otherSite.id))?.settings.faviconUrl).toBe("");
+    expect((await getIndependentSiteProject(ownerId, otherSite.id))?.settings.maintenanceMode).toBe(false);
   });
 
   it("22. Phase 2 — Checklist avant publication (14 points), blocage en cas d’erreur critique, Dépublication, Journal de publication et Collaboration contrôlée en lecture seule", async () => {

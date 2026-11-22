@@ -123,6 +123,8 @@ const themeSchema = z.object({
 
 const siteSettingsSchema = z.object({
   faviconUrl: z.string().max(2048).optional(),
+  maintenanceMode: z.boolean().optional(),
+  maintenanceMessage: z.string().max(240).optional(),
   socialLinks: z.object({
     facebook: z.string().max(2048).optional(),
     instagram: z.string().max(2048).optional(),

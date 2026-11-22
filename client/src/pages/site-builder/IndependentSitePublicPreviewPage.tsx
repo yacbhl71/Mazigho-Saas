@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
+  DEFAULT_SITE_SETTINGS,
   INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_SITE_TEMPLATES,
@@ -103,6 +104,7 @@ export default function IndependentSitePublicPreviewPage() {
         siteType: matchedTemplate.siteType,
         status: "draft" as const,
         theme: matchedTemplate.theme,
+        settings: DEFAULT_SITE_SETTINGS,
         navigation: matchedTemplate.navigation,
         pages: matchedTemplate.pages,
         publishedAt: null,
@@ -247,6 +249,23 @@ export default function IndependentSitePublicPreviewPage() {
             </Button>
           </Link>
         )}
+      </main>
+    );
+  }
+
+  if (!isPreviewRoute && site.settings.maintenanceMode) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#172033] px-6 py-16 text-center text-white">
+        <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-white/10 p-8 shadow-2xl backdrop-blur sm:p-12">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#f5b98f] text-[#172033]">
+            <Globe className="h-8 w-8" />
+          </div>
+          <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-[#f5b98f]">{site.title}</p>
+          <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">Site momentanément indisponible</h1>
+          <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-slate-300">
+            {site.settings.maintenanceMessage}
+          </p>
+        </div>
       </main>
     );
   }

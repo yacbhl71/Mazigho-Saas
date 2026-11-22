@@ -1176,6 +1176,10 @@ function normalizeSiteSettings(
 ): IndependentSiteSettingsConfig {
   return {
     faviconUrl: typeof value?.faviconUrl === "string" ? value.faviconUrl : DEFAULT_SITE_SETTINGS.faviconUrl,
+    maintenanceMode: typeof value?.maintenanceMode === "boolean" ? value.maintenanceMode : DEFAULT_SITE_SETTINGS.maintenanceMode,
+    maintenanceMessage: typeof value?.maintenanceMessage === "string" && value.maintenanceMessage.trim().length > 0
+      ? value.maintenanceMessage.trim().slice(0, 240)
+      : DEFAULT_SITE_SETTINGS.maintenanceMessage,
     socialLinks: {
       ...DEFAULT_SITE_SETTINGS.socialLinks,
       ...(value?.socialLinks ?? {}),
@@ -1321,6 +1325,7 @@ export async function getPublicIndependentSiteBySlug(
   siteType: IndependentSiteType;
   status: IndependentSiteStatus;
   theme: IndependentSiteThemeConfig;
+  settings: IndependentSiteSettingsConfig;
   navigation: IndependentSiteMenuItem[];
   pages: IndependentSitePage[];
   publishedAt: string | null;
@@ -1379,6 +1384,7 @@ export async function getPublicIndependentSiteBySlug(
       siteType: project.publishedSnapshot.siteType,
       status: project.status,
       theme: project.publishedSnapshot.theme,
+      settings: project.settings,
       navigation: publicContent.navigation,
       pages: publicContent.pages,
       publishedAt: project.publishedAt,
@@ -1392,6 +1398,7 @@ export async function getPublicIndependentSiteBySlug(
       siteType: project.siteType,
       status: project.status,
       theme: project.theme,
+      settings: project.settings,
       navigation: project.navigation,
       pages: project.pages,
       publishedAt: project.publishedAt,
@@ -1549,6 +1556,8 @@ export async function saveIndependentSiteProject(
     theme?: IndependentSiteThemeConfig;
     settings?: {
       faviconUrl?: string;
+      maintenanceMode?: boolean;
+      maintenanceMessage?: string;
       socialLinks?: Partial<IndependentSiteSettingsConfig["socialLinks"]>;
       legal?: Partial<IndependentSiteSettingsConfig["legal"]>;
     };
