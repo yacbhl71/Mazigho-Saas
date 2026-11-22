@@ -751,7 +751,7 @@ export default function IndependentSiteAdminPage() {
   );
   const launchChecklist = [
     { label: "Définir le titre du site", done: Boolean(currentProject.title.trim()) },
-    { label: "Remplacer les images provisoires", done: embeddedPageImages.length === 0 || mediaQuery.data?.length === 0 ? false : embeddedPageImages.every((image) => mediaQuery.data?.some((media) => media.url === image.src)) },
+    { label: "Remplacer les images provisoires", done: embeddedPageImages.length === 0 || embeddedPageImages.every((image) => mediaQuery.data?.some((media) => media.url === image.src)) },
     { label: "Vérifier les titres et descriptions SEO", done: pages.length > 0 && pages.every((page) => Boolean(page.seoTitle?.trim()) && Boolean(page.seoDescription?.trim())) },
     { label: "Publier le site", done: currentProject.status === "published" },
   ];
