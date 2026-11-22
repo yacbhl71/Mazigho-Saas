@@ -454,6 +454,15 @@ function Router() {
   const isSaasLandingHost = currentHostname === "pro.mazigho.com" || currentHostname === "pro.mazigho.ch";
   const isPrimaryMazighoHost = currentHostname === "mazigho.ch" || currentHostname === "www.mazigho.ch";
   const isIndependentSitesHost = currentHostname.includes("mazigho-independent-sites");
+  // Client administration must remain reachable from the Studio hostname.
+  // The Studio hostname is an operator front door only for / and /admin;
+  // never let that policy absorb the isolated client routes.
+  const isIndependentClientRoute =
+    path === "/administration-site" ||
+    path === "/connexion-administration" ||
+    path.startsWith("/constructeur-sites/invitation/") ||
+    path.startsWith("/sites/");
+  const isStudioOperatorFrontDoor = isStudioHost && !isIndependentClientRoute;
   const isPublicSaasLanding =
     path === "/mazigho-saas" ||
     path.startsWith("/creation-boutique") ||
@@ -483,13 +492,13 @@ function Router() {
   // The Studio hostname is an operator-only front door. It keeps the main
   // MAZIGHO storefront at its own address while preserving every existing
   // route and authorization guard behind the same deployment.
-  if (isStudioHost && (path === "/" || path === "/admin")) {
+  if (isStudioOperatorFrontDoor && (path === "/" || path === "/admin")) {
     return <Redirect to="/admin/studio" replace />;
   }
-  if (isStudioHost && path === "/admin/sante") {
+  if (isStudioOperatorFrontDoor && path === "/admin/sante") {
     return <Redirect to="/admin/studio/sante" replace />;
   }
-  if (isStudioHost && path.startsWith("/admin") && !path.startsWith("/admin/studio")) {
+  if (isStudioOperatorFrontDoor && path.startsWith("/admin") && !path.startsWith("/admin/studio")) {
     return <Redirect to="/admin/studio" replace />;
   }
   if (isPrimaryMazighoHost && path.startsWith("/admin/studio")) {
