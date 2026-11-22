@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -18,6 +18,7 @@ import {
   type ResponsiveViewportMode,
 } from "@shared/isolatedSiteBuilder";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
@@ -56,6 +57,8 @@ export default function IndependentSitePublicPreviewPage() {
   const [devicePresetId, setDevicePresetId] = useState<ResponsiveDevicePresetId>("desktop");
   const [activePageSlug, setActivePageSlug] = useState<string>(queryParams.pageSlug || "/");
   const [showSeoBanner, setShowSeoBanner] = useState<boolean>(false);
+  const publicContentRef = useRef<HTMLDivElement>(null);
+  const submitFormMutation = trpc.independentSiteBuilder.submitForm.useMutation();
 
   useEffect(() => {
     if (queryParams.pageSlug) {
@@ -117,6 +120,70 @@ export default function IndependentSitePublicPreviewPage() {
     if (!safePages.length) return null;
     return safePages.find((p) => p.slug === activePageSlug) ?? safePages[0];
   }, [safePages, activePageSlug]);
+
+  useEffect(() => {
+    const container = publicContentRef.current;
+    if (!container || isPreviewRoute || !site || !activePage) return;
+
+    const findField = (form: HTMLFormElement, names: string[]) => {
+      for (const name of names) {
+        const field = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+          `[name="${name}"], #${name}`,
+        );
+        if (field?.value.trim()) return field.value.trim();
+      }
+      return "";
+    };
+
+    const handleSubmit = (event: Event) => {
+      const form = event.target instanceof HTMLFormElement ? event.target : null;
+      if (!form) return;
+      event.preventDefault();
+
+      const name = findField(form, ["name", "nom", "fullName", "fullname"]);
+      const email = findField(form, ["email", "e-mail", "courriel"]);
+      const phone = findField(form, ["phone", "telephone", "tel"]);
+      const message = findField(form, ["message", "comment", "comments", "demande"]);
+      const honeypot = findField(form, ["website", "company", "organisation"]);
+
+      if (!name || !email || !message) {
+        toast.error("Veuillez renseigner votre nom, votre e-mail et votre message.");
+        return;
+      }
+
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Array.from(new FormData(form).entries())) {
+        if (typeof value === "string" && value.trim() && !["password", "website", "company"].includes(key)) {
+          payload[key] = value.trim();
+        }
+      }
+
+      submitFormMutation.mutate(
+        {
+          slug: site.slug,
+          formType: form.dataset.formType || form.getAttribute("aria-label") || "contact",
+          name,
+          email,
+          phone: phone || undefined,
+          message,
+          payload,
+          honeypot: honeypot || undefined,
+        },
+        {
+          onSuccess: () => {
+            form.reset();
+            toast.success("Votre message a bien été envoyé.", {
+              description: "Nous reviendrons vers vous dès que possible.",
+            });
+          },
+          onError: (error) => toast.error(error.message || "Impossible d’envoyer le formulaire."),
+        },
+      );
+    };
+
+    container.addEventListener("submit", handleSubmit);
+    return () => container.removeEventListener("submit", handleSubmit);
+  }, [activePage, isPreviewRoute, site, submitFormMutation]);
 
   const currentPreset =
     RESPONSIVE_DEVICE_PRESETS.find((preset) => preset.id === devicePresetId) ??
@@ -450,6 +517,7 @@ export default function IndependentSitePublicPreviewPage() {
             {sanitizeIndependentCss(activePage.css)}
           </style>
           <div
+            ref={publicContentRef}
             onClick={(e) => {
               const anchor = (e.target as HTMLElement).closest("a");
               if (!anchor) return;

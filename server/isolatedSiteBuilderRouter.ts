@@ -14,6 +14,7 @@ import {
   RESPONSIVE_VIEWPORTS,
 } from "../shared/isolatedSiteBuilder";
 import { platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { consumeIndependentFormRateLimit } from "./independentFormRateLimit";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
@@ -186,10 +187,27 @@ export const isolatedSiteBuilderRouter = router({
     phone: z.string().trim().max(64).optional(),
     message: z.string().trim().min(1).max(10000),
     payload: z.record(z.string(), z.unknown()).optional(),
-  })).mutation(async ({ input }) => {
+    honeypot: z.string().max(200).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    // Les champs honeypot sont remplis par les robots mais restent invisibles
+    // pour un visiteur normal. Répondre avec succès sans stocker leur contenu.
+    if (input.honeypot?.trim()) return { success: true };
     const site = await getPublicIndependentSiteBySlug(input.slug, { allowDraftForOwnerUserId: undefined });
     if (!site) throw new TRPCError({ code: "NOT_FOUND", message: "Site indépendant introuvable." });
-    await createIndependentSiteFormSubmission({ ...input, siteId: site.id });
+    const requestIp =
+      String(ctx.req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+      ctx.req.ip ||
+      ctx.req.socket.remoteAddress ||
+      "unknown";
+    const rateLimit = consumeIndependentFormRateLimit(`site:${site.id}:ip:${requestIp}`);
+    if (!rateLimit.allowed) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `Trop de demandes rapprochées. Réessayez dans ${rateLimit.retryAfterSeconds} secondes.`,
+      });
+    }
+    const { honeypot: _honeypot, ...submission } = input;
+    await createIndependentSiteFormSubmission({ ...submission, siteId: site.id });
     return { success: true };
   }),
 
