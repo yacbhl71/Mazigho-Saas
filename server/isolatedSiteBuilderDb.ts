@@ -42,7 +42,8 @@ import {
   type IndependentSiteType,
   type RepairedInternalLinkChange,
 } from "../shared/isolatedSiteBuilder";
-import { getDb } from "./db";
+import { createPasswordUser, deleteIndependentShadowUser, getDb } from "./db";
+import { hashPassword } from "./localAuth";
 import {
   getPublicUrl,
   isTransactionalEmailConfigured,
@@ -590,6 +591,60 @@ export async function inviteIndependentSiteAccess(
     return { ...result, invitationDelivery: "failed" as const };
   }
 }
+
+/** Crée immédiatement un accès indépendant depuis le panneau owner. */
+export async function createIndependentSiteAccess(
+  actorUserId: number,
+  input: { siteId: number; email: string; name: string; password: string; role?: "admin" | "editor" },
+) {
+  await assertIndependentSiteAccess(actorUserId, input.siteId, "owner");
+  const email = normalizeAccessEmail(input.email);
+  const role = input.role ?? "editor";
+  const openId = `independent_${randomBytes(16).toString("hex")}`;
+  const user = await createPasswordUser({
+    openId,
+    email,
+    name: input.name.trim(),
+    passwordHash: await hashPassword(input.password),
+  });
+  if (!user) throw new Error("INDEPENDENT_ACCESS_USER_CREATE_FAILED");
+  try {
+    const db = await getDb();
+    if (!db) {
+      const site = memorySites.get(input.siteId);
+      if (!site) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+      const members = ensureMemoryOwner(site);
+      const existing = members.find((member) => member.email === email);
+      const member: IndependentSiteAccessDto = {
+        id: existing?.id ?? Math.floor(Math.random() * 1e6), siteId: input.siteId,
+        userId: user.id, email, role, status: "active", invitationExpiresAt: null,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+      };
+      if (existing) Object.assign(existing, member); else members.push(member);
+      await logIndependentSiteAccessAction(actorUserId, input.siteId, "create_access", { userId: user.id, email }, { role });
+      return member;
+    }
+    const existing = await db.select().from(independentSiteMembers).where(
+      and(eq(independentSiteMembers.siteId, input.siteId), eq(independentSiteMembers.email, email)),
+    ).limit(1);
+    if (existing[0]) {
+      await db.update(independentSiteMembers).set({
+        userId: user.id, role, status: "active", invitationTokenHash: null,
+        invitationExpiresAt: null, invitationUsedAt: new Date(),
+      }).where(eq(independentSiteMembers.id, existing[0].id));
+    } else {
+      await db.insert(independentSiteMembers).values({
+        siteId: input.siteId, userId: user.id, email, role, status: "active", invitationUsedAt: new Date(),
+      });
+    }
+    await logIndependentSiteAccessAction(actorUserId, input.siteId, "create_access", { userId: user.id, email }, { role });
+    return (await listIndependentSiteAccess(actorUserId, input.siteId)).find((member) => member.email === email) ?? null;
+  } catch (error) {
+    await deleteIndependentShadowUser(openId);
+    throw error;
+  }
+}
+
 export async function revokeIndependentSiteAccess(
   actorUserId: number,
   siteId: number,

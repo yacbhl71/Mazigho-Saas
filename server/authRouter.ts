@@ -12,6 +12,7 @@ import {
   createPasswordUser,
   deleteIndependentShadowUser,
   getUserByEmail,
+  getIndependentUserByEmail,
   getUserByOpenId,
   getFirstActiveOwnerStoreForUser,
   getOwnerStoreSwitcherOptionsForUser,
@@ -362,13 +363,15 @@ export const authRouter = router({
     }),
 
   login: publicProcedure
-    .input(z.object({ email: emailSchema, password: currentPasswordSchema }))
+    .input(z.object({ email: emailSchema, password: currentPasswordSchema, independent: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.toLowerCase();
       // Administrators follow the same rules as everyone: stored password + rate limit.
       enforceAuthRateLimit("login", ctx.req, email);
 
-      let user = await getUserByEmail(email);
+      let user = input.independent
+        ? await getIndependentUserByEmail(email)
+        : await getUserByEmail(email);
 
       let passwordMatches = false;
       if (user?.passwordHash) {

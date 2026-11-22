@@ -7552,6 +7552,22 @@ export async function getUserByEmail(email: string) {
   }
 }
 
+/** Résout uniquement une identité shadow indépendante, jamais le compte global. */
+export async function getIndependentUserByEmail(email: string) {
+  await ensurePasswordHashColumn();
+  await ensureAccountStatusColumn();
+  const db = await getDb();
+  if (!db) return null;
+  const normalisedEmail = email.trim().toLowerCase();
+  const result = await db
+    .select()
+    .from(users)
+    .where(sql`LOWER(${users.email}) = ${normalisedEmail} AND ${users.openId} LIKE 'independent_%'`)
+    .orderBy(desc(users.id))
+    .limit(1);
+  return result[0] ?? null;
+}
+
 type AccountTokenPurpose = "account_invitation" | "password_reset";
 
 function normaliseEmail(email: string): string {

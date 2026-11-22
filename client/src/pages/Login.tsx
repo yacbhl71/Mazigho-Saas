@@ -130,7 +130,7 @@ export default function Login() {
     }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); login.mutate({ email, password }); };
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); login.mutate({ email, password, independent: independentSiteIntent }); };
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip bg-[#f8fafc]">

@@ -19,6 +19,7 @@ import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
   createIndependentCollaboratorPreviewShare,
+  createIndependentSiteAccess,
   createIndependentSiteProject,
   createIndependentSiteFormSubmission,
   createIndependentSiteVersion,
@@ -606,6 +607,15 @@ export const isolatedSiteBuilderRouter = router({
     .mutation(({ ctx, input }) =>
       inviteIndependentSiteAccess(ctx.user.id, input),
     ),
+  createAccess: protectedProcedure
+    .input(z.object({
+      siteId: z.number().int().positive(),
+      email: z.string().email(),
+      name: z.string().trim().min(2).max(120),
+      password: z.string().min(8).max(128),
+      role: z.enum(["admin", "editor"]).optional(),
+    }))
+    .mutation(({ ctx, input }) => createIndependentSiteAccess(ctx.user.id, input)),
   revokeAccess: protectedProcedure
     .input(
       z.object({

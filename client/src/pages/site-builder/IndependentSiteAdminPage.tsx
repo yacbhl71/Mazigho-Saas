@@ -165,6 +165,10 @@ export default function IndependentSiteAdminPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "editor">("editor");
   const [inviteExpiresHours, setInviteExpiresHours] = useState<number>(72);
+  const [directAccessEmail, setDirectAccessEmail] = useState("");
+  const [directAccessName, setDirectAccessName] = useState("");
+  const [directAccessPassword, setDirectAccessPassword] = useState("");
+  const [directAccessRole, setDirectAccessRole] = useState<"admin" | "editor">("editor");
   const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
   const [transferTargetEmail, setTransferTargetEmail] = useState("");
   const [transferConfirmationTitle, setTransferConfirmationTitle] = useState("");
@@ -595,6 +599,22 @@ export default function IndependentSiteAdminPage() {
     },
     onError: (err) => {
       const msg = err.message || "Impossible de créer cette invitation.";
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+
+  const createAccessMutation = trpc.independentSiteBuilder.createAccess.useMutation({
+    onSuccess: async () => {
+      if (siteId) await utils.independentSiteBuilder.listAccess.invalidate({ siteId });
+      setDirectAccessEmail("");
+      setDirectAccessName("");
+      setDirectAccessPassword("");
+      setFeedbackBanner({ tone: "success", message: "Accès indépendant créé. Communiquez les identifiants de manière privée." });
+      toast.success("Accès indépendant créé.");
+    },
+    onError: (err) => {
+      const msg = err.message || "Impossible de créer cet accès indépendant.";
       setFeedbackBanner({ tone: "error", message: msg });
       toast.error(msg);
     },
@@ -2433,6 +2453,35 @@ export default function IndependentSiteAdminPage() {
                   </div>
                 ) : (
                   <div className="mt-5 space-y-6">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!siteId || !directAccessEmail.trim() || !directAccessName.trim() || !directAccessPassword) return;
+                        createAccessMutation.mutate({
+                          siteId,
+                          email: directAccessEmail.trim(),
+                          name: directAccessName.trim(),
+                          password: directAccessPassword,
+                          role: directAccessRole,
+                        });
+                      }}
+                      className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-5"
+                    >
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Créer directement un accès de test</h3>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-700">
+                          Option réservée au Propriétaire : aucun e-mail n’est envoyé. L’identité créée reste indépendante du compte global MAZIGHO et limitée à ce site.
+                        </p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1.5"><Label htmlFor="direct-access-name">Nom</Label><Input id="direct-access-name" required value={directAccessName} onChange={(e) => setDirectAccessName(e.target.value)} className="min-h-[44px] bg-white" /></div>
+                        <div className="space-y-1.5"><Label htmlFor="direct-access-email">Adresse e-mail</Label><Input id="direct-access-email" type="email" required value={directAccessEmail} onChange={(e) => setDirectAccessEmail(e.target.value)} placeholder="responsable@association.org" className="min-h-[44px] bg-white" /></div>
+                        <div className="space-y-1.5"><Label htmlFor="direct-access-password">Mot de passe provisoire</Label><Input id="direct-access-password" type="password" minLength={8} required value={directAccessPassword} onChange={(e) => setDirectAccessPassword(e.target.value)} className="min-h-[44px] bg-white" /></div>
+                        <div className="space-y-1.5"><Label htmlFor="direct-access-role">Rôle</Label><select id="direct-access-role" value={directAccessRole} onChange={(e) => setDirectAccessRole(e.target.value as "admin" | "editor")} className="min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="editor">Éditeur</option><option value="admin">Administrateur</option></select></div>
+                      </div>
+                      <Button type="submit" disabled={createAccessMutation.isPending} className="min-h-[44px] bg-[#1e3a2f] text-white hover:bg-[#162b23]"><Lock className="mr-2 h-4 w-4" />{createAccessMutation.isPending ? "Création de l’accès…" : "Créer l’accès immédiatement"}</Button>
+                    </form>
+
                     {/* Formulaire d'invitation client avec explications avant envoi */}
                     <form
                       onSubmit={(e) => {
