@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   AlertTriangle,
+  Archive,
   BookOpen,
   Check,
   CheckCircle2,
@@ -25,6 +26,9 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  RotateCw,
+  Mail,
+  ExternalLink,
   RotateCcw,
   Save,
   Settings,
@@ -320,9 +324,36 @@ export default function IndependentSiteAdminPage() {
     { siteId: siteId ?? 0 },
     { enabled: Boolean(siteId), retry: false, refetchOnWindowFocus: false },
   );
+
+  useEffect(() => {
+    if (tab === "stats" && siteId) {
+      void analyticsQuery.refetch();
+    }
+  }, [tab, siteId]);
+
   const markFormReadMutation = trpc.independentSiteBuilder.markFormSubmissionRead.useMutation({
-    onSuccess: () => void formSubmissionsQuery.refetch(),
+    onSuccess: () => {
+      void formSubmissionsQuery.refetch();
+      void analyticsQuery.refetch();
+      toast.success("Message marqué comme lu.");
+    },
     onError: (error) => toast.error(error.message || "Impossible de marquer ce message comme lu."),
+  });
+
+  const updateFormStatusMutation = trpc.independentSiteBuilder.updateFormSubmissionStatus.useMutation({
+    onSuccess: (updated) => {
+      void formSubmissionsQuery.refetch();
+      void analyticsQuery.refetch();
+      if (updated.status === "archived") {
+        toast.success("Message archivé.");
+      } else if (updated.status === "read") {
+        toast.success("Message marqué comme lu.");
+      } else {
+        toast.success("Message restauré.");
+      }
+    },
+    onError: (error) =>
+      toast.error(error.message || "Impossible de mettre à jour le statut de ce message."),
   });
 
   const project = projectQuery.data ?? null;
@@ -947,7 +978,8 @@ export default function IndependentSiteAdminPage() {
     const rows = formSubmissionsQuery.data ?? [];
     const csv = [["Date", "Statut", "Type", "Nom", "E-mail", "Téléphone", "Message"], ...rows.map((item) => [item.createdAt, item.status, item.formType, item.name, item.email, item.phone ?? "", item.message])]
       .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    toast.success("Messages exportés en CSV avec succès.");
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a"); link.href = url; link.download = `${currentProject.slug}-messages.csv`; link.click(); URL.revokeObjectURL(url);
   }
@@ -1000,7 +1032,7 @@ export default function IndependentSiteAdminPage() {
         <div className="mx-auto flex max-w-[1360px] flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-600">
-              <span className="font-semibold text-[#1e3a2f]">Administration du site</span>
+              <span className="font-semibold text-[#1e3a2f]">Espace de gestion · {currentProject.title}</span>
               <span aria-hidden="true">·</span>
               <span>Rôle : {roleInfo.shortLabel}</span>
               <span aria-hidden="true">·</span>
@@ -1420,6 +1452,24 @@ export default function IndependentSiteAdminPage() {
                     <Button
                       type="button"
                       variant="outline"
+                      onClick={() => setTab("messages")}
+                      className="min-h-[44px] px-4 text-sm"
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      Boîte de réception
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setTab("stats")}
+                      className="min-h-[44px] px-4 text-sm"
+                    >
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      Statistiques
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
                       onClick={() => setPreviewOpen(true)}
                       className="min-h-[44px] px-4 text-sm"
                     >
@@ -1476,6 +1526,59 @@ export default function IndependentSiteAdminPage() {
                     )}
                   </div>
                 </div>
+              </section>
+
+              {/* Derniers messages reçus (aperçu rapide de la boîte de réception isolée) */}
+              <section className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">Derniers messages reçus</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {(formSubmissionsQuery.data ?? []).filter((item) => item.status === "new").length > 0
+                        ? `${(formSubmissionsQuery.data ?? []).filter((item) => item.status === "new").length} nouveau(x) message(s) en attente de réponse.`
+                        : "Toutes les demandes reçues via les formulaires de votre site sont centralisées ici."}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setTab("messages")}
+                    className="min-h-[40px] border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                  >
+                    <Mail className="mr-1.5 h-3.5 w-3.5 text-[#1e3a2f]" />
+                    Voir tous les messages
+                  </Button>
+                </div>
+
+                {(formSubmissionsQuery.data ?? []).length === 0 ? (
+                  <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+                    Aucun message reçu pour le moment. Les demandes envoyées depuis votre site apparaîtront ici.
+                  </p>
+                ) : (
+                  <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
+                    {(formSubmissionsQuery.data ?? []).slice(0, 3).map((item) => (
+                      <li key={item.id} className="flex flex-wrap items-start justify-between gap-3 py-3.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-slate-900">{item.name}</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="truncate text-xs text-slate-600">{item.email}</span>
+                            {item.status === "new" && (
+                              <>
+                                <span aria-hidden="true" className="text-slate-300">·</span>
+                                <span className="text-xs font-semibold text-emerald-700">Nouveau</span>
+                              </>
+                            )}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.message}</p>
+                        </div>
+                        <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                          {formatClientDateTime(item.createdAt)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               {/* Séparation claire des espaces (Administrer / Modifier / Construire) */}
@@ -2192,7 +2295,111 @@ export default function IndependentSiteAdminPage() {
             <section className="space-y-6">
               <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-slate-200 bg-white p-6"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a2f]">Mini-CRM du site</p><h2 className="mt-1 text-2xl font-bold text-slate-900">Messages & formulaires</h2><p className="mt-2 text-sm text-slate-600">Les demandes reçues sont isolées de MAZIGOSHOP et limitées à ce site.</p></div><Button type="button" variant="outline" onClick={handleExportFormSubmissions} disabled={!formSubmissionsQuery.data?.length}><Copy className="mr-2 h-4 w-4" />Exporter CSV</Button></div>
               <div className="flex flex-wrap gap-2">{(["all", "new", "read", "archived"] as const).map((filter) => <Button key={filter} type="button" variant={messageFilter === filter ? "default" : "outline"} onClick={() => setMessageFilter(filter)} className={messageFilter === filter ? "bg-[#1e3a2f] text-white" : ""}>{filter === "all" ? "Tous" : filter === "new" ? "Nouveaux" : filter === "read" ? "Lus" : "Archivés"}</Button>)}</div>
-              <div className="space-y-3">{formSubmissionsQuery.isLoading ? <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Chargement des demandes…</div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center"><MailPlus className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-semibold text-slate-800">Aucune demande dans cette vue</p><p className="mt-1 text-sm text-slate-500">Les messages envoyés depuis les formulaires du site apparaîtront ici.</p></div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).map((item) => <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold text-slate-900">{item.name}</h3><p className="mt-1 text-sm text-slate-600"><a className="underline" href={`mailto:${item.email}`}>{item.email}</a>{item.phone ? ` · ${item.phone}` : ""}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{item.status}</span></div><p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{item.message}</p><div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-500"><span>{item.formType} · {formatClientDateTime(item.createdAt)}</span>{item.status === "new" && <Button type="button" size="sm" variant="outline" onClick={() => markFormReadMutation.mutate({ siteId: siteId!, submissionId: item.id })}>Marquer comme lu</Button>}</div></article>)}</div>
+              <div className="space-y-3">{formSubmissionsQuery.isLoading ? <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Chargement des demandes…</div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center"><MailPlus className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-semibold text-slate-800">Aucune demande dans cette vue</p><p className="mt-1 text-sm text-slate-500">Les messages envoyés depuis les formulaires du site apparaîtront ici.</p></div> : (formSubmissionsQuery.data ?? []).filter((item) => messageFilter === "all" || item.status === messageFilter).map((item) => {
+                const statusText =
+                  item.status === "new"
+                    ? "Nouveau"
+                    : item.status === "archived"
+                      ? "Archivé"
+                      : "Lu";
+                const statusColor =
+                  item.status === "new"
+                    ? "text-emerald-800"
+                    : item.status === "archived"
+                      ? "text-amber-800"
+                      : "text-slate-600";
+                return (
+                  <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-slate-900">{item.name}</h3>
+                        <p className="mt-1 text-sm text-slate-600">
+                          <a className="underline" href={`mailto:${item.email}`}>{item.email}</a>
+                          {item.phone ? ` · ${item.phone}` : ""}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-semibold ${statusColor}`}>
+                        {statusText}
+                      </span>
+                    </div>
+                    <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{item.message}</p>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                      <span className="tabular-nums">{item.formType} · {formatClientDateTime(item.createdAt)}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          className="min-h-[34px] border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <a
+                            href={`mailto:${encodeURIComponent(item.email)}?subject=${encodeURIComponent(`Re: ${currentProject.title} — Votre message`)}&body=${encodeURIComponent(`Bonjour ${item.name},\n\nNous faisons suite à votre message envoyé via le site ${currentProject.title} :\n\n> ${item.message}\n\n`)}`}
+                          >
+                            <Mail className="mr-1.5 h-3.5 w-3.5 text-[#1e3a2f]" />
+                            Répondre par e-mail
+                          </a>
+                        </Button>
+                        {item.status === "new" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={updateFormStatusMutation.isPending || markFormReadMutation.isPending}
+                            onClick={() =>
+                              updateFormStatusMutation.mutate({
+                                siteId: siteId!,
+                                submissionId: item.id,
+                                status: "read",
+                              })
+                            }
+                            className="min-h-[34px] border-emerald-300 text-xs font-medium text-emerald-800 hover:bg-emerald-50"
+                          >
+                            <Check className="mr-1.5 h-3.5 w-3.5" />
+                            Marquer comme lu
+                          </Button>
+                        )}
+                        {item.status !== "archived" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={updateFormStatusMutation.isPending}
+                            onClick={() =>
+                              updateFormStatusMutation.mutate({
+                                siteId: siteId!,
+                                submissionId: item.id,
+                                status: "archived",
+                              })
+                            }
+                            className="min-h-[34px] border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <Archive className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+                            Archiver
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={updateFormStatusMutation.isPending}
+                            onClick={() =>
+                              updateFormStatusMutation.mutate({
+                                siteId: siteId!,
+                                submissionId: item.id,
+                                status: "read",
+                              })
+                            }
+                            className="min-h-[34px] border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+                            Restaurer
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}</div>
             </section>
           )}
 
@@ -2219,9 +2426,132 @@ export default function IndependentSiteAdminPage() {
             <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><h2 className="text-xl font-bold text-slate-900">Paramètres & domaine</h2><p className="mt-2 text-sm text-slate-600">Gérez les informations durables du site, son adresse publique et les futures options légales.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Adresse actuelle</p>{currentProject.status === "published" ? <a className="mt-2 inline-flex items-center gap-2 break-all text-sm font-semibold text-[#1e3a2f] underline" href={`/sites/${currentProject.slug}`} target="_blank" rel="noreferrer"><Globe className="h-4 w-4 shrink-0" />/sites/{currentProject.slug}</a> : <p className="mt-2 text-sm text-slate-700">Le site sera accessible après publication.</p>}</div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">Identité du site</p><Button type="button" variant="outline" className="mt-2" onClick={() => setTab("overview")}>Modifier le titre dans l’accueil</Button></div></div><p className="mt-4 text-xs text-slate-500">La connexion de domaines personnalisés, le favicon, les réseaux sociaux et les mentions légales sont planifiés ici ; aucune modification de DNS n’est exécutée depuis cet espace.</p></div></section>
           )}
 
-          {tab === "stats" && (
-            <section className="space-y-6"><div className="rounded-xl border border-slate-200 bg-white p-6"><div className="flex items-start gap-3"><BarChart3 className="mt-1 h-5 w-5 text-[#1e3a2f]" /><div><h2 className="text-xl font-bold text-slate-900">Statistiques</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">Mesure privée et limitée à ce site : aucune adresse IP, aucun compte visiteur et aucun cookie publicitaire.</p></div></div><div className="mt-6 grid gap-4 sm:grid-cols-3"><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Visiteurs — 30 jours</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.visitors ?? 0}</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Pages vues</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.pageViews ?? 0}</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500">Formulaires reçus</p><p className="mt-2 text-2xl font-bold text-slate-900">{analyticsQuery.isLoading ? "…" : analyticsQuery.data?.formsReceived ?? 0}</p></div></div></div><div className="rounded-xl border border-slate-200 bg-white p-6"><h3 className="font-bold text-slate-900">Pages les plus consultées</h3>{!analyticsQuery.data?.popularPages.length ? <p className="mt-3 text-sm text-slate-500">Aucune visite enregistrée pour le moment.</p> : <ul className="mt-3 space-y-2">{analyticsQuery.data.popularPages.map((page) => <li key={page.path} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="break-all text-slate-700">{page.path}</span><strong className="text-slate-900">{page.views} vues</strong></li>)}</ul>}</div></section>
-          )}
+          {tab === "stats" && (() => {
+            const dailyViews = analyticsQuery.data?.dailyViews ?? [];
+            const maxDailyViews = Math.max(1, ...dailyViews.map((entry) => entry.views));
+            return (
+              <section className="space-y-6">
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <BarChart3 className="mt-1 h-5 w-5 text-[#1e3a2f]" />
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900">Statistiques de fréquentation</h2>
+                        <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                          Mesure privée et anonymisée limitée à ce site : aucune adresse IP, aucun compte visiteur et aucun cookie publicitaire.
+                        </p>
+                        {analyticsQuery.data?.lastRecordedAt && (
+                          <p className="mt-1.5 text-xs tabular-nums text-slate-500">
+                            Dernière visite enregistrée : {formatClientDateTime(analyticsQuery.data.lastRecordedAt)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={analyticsQuery.isFetching}
+                      onClick={() => analyticsQuery.refetch()}
+                      className="min-h-[40px] border-slate-300 bg-white px-3.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#1e3a2f]"
+                    >
+                      <RotateCw className={`mr-1.5 h-3.5 w-3.5 ${analyticsQuery.isFetching ? "animate-spin text-[#1e3a2f]" : "text-slate-500"}`} />
+                      {analyticsQuery.isFetching ? "Actualisation…" : "Actualiser les données"}
+                    </Button>
+                  </div>
+                  <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <p className="font-medium text-slate-600">Visiteurs uniques</p>
+                        <span className="font-semibold text-emerald-800">30 jours</span>
+                      </div>
+                      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+                        {analyticsQuery.isLoading ? "…" : analyticsQuery.data?.visitors ?? 0}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Visiteurs distincts ayant consulté votre site</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <p className="font-medium text-slate-600">Pages vues</p>
+                        <span className="font-semibold text-slate-700">Cumul</span>
+                      </div>
+                      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+                        {analyticsQuery.isLoading ? "…" : analyticsQuery.data?.pageViews ?? 0}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Nombre total d’affichages de pages</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <p className="font-medium text-slate-600">Formulaires reçus</p>
+                        <span className="font-semibold text-[#1e3a2f]">Messages</span>
+                      </div>
+                      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+                        {analyticsQuery.isLoading ? "…" : analyticsQuery.data?.formsReceived ?? 0}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Demandes soumises via vos formulaires</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Évolution sur 7 jours glissants */}
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Tendance des 7 derniers jours</h3>
+                      <p className="mt-0.5 text-xs text-slate-500">Pages vues par jour (UTC, anonymisées)</p>
+                    </div>
+                    <span className="text-xs font-semibold tabular-nums text-slate-600">
+                      Total 7 jours : {dailyViews.reduce((acc, entry) => acc + entry.views, 0)} vue(s)
+                    </span>
+                  </div>
+                  {dailyViews.length === 0 ? (
+                    <p className="mt-4 text-sm text-slate-500">Aucune donnée journalière disponible pour le moment.</p>
+                  ) : (
+                    <div className="mt-5 grid grid-cols-7 items-end gap-2 sm:gap-3" role="list" aria-label="Pages vues des 7 derniers jours">
+                      {dailyViews.map((entry) => {
+                        const heightPct = entry.views > 0 ? Math.max(14, Math.round((entry.views / maxDailyViews) * 100)) : 4;
+                        return (
+                          <div key={entry.date} role="listitem" className="flex flex-col items-center gap-1.5">
+                            <span className="text-xs font-semibold tabular-nums text-slate-700">
+                              {entry.views}
+                            </span>
+                            <div className="flex h-28 w-full items-end rounded-lg bg-slate-100 p-1">
+                              <div
+                                className={`w-full rounded-md transition-all ${
+                                  entry.views > 0 ? "bg-[#1e3a2f]" : "bg-slate-200"
+                                }`}
+                                style={{ height: `${heightPct}%` }}
+                                title={`${entry.date} : ${entry.views} vue(s)`}
+                              />
+                            </div>
+                            <span className="text-[11px] font-medium text-slate-600">{entry.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <h3 className="font-bold text-slate-900">Pages les plus consultées</h3>
+                  {!analyticsQuery.data?.popularPages.length ? (
+                    <p className="mt-3 text-sm text-slate-500">Aucune visite enregistrée pour le moment. Les premières consultations apparaîtront ici.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {analyticsQuery.data.popularPages.map((page) => (
+                        <li key={page.path} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/70 bg-slate-50 px-3.5 py-2.5 text-sm">
+                          <span className="font-mono text-xs text-slate-700">{page.path}</span>
+                          <strong className="text-xs font-bold tabular-nums text-slate-900">
+                            {page.views} {page.views > 1 ? "vues" : "vue"}
+                          </strong>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
 
           {/* ONGLET 4 : HISTORIQUE & VERSIONS */}
           {tab === "versions" && (

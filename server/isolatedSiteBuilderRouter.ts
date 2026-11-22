@@ -36,6 +36,7 @@ import {
   listIndependentSiteMedia,
   listIndependentSiteFormSubmissions,
   recordIndependentSitePageView,
+  resolveIndependentSiteIdForAnalytics,
   getIndependentSiteAnalyticsSummary,
   listIndependentSiteProjects,
   listIndependentSiteProjectsAccessible,
@@ -51,6 +52,7 @@ import {
   resolveIndependentSiteOwnerUserId,
   listIndependentSiteVersions,
   markIndependentSiteFormSubmissionRead,
+  updateIndependentSiteFormSubmissionStatus,
   publishIndependentSiteProject,
   repairKnownIndependentSiteLinks,
   removeIndependentSiteDomain,
@@ -219,9 +221,9 @@ export const isolatedSiteBuilderRouter = router({
     visitorKey: z.string().regex(/^[a-f0-9]{16,64}$/i),
     path: z.string().trim().max(240).default("/"),
   })).mutation(async ({ input }) => {
-    const site = await getPublicIndependentSiteBySlug(input.slug, { allowDraftForOwnerUserId: undefined });
-    if (!site) return { recorded: false } as const;
-    return recordIndependentSitePageView({ siteId: site.id, visitorKey: input.visitorKey, path: input.path });
+    const siteId = await resolveIndependentSiteIdForAnalytics(input.slug);
+    if (!siteId) return { recorded: false } as const;
+    return recordIndependentSitePageView({ siteId, visitorKey: input.visitorKey, path: input.path });
   }),
 
   getAnalyticsSummary: protectedProcedure.input(z.object({ siteId: z.number().int().positive() })).query(async ({ ctx, input }) => {
@@ -237,6 +239,15 @@ export const isolatedSiteBuilderRouter = router({
   markFormSubmissionRead: protectedProcedure.input(z.object({ siteId: z.number().int().positive(), submissionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
     return markIndependentSiteFormSubmissionRead(input.siteId, input.submissionId);
+  }),
+
+  updateFormSubmissionStatus: protectedProcedure.input(z.object({
+    siteId: z.number().int().positive(),
+    submissionId: z.number().int().positive(),
+    status: z.enum(["new", "read", "archived"]),
+  })).mutation(async ({ ctx, input }) => {
+    await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+    return updateIndependentSiteFormSubmissionStatus(input.siteId, input.submissionId, input.status);
   }),
 
   listProjects: protectedProcedure

@@ -1862,16 +1862,56 @@ export async function listIndependentSiteFormSubmissions(siteId: number, status?
 }
 
 export async function markIndependentSiteFormSubmissionRead(siteId: number, submissionId: number) {
+  return updateIndependentSiteFormSubmissionStatus(siteId, submissionId, "read");
+}
+
+export async function updateIndependentSiteFormSubmissionStatus(
+  siteId: number,
+  submissionId: number,
+  status: "new" | "read" | "archived",
+) {
   const now = new Date();
+  const readAt = status === "new" ? null : now;
   const db = await getDb();
   if (!db) {
     const items = memoryFormSubmissions.get(siteId) ?? [];
     const item = items.find((entry) => entry.id === submissionId);
     if (!item) throw new Error("INDEPENDENT_FORM_NOT_FOUND");
-    item.status = "read"; item.readAt = now.toISOString(); return item;
+    item.status = status;
+    item.readAt = readAt ? readAt.toISOString() : null;
+    return item;
   }
-  await db.update(independentSiteFormSubmissions).set({ status: "read", readAt: now }).where(and(eq(independentSiteFormSubmissions.id, submissionId), eq(independentSiteFormSubmissions.siteId, siteId)));
-  return (await listIndependentSiteFormSubmissions(siteId)).find((item) => item.id === submissionId) ?? null;
+  await db
+    .update(independentSiteFormSubmissions)
+    .set({ status, readAt })
+    .where(
+      and(
+        eq(independentSiteFormSubmissions.id, submissionId),
+        eq(independentSiteFormSubmissions.siteId, siteId),
+      ),
+    );
+  const updated = (await listIndependentSiteFormSubmissions(siteId)).find(
+    (item) => item.id === submissionId,
+  );
+  if (!updated) throw new Error("INDEPENDENT_FORM_NOT_FOUND");
+  return updated;
+}
+
+export async function resolveIndependentSiteIdForAnalytics(slug: string): Promise<number | null> {
+  const normalized = slugifyIndependentSite(slug);
+  const db = await getDb();
+  if (!db) {
+    for (const site of Array.from(memorySites.values())) {
+      if (site.slug === normalized) return site.id;
+    }
+    return null;
+  }
+  const rows = await db
+    .select({ id: independentSites.id })
+    .from(independentSites)
+    .where(eq(independentSites.slug, normalized))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 export async function recordIndependentSitePageView(input: { siteId: number; visitorKey: string; path: string }) {
@@ -1890,7 +1930,8 @@ export async function recordIndependentSitePageView(input: { siteId: number; vis
 }
 
 export async function getIndependentSiteAnalyticsSummary(siteId: number) {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const db = await getDb();
   const events = db
     ? await db.select().from(independentSiteAnalyticsEvents).where(and(eq(independentSiteAnalyticsEvents.siteId, siteId), gt(independentSiteAnalyticsEvents.createdAt, since)))
@@ -1898,10 +1939,48 @@ export async function getIndependentSiteAnalyticsSummary(siteId: number) {
   const pageViews = events.filter((event) => !("eventType" in event) || event.eventType === "page_view");
   const visitors = new Set(pageViews.map((event) => event.visitorKey)).size;
   const byPath = new Map<string, number>();
-  for (const event of pageViews) byPath.set(event.path, (byPath.get(event.path) ?? 0) + 1);
+  let latestTimestamp = 0;
+
+  // Build 7-day rolling daily views buckets (chronological order)
+  const dayCounts = new Map<string, number>();
+  const dayOrder: Array<{ date: string; label: string }> = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - offset));
+    const dateKey = d.toISOString().slice(0, 10);
+    const label = d.toLocaleDateString("fr-CH", { weekday: "short", day: "numeric", timeZone: "UTC" });
+    dayOrder.push({ date: dateKey, label });
+    dayCounts.set(dateKey, 0);
+  }
+
+  for (const event of pageViews) {
+    byPath.set(event.path, (byPath.get(event.path) ?? 0) + 1);
+    const createdDate = new Date(event.createdAt);
+    const ts = createdDate.getTime();
+    if (!Number.isNaN(ts)) {
+      if (ts > latestTimestamp) latestTimestamp = ts;
+      const dateKey = createdDate.toISOString().slice(0, 10);
+      if (dayCounts.has(dateKey)) {
+        dayCounts.set(dateKey, (dayCounts.get(dateKey) ?? 0) + 1);
+      }
+    }
+  }
+
+  const dailyViews = dayOrder.map(({ date, label }) => ({
+    date,
+    label,
+    views: dayCounts.get(date) ?? 0,
+  }));
   const popularPages = Array.from(byPath.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([path, views]) => ({ path, views }));
   const submissions = await listIndependentSiteFormSubmissions(siteId);
-  return { visitors, pageViews: pageViews.length, popularPages, formsReceived: submissions.filter((item) => new Date(item.createdAt) > since).length, since: since.toISOString() };
+  return {
+    visitors,
+    pageViews: pageViews.length,
+    popularPages,
+    dailyViews,
+    lastRecordedAt: latestTimestamp > 0 ? new Date(latestTimestamp).toISOString() : null,
+    formsReceived: submissions.filter((item) => new Date(item.createdAt) > since).length,
+    since: since.toISOString(),
+  };
 }
 
 // ---------------------------------------------------------------------------

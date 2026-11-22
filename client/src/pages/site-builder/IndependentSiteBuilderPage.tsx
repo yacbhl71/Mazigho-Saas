@@ -96,6 +96,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Columns2,
   Copy,
   Eye,
   EyeOff,
@@ -136,6 +137,7 @@ import {
   SiteTrainingModal,
   type TrainingModalMode,
 } from "@/components/site-guides/SiteTrainingModal";
+import { buildClientPreviewSrcDoc } from "./clientAdminHelpers";
 
 interface LayerSummaryItem {
   id: string;
@@ -308,9 +310,10 @@ export default function IndependentSiteBuilderPage() {
   // Panneau de droite : Réglages & SEO | Publication & Domaine | Versions & Historique
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTabId>("seo");
 
-  // Responsive : 3 modes principaux + 5 tailles d'écran précises
+  // Responsive : 3 modes principaux + 5 tailles d'écran précises + double écran simultané
   const [viewport, setViewport] = useState<ResponsiveViewportMode>("desktop");
   const [devicePresetId, setDevicePresetId] = useState<ResponsiveDevicePresetId>("desktop");
+  const [sideBySidePreview, setSideBySidePreview] = useState(false);
 
   // Bandeaux d'état, erreurs, confirmations inline & suivi des modifications non enregistrées
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
@@ -1914,6 +1917,7 @@ export default function IndependentSiteBuilderPage() {
   }
 
   function handleSelectViewportMode(mode: ResponsiveViewportMode) {
+    setSideBySidePreview(false);
     setViewport(mode);
     if (mode === "desktop") setDevicePresetId("desktop");
     else if (mode === "tablet") setDevicePresetId("tablet-portrait");
@@ -1921,12 +1925,30 @@ export default function IndependentSiteBuilderPage() {
   }
 
   function handleSelectDevicePreset(presetId: ResponsiveDevicePresetId) {
+    setSideBySidePreview(false);
     setDevicePresetId(presetId);
     const found = RESPONSIVE_DEVICE_PRESETS.find((p) => p.id === presetId);
     if (found) {
       setViewport(found.viewportMode);
     }
   }
+
+  function handleToggleSideBySidePreview() {
+    if (!sideBySidePreview) {
+      syncCurrentEditorToPageState();
+    }
+    setSideBySidePreview((prev) => !prev);
+  }
+
+  const sideBySideSrcDoc = useMemo(() => {
+    if (!sideBySidePreview || !activePage) return "";
+    return buildClientPreviewSrcDoc({
+      pageTitle: activePage.title || "Page",
+      siteTitle: siteTitle || "Aperçu",
+      html: activePage.html || "",
+      css: activePage.css || "",
+    });
+  }, [activePage, sideBySidePreview, siteTitle]);
 
   const currentDevicePreset =
     RESPONSIVE_DEVICE_PRESETS.find((p) => p.id === devicePresetId) ?? RESPONSIVE_DEVICE_PRESETS[0];
@@ -2149,9 +2171,9 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("desktop")}
-                aria-pressed={viewport === "desktop"}
+                aria-pressed={!sideBySidePreview && viewport === "desktop"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
-                  viewport === "desktop"
+                  !sideBySidePreview && viewport === "desktop"
                     ? "bg-[#172033] text-white shadow-2xs"
                     : "text-slate-700 hover:bg-slate-200/70"
                 }`}
@@ -2162,9 +2184,9 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("tablet")}
-                aria-pressed={viewport === "tablet"}
+                aria-pressed={!sideBySidePreview && viewport === "tablet"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
-                  viewport === "tablet"
+                  !sideBySidePreview && viewport === "tablet"
                     ? "bg-[#172033] text-white shadow-2xs"
                     : "text-slate-700 hover:bg-slate-200/70"
                 }`}
@@ -2175,15 +2197,29 @@ export default function IndependentSiteBuilderPage() {
               <button
                 type="button"
                 onClick={() => handleSelectViewportMode("mobile")}
-                aria-pressed={viewport === "mobile"}
+                aria-pressed={!sideBySidePreview && viewport === "mobile"}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
-                  viewport === "mobile"
+                  !sideBySidePreview && viewport === "mobile"
                     ? "bg-[#172033] text-white shadow-2xs"
                     : "text-slate-700 hover:bg-slate-200/70"
                 }`}
               >
                 <Smartphone className="h-3.5 w-3.5" />
                 Mobile
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleSideBySidePreview}
+                aria-pressed={sideBySidePreview}
+                title="Comparer simultanément le rendu Ordinateur et Mobile"
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
+                  sideBySidePreview
+                    ? "bg-[#9b563e] text-white shadow-2xs"
+                    : "text-slate-700 hover:bg-slate-200/70"
+                }`}
+              >
+                <Columns2 className="h-3.5 w-3.5" />
+                Côte à côte
               </button>
             </div>
 
@@ -4795,9 +4831,80 @@ export default function IndependentSiteBuilderPage() {
               </CardHeader>
 
               <CardContent className="bg-[#efebe4] p-3 md:p-4">
+                {sideBySidePreview && (
+                  <div className="space-y-3" data-testid="side-by-side-preview">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#dfd6ca] bg-white px-4 py-2.5 text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-[#172033]">
+                        <Columns2 className="h-4 w-4 text-[#9b563e]" />
+                        <span>Comparaison simultanée · Ordinateur + Mobile ({activePage?.title || "Page"})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => syncCurrentEditorToPageState()}
+                          className="h-8 border-[#e2dad0] text-xs"
+                        >
+                          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                          Actualiser
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setSideBySidePreview(false)}
+                          className="h-8 bg-[#172033] text-xs text-white hover:bg-[#24324d]"
+                        >
+                          Revenir à l’éditeur
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_395px]">
+                      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3.5 py-2 text-xs text-slate-600">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                            <Laptop className="h-3.5 w-3.5 text-[#172033]" />
+                            Ordinateur
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500">1280 px</span>
+                        </div>
+                        <iframe
+                          title="Aperçu simultané ordinateur"
+                          srcDoc={sideBySideSrcDoc}
+                          sandbox="allow-same-origin"
+                          className="h-[660px] w-full bg-white"
+                        />
+                      </div>
+
+                      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3.5 py-2 text-xs text-slate-600">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                            <Smartphone className="h-3.5 w-3.5 text-[#9b563e]" />
+                            Mobile
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500">375 px</span>
+                        </div>
+                        <div className="flex flex-1 justify-center bg-slate-100/80 p-2.5">
+                          <iframe
+                            title="Aperçu simultané mobile"
+                            srcDoc={sideBySideSrcDoc}
+                            sandbox="allow-same-origin"
+                            className="h-[640px] w-[375px] max-w-full rounded-lg border border-slate-300 bg-white shadow-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div
                   ref={canvasHostRef}
-                  className="w-full overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md"
+                  className={
+                    sideBySidePreview
+                      ? "hidden"
+                      : "w-full overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md"
+                  }
                 >
                   <GjsEditor
                     grapesjs={grapesjs}

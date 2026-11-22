@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Activity, ArrowRight, CheckCircle2, CircleAlert, ClipboardCheck, Database, Download, Gauge, Globe2, Loader2, LockKeyhole, RefreshCw, Rocket, Send, ShieldCheck, Store, Workflow, Wrench } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, CircleAlert, ClipboardCheck, Command, Database, Download, Gauge, Globe2, Loader2, LockKeyhole, RefreshCw, Rocket, Search, Send, ShieldCheck, Store, Workflow, Wrench, X } from "lucide-react";
 import { getSaasPlanEntitlements } from "@shared/saasEntitlements";
 import { saasPlanFeatureCatalog } from "@shared/saasPlanCatalog";
 import { toast } from "sonner";
@@ -30,8 +30,14 @@ function statusLabel(status: string) {
 }
 
 export default function AdminStudioControlCenter() {
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+  const [portfolioFilter, setPortfolioFilter] = useState<"all" | "attention" | "ready">("all");
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [commandActiveIndex, setCommandActiveIndex] = useState(0);
+  const commandInputRef = useRef<HTMLInputElement | null>(null);
   const inventory = trpc.admin.studio.getInventory.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 100 }, { refetchOnWindowFocus: false });
   const billing = trpc.admin.studio.getSaasBillingDashboard.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 100 }, { refetchOnWindowFocus: false });
   const production = trpc.admin.studio.getProductionBoard.useQuery({ query: search.trim() || undefined, page: 1, pageSize: 50 }, { refetchOnWindowFocus: false });
@@ -43,10 +49,29 @@ export default function AdminStudioControlCenter() {
   });
   const stores = inventory.data?.stores ?? [];
   const billingStores = billing.data?.stores ?? [];
-  const selectedId = selectedStoreId ?? stores.find(store => !store.isPlatformStore)?.id ?? stores[0]?.id;
+  const productionStores = production.data?.stores ?? [];
+  const readyStoreIds = useMemo(
+    () => new Set(productionStores.filter(item => item.stage === "ready").map(item => item.id)),
+    [productionStores],
+  );
+  const clientStores = useMemo(
+    () => stores.filter(store => !store.isPlatformStore),
+    [stores],
+  );
+  const filteredClientStores = useMemo(() => {
+    if (portfolioFilter === "attention") {
+      return clientStores.filter(store => Boolean(store.needsAttention));
+    }
+    if (portfolioFilter === "ready") {
+      return clientStores.filter(store => readyStoreIds.has(store.id));
+    }
+    return clientStores;
+  }, [clientStores, portfolioFilter, readyStoreIds]);
+
+  const selectedId = selectedStoreId ?? filteredClientStores[0]?.id ?? clientStores[0]?.id ?? stores[0]?.id;
   const selectedStore = stores.find(store => store.id === selectedId);
   const selectedBilling = billingStores.find(store => store.id === selectedId);
-  const selectedProduction = production.data?.stores?.find(store => store.id === selectedId);
+  const selectedProduction = productionStores.find(store => store.id === selectedId);
   const selectedDomain = domainRegistry.data?.stores?.find(store => store.id === selectedId);
   const integrationStatus = trpc.admin.studio.getStoreIntegrationOperationalStatus.useQuery({ storeId: selectedId || 0 }, { enabled: Boolean(selectedId), refetchOnWindowFocus: false });
   const validation = trpc.admin.studio.getClientValidation.useQuery({ storeId: selectedId || 0 }, { enabled: Boolean(selectedId), refetchOnWindowFocus: false });
@@ -71,12 +96,252 @@ export default function AdminStudioControlCenter() {
   const refreshAll = () => { void inventory.refetch(); void billing.refetch(); void production.refetch(); void domainRegistry.refetch(); void integrationStatus.refetch(); void health.refetch(); void validation.refetch(); void history.refetch(); };
   const loading = inventory.isLoading || billing.isLoading || production.isLoading || health.isLoading;
 
+  const commandItems = useMemo(() => {
+    const navigationItems = [
+      { id: "nav-studio", group: "Navigation", label: "Studio MAZIGHO", detail: "Vue générale des boutiques et actions", action: () => setLocation("/admin/studio") },
+      { id: "nav-builder", group: "Navigation", label: "Constructeur de sites indépendants", detail: "Sites vitrines, associations & familles sans e-commerce", action: () => setLocation("/constructeur-sites") },
+      { id: "nav-orders", group: "Navigation", label: "Commandes", detail: "Suivi des commandes et expéditions", action: () => setLocation("/admin/orders") },
+      { id: "nav-products", group: "Navigation", label: "Catalogue produits", detail: "Gestion des fiches produits et stocks", action: () => setLocation("/admin/products") },
+      { id: "nav-production", group: "Navigation", label: "File de production", detail: "Étapes de préparation et livraisons", action: () => setLocation("/admin/studio/production") },
+      { id: "nav-domains", group: "Navigation", label: "Registre des domaines", detail: "DNS, rattachements et sous-domaines", action: () => setLocation("/admin/studio/domaines") },
+      { id: "nav-health", group: "Navigation", label: "Santé système", detail: "Base de données, e-mails et version déployée", action: () => setLocation("/admin/studio/sante") },
+      { id: "nav-audit", group: "Navigation", label: "Journal d’audit", detail: "Historique complet des actions opérateur", action: () => setLocation("/admin/audit") },
+    ];
+    const storeItems = clientStores.map(store => ({
+      id: `store-${store.id}`,
+      group: "Boutiques",
+      label: store.displayName,
+      detail: `${store.primaryDomain || "Sans domaine"} · ${statusLabel(store.status)}`,
+      action: () => {
+        setSelectedStoreId(store.id);
+        setPortfolioFilter("all");
+        toast.info(`Boutique sélectionnée : ${store.displayName}`);
+      },
+    }));
+    const all = [...storeItems, ...navigationItems];
+    const q = commandQuery.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(item =>
+      item.label.toLowerCase().includes(q) ||
+      item.detail.toLowerCase().includes(q) ||
+      item.group.toLowerCase().includes(q),
+    );
+  }, [clientStores, commandQuery, setLocation]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(open => !open);
+      } else if (event.key === "Escape" && commandOpen) {
+        event.preventDefault();
+        setCommandOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [commandOpen]);
+
+  useEffect(() => {
+    if (!commandOpen) {
+      setCommandQuery("");
+      setCommandActiveIndex(0);
+      return;
+    }
+    const timer = window.setTimeout(() => commandInputRef.current?.focus(), 20);
+    return () => window.clearTimeout(timer);
+  }, [commandOpen]);
+
+  useEffect(() => {
+    setCommandActiveIndex(0);
+  }, [commandQuery]);
+
+  const executeCommandItem = (index: number) => {
+    const item = commandItems[index];
+    if (!item) return;
+    setCommandOpen(false);
+    item.action();
+  };
+
   return <DashboardLayout><main className="min-h-full bg-[#f7f8fb]" data-testid="studio-control-center"><div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 md:px-8 md:py-8">
-    <header className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl md:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-white/10 text-sky-200 hover:bg-white/10"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Executive Studio</Badge><Badge className="border-0 bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/15">Console opérateur</Badge></div><h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">Centre de contrôle MAZIGHO</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Une vue unique pour attribuer les capacités, préparer la livraison d’une boutique et vérifier l’état réel de la plateforme.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={refreshAll} className="min-h-11 border-white/20 bg-white/5 text-white hover:bg-white/10" disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Actualiser</Button><Link href="/admin/studio"><Button type="button" className="min-h-11 bg-white text-slate-950 hover:bg-slate-100">Ouvrir le Studio <ArrowRight className="ml-2 h-4 w-4" /></Button></Link></div></div></header>
+    <header className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl md:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className="border-0 bg-white/10 text-sky-200 hover:bg-white/10"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Executive Studio</Badge><Badge className="border-0 bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/15">Console opérateur</Badge></div><h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">Centre de contrôle MAZIGHO</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Une vue unique pour attribuer les capacités, préparer la livraison d’une boutique et vérifier l’état réel de la plateforme.</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setCommandOpen(true)} className="min-h-11 border-white/20 bg-white/5 text-white hover:bg-white/10" aria-label="Ouvrir la palette de commandes (Cmd+K ou Ctrl+K)"><Command className="mr-2 h-4 w-4" /> Navigation rapide <kbd className="ml-2 rounded border border-white/25 bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">⌘K</kbd></Button><Button type="button" variant="outline" onClick={refreshAll} className="min-h-11 border-white/20 bg-white/5 text-white hover:bg-white/10" disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Actualiser</Button><Link href="/admin/studio"><Button type="button" className="min-h-11 bg-white text-slate-950 hover:bg-slate-100">Ouvrir le Studio <ArrowRight className="ml-2 h-4 w-4" /></Button></Link></div></div></header>
 
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Store} label="Boutiques SaaS" value={billingStores.length || stores.filter(store => !store.isPlatformStore).length} detail={`${inventory.data?.summary?.clientStoresWithStockAttention ?? 0} point(s) à traiter`} tone="violet" /><Metric icon={Rocket} label="Prêtes à livrer" value={production.data?.summary?.readyForHandover ?? 0} detail={`${production.data?.summary?.handedOver ?? 0} déjà transmise(s)`} tone="emerald" /><Metric icon={Gauge} label="Plans attribués" value={billingStores.filter(store => store.planAssignment).length} detail="Droits calculés par boutique" tone="sky" /><Metric icon={Activity} label="Base de données" value={health.data?.database.ok ? "OK" : "À vérifier"} detail={health.data?.database.responseMs != null ? `${health.data.database.responseMs} ms` : "Contrôle en cours"} tone={health.data?.database.ok ? "emerald" : "amber"} /></section>
+    {/* PALETTE DE COMMANDES RAPIDES (Cmd+K / Ctrl+K) */}
+    {commandOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/55 px-4 pt-20 backdrop-blur-xs"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation rapide MAZIGHO Studio"
+        onClick={() => setCommandOpen(false)}
+      >
+        <div
+          className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <input
+              ref={commandInputRef}
+              type="text"
+              value={commandQuery}
+              onChange={event => setCommandQuery(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setCommandActiveIndex(prev => (commandItems.length ? (prev + 1) % commandItems.length : 0));
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setCommandActiveIndex(prev => (commandItems.length ? (prev - 1 + commandItems.length) % commandItems.length : 0));
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  executeCommandItem(commandActiveIndex);
+                }
+              }}
+              placeholder="Rechercher une boutique, un domaine ou un module Studio…"
+              className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setCommandOpen(false)}
+              aria-label="Fermer la palette de commandes"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="max-h-80 overflow-y-auto p-2">
+            {commandItems.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-slate-500">
+                Aucun résultat pour « {commandQuery} ».
+              </p>
+            ) : (
+              commandItems.map((item, index) => {
+                const active = index === commandActiveIndex;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onMouseEnter={() => setCommandActiveIndex(index)}
+                    onClick={() => executeCommandItem(index)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                      active ? "bg-slate-900 text-white" : "text-slate-800 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{item.label}</p>
+                      <p className={`truncate text-xs ${active ? "text-slate-300" : "text-slate-500"}`}>
+                        {item.group} · {item.detail}
+                      </p>
+                    </div>
+                    <ArrowRight className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-slate-400"}`} />
+                  </button>
+                );
+              })
+            )}
+          </div>
+          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+            <span>↑↓ pour naviguer · Entrée pour ouvrir</span>
+            <span>Échap pour fermer</span>
+          </div>
+        </div>
+      </div>
+    )}
 
-    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]"><Card className="overflow-hidden border-slate-200 shadow-sm"><CardHeader className="border-b border-slate-100 bg-white"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><CardTitle className="flex items-center gap-2 text-xl"><Store className="h-5 w-5 text-violet-700" /> Portefeuille et droits par boutique</CardTitle><CardDescription>Sélectionnez une boutique pour inspecter ses capacités, quotas et prochaines actions.</CardDescription></div><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Rechercher un nom ou domaine…" className="min-h-11 max-w-sm" /></div></CardHeader><CardContent className="p-0"><div className="divide-y divide-slate-100">{stores.filter(store => !store.isPlatformStore).map(store => { const plan = billingStores.find(item => item.id === store.id)?.planAssignment; const isSelected = store.id === selectedId; return <button key={store.id} type="button" onClick={() => setSelectedStoreId(store.id)} className={`flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50 ${isSelected ? "bg-violet-50/60" : "bg-white"}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="truncate font-semibold text-slate-950">{store.displayName}</span><Badge variant="outline" className={statusTone(store.status)}>{statusLabel(store.status)}</Badge></div><p className="mt-1 truncate text-xs text-slate-500">{store.primaryDomain} · {plan?.planName || "Plan non attribué"}</p></div><div className="flex shrink-0 items-center gap-3 text-right"><div><p className="text-sm font-semibold text-slate-900">{store.activeProductCount ?? 0} produits</p><p className="text-xs text-slate-500">{store.needsAttention ? "Attention requise" : "Suivi normal"}</p></div><ArrowRight className="h-4 w-4 text-slate-400" /></div></button> })}{stores.filter(store => !store.isPlatformStore).length === 0 && <div className="p-10 text-center text-sm text-slate-500">Aucune boutique SaaS ne correspond à cette recherche.</div>}</div></CardContent></Card>
+    {/* MORNING PULSE — SYNTHÈSE EXÉCUTIVE DU MATIN */}
+    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">
+            Morning Pulse · Priorités exécutives
+          </h2>
+          <p className="text-xs text-slate-500">
+            Cliquez sur une priorité pour filtrer instantanément le portefeuille ci-dessous.
+          </p>
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setPortfolioFilter("all")}
+            className={`rounded-md px-2.5 py-1 transition ${portfolioFilter === "all" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            Toutes ({clientStores.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setPortfolioFilter("attention")}
+            className={`rounded-md px-2.5 py-1 transition ${portfolioFilter === "attention" ? "bg-amber-700 text-white" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            À surveiller
+          </button>
+          <button
+            type="button"
+            onClick={() => setPortfolioFilter("ready")}
+            className={`rounded-md px-2.5 py-1 transition ${portfolioFilter === "ready" ? "bg-emerald-700 text-white" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            Prêtes à livrer
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => setPortfolioFilter(current => (current === "attention" ? "all" : "attention"))}
+          className={`rounded-xl border p-3.5 text-left transition ${
+            portfolioFilter === "attention"
+              ? "border-amber-400 bg-amber-50/70 shadow-xs"
+              : "border-slate-100 bg-slate-50/80 hover:border-slate-300"
+          }`}
+        >
+          <p className="text-xs font-medium text-slate-600">Boutiques à surveiller</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+            {inventory.data?.summary?.clientStoresWithStockAttention ?? 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {inventory.data?.summary?.clientStoresWithStockAttention ? "Stocks faibles ou attention requise" : "Tous les stocks sont au vert"}
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPortfolioFilter(current => (current === "ready" ? "all" : "ready"))}
+          className={`rounded-xl border p-3.5 text-left transition ${
+            portfolioFilter === "ready"
+              ? "border-emerald-400 bg-emerald-50/70 shadow-xs"
+              : "border-slate-100 bg-slate-50/80 hover:border-slate-300"
+          }`}
+        >
+          <p className="text-xs font-medium text-slate-600">Livraisons imminentes</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
+            {production.data?.summary?.readyForHandover ?? 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Boutique(s) prête(s) pour remise au propriétaire
+          </p>
+        </button>
+        <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5">
+          <p className="text-xs font-medium text-slate-600">Santé de la base</p>
+          <p className={`mt-1 text-2xl font-bold tabular-nums ${health.data?.database.ok ? "text-emerald-700" : "text-amber-700"}`}>
+            {health.data?.database.ok ? "Connectée" : "À vérifier"}
+          </p>
+          <p className="mt-1 text-xs tabular-nums text-slate-500">
+            Temps de réponse : {health.data?.database.responseMs ?? "—"} ms
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5">
+          <p className="text-xs font-medium text-slate-600">Messagerie &amp; services</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">
+            {health.data?.email.configured ? "Brevo actif" : "Mode local"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Version déployée : {health.data?.site.commitShort || "locale"}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Store} label="Boutiques SaaS" value={billingStores.length || clientStores.length} detail={`${inventory.data?.summary?.clientStoresWithStockAttention ?? 0} point(s) à traiter`} tone="violet" /><Metric icon={Rocket} label="Prêtes à livrer" value={production.data?.summary?.readyForHandover ?? 0} detail={`${production.data?.summary?.handedOver ?? 0} déjà transmise(s)`} tone="emerald" /><Metric icon={Gauge} label="Plans attribués" value={billingStores.filter(store => store.planAssignment).length} detail="Droits calculés par boutique" tone="sky" /><Metric icon={Activity} label="Base de données" value={health.data?.database.ok ? "OK" : "À vérifier"} detail={health.data?.database.responseMs != null ? `${health.data.database.responseMs} ms` : "Contrôle en cours"} tone={health.data?.database.ok ? "emerald" : "amber"} /></section>
+
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]"><Card className="overflow-hidden border-slate-200 shadow-sm"><CardHeader className="border-b border-slate-100 bg-white"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><CardTitle className="flex items-center gap-2 text-xl"><Store className="h-5 w-5 text-violet-700" /> Portefeuille et droits par boutique</CardTitle><CardDescription>Sélectionnez une boutique pour inspecter ses capacités, quotas et prochaines actions.{portfolioFilter !== "all" ? ` · Filtre actif : ${portfolioFilter === "attention" ? "À surveiller" : "Prêtes à livrer"}` : ""}</CardDescription></div><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Rechercher un nom ou domaine…" className="min-h-11 max-w-sm" /></div></CardHeader><CardContent className="p-0"><div className="divide-y divide-slate-100">{filteredClientStores.map(store => { const plan = billingStores.find(item => item.id === store.id)?.planAssignment; const isSelected = store.id === selectedId; return <button key={store.id} type="button" onClick={() => setSelectedStoreId(store.id)} className={`flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50 ${isSelected ? "bg-violet-50/60" : "bg-white"}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="truncate font-semibold text-slate-950">{store.displayName}</span><Badge variant="outline" className={statusTone(store.status)}>{statusLabel(store.status)}</Badge></div><p className="mt-1 truncate text-xs text-slate-500">{store.primaryDomain} · {plan?.planName || "Plan non attribué"}</p></div><div className="flex shrink-0 items-center gap-3 text-right"><div><p className="text-sm font-semibold tabular-nums text-slate-900">{store.activeProductCount ?? 0} produits</p><p className="text-xs text-slate-500">{store.needsAttention ? "Attention requise" : "Suivi normal"}</p></div><ArrowRight className="h-4 w-4 text-slate-400" /></div></button> })}{filteredClientStores.length === 0 && <div className="p-10 text-center text-sm text-slate-500">Aucune boutique SaaS ne correspond à ce filtre.</div>}</div></CardContent></Card>
 
       <Card className="border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 shadow-sm"><CardHeader><CardDescription>Boutique sélectionnée</CardDescription><CardTitle className="text-2xl text-slate-950">{selectedStore?.displayName || "Aucune boutique"}</CardTitle><p className="truncate text-sm text-slate-500">{selectedStore?.primaryDomain || "—"}</p></CardHeader><CardContent className="space-y-5"><div className="rounded-2xl border border-violet-200 bg-white/80 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700">Droits effectifs</p><p className="mt-1 text-xl font-bold text-slate-950">{selectedBilling?.planAssignment?.planName || "Non attribué"}</p><p className="mt-1 text-xs text-slate-500">{selectedBilling?.planAssignment ? `Attribué le ${formatDate(selectedBilling.planAssignment.assignedAt)}` : "Aucune attribution officielle"}</p></div><Badge variant="outline" className={selectedBilling?.planAssignment ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}>{selectedBilling?.planAssignment ? "Attribué" : "Action requise"}</Badge></div><div className="mt-4 grid gap-2 sm:grid-cols-2"><div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3"><p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Activées</p><p className="mt-1 text-lg font-bold text-emerald-950">{assignedFeatureIds.length}</p><p className="text-xs text-emerald-900">capacités sur {saasPlanFeatureCatalog.length}</p></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-700">Verrouillées</p><p className="mt-1 text-lg font-bold text-slate-950">{Math.max(0, saasPlanFeatureCatalog.length - assignedFeatureIds.length)}</p><p className="text-xs text-slate-600">non incluses dans l’attribution</p></div></div><div className="mt-4 max-h-64 space-y-2 overflow-auto pr-1">{saasPlanFeatureCatalog.map(feature => { const enabled = assignedFeatureIds.includes(feature.id); return <div key={feature.id} className={`flex items-start gap-2 rounded-lg border p-2.5 ${enabled ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200 bg-slate-50/70"}`}><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold ${enabled ? "bg-emerald-600 text-white" : "bg-slate-300 text-slate-700"}`}>{enabled ? "✓" : "–"}</span><div className="min-w-0"><p className="text-xs font-semibold text-slate-900">{feature.title}</p><p className="text-[11px] leading-4 text-slate-500">{feature.description}</p></div><Badge variant="outline" className={`ml-auto shrink-0 text-[10px] ${enabled ? "border-emerald-200 bg-white text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>{enabled ? "Activée" : "Verrouillée"}</Badge></div>; })}</div>{selectedBilling?.quotaOverride && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong>Dérogation opérateur active.</strong> Les quotas effectifs remplacent temporairement ceux du plan. Dernière modification : {formatDate(quotaOverrideUpdatedAt)}.</div>}<Link href={`/admin/studio/facturation?store=${selectedStore?.id || ""}#studio-plan-assignment`} className="mt-4 inline-flex w-full items-center justify-center rounded-xl border border-violet-300 bg-white px-4 py-3 text-sm font-semibold text-violet-900 hover:bg-violet-50">Activer, verrouiller ou déroger aux capacités <ArrowRight className="ml-2 h-4 w-4" /></Link></div><div className="space-y-3">{usageRows.map(row => <div key={row.label}><div className="flex items-center justify-between text-sm"><span className="text-slate-600">{row.label}</span><strong className="text-slate-950">{row.used} / {row.limit == null ? "∞" : row.limit}</strong></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-violet-600" style={{ width: `${row.limit == null ? Math.min(100, row.used > 0 ? 18 : 3) : Math.min(100, Math.round((row.used / Math.max(1, row.limit)) * 100))}%` }} /></div></div>)}</div><Link href={`/admin/studio/facturation?store=${selectedStore?.id || ""}`} className="inline-flex w-full items-center justify-center rounded-xl border border-violet-300 bg-white px-4 py-3 text-sm font-semibold text-violet-900 hover:bg-violet-50">Gérer le plan et les quotas <ArrowRight className="ml-2 h-4 w-4" /></Link></CardContent></Card></section>
 
