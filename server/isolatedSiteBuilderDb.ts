@@ -210,7 +210,11 @@ export async function resolveIndependentSiteAccess(
     const member = ensureMemoryOwner(site).find(
       (m) => m.userId === userId && m.status === "active",
     );
-    return owner ? ensureMemoryOwner(site)[0] : (member ?? null);
+    return owner
+      ? (ensureMemoryOwner(site).find(
+          (m) => m.userId === site.ownerUserId && m.role === "owner",
+        ) ?? null)
+      : (member ?? null);
   }
   const sites = await db
     .select({ ownerUserId: independentSites.ownerUserId })
@@ -637,6 +641,151 @@ export async function updateIndependentSiteAccessRole(
     userId: memberId,
   });
   return { memberId, role };
+}
+export async function transferIndependentSiteOwnership(
+  actorUserId: number,
+  siteId: number,
+  targetEmail: string,
+  confirmationSiteTitle: string,
+) {
+  const currentAccess = await assertIndependentSiteAccess(
+    actorUserId,
+    siteId,
+    "owner",
+  );
+  const normalizedEmail = normalizeAccessEmail(targetEmail);
+  if (!normalizedEmail || confirmationSiteTitle.trim().length === 0)
+    throw new Error("INDEPENDENT_SITE_TRANSFER_CONFIRMATION_REQUIRED");
+  const db = await getDb();
+  if (!db) {
+    const site = memorySites.get(siteId);
+    if (!site) throw new Error("INDEPENDENT_SITE_NOT_FOUND");
+    if (confirmationSiteTitle.trim() !== site.title)
+      throw new Error("INDEPENDENT_SITE_TRANSFER_CONFIRMATION_MISMATCH");
+    const members = ensureMemoryOwner(site);
+    const target = members.find(
+      (member) =>
+        member.email === normalizedEmail &&
+        member.userId !== null &&
+        member.status === "active",
+    );
+    if (!target?.userId)
+      throw new Error("INDEPENDENT_SITE_TRANSFER_TARGET_NOT_ACTIVE");
+    if (target.userId === actorUserId)
+      throw new Error("INDEPENDENT_SITE_TRANSFER_TARGET_IS_CURRENT_OWNER");
+    const previousOwner = site.ownerUserId;
+    const previousOwnerMember = members.find(
+      (member) => member.userId === previousOwner,
+    );
+    site.ownerUserId = target.userId;
+    target.role = "owner";
+    target.status = "active";
+    if (previousOwnerMember && previousOwnerMember.id !== target.id) {
+      previousOwnerMember.role = "admin";
+      previousOwnerMember.status = "active";
+    } else {
+      members.push({
+        id: previousOwner,
+        siteId,
+        userId: previousOwner,
+        email: currentAccess.email || `owner-${previousOwner}@local.invalid`,
+        role: "admin",
+        status: "active",
+        invitationExpiresAt: null,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    await logIndependentSiteAccessAction(actorUserId, siteId, "ownership_transfer", {
+      userId: target.userId,
+      email: normalizedEmail,
+    }, { previousOwnerUserId: previousOwner });
+    return { siteId, previousOwnerUserId: previousOwner, ownerUserId: target.userId };
+  }
+  const targetUsers = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(and(eq(users.email, normalizedEmail), eq(users.accountStatus, "active")))
+    .limit(2);
+  if (targetUsers.length !== 1 || !targetUsers[0]?.email)
+    throw new Error("INDEPENDENT_SITE_TRANSFER_TARGET_NOT_ACTIVE");
+  const targetUser = targetUsers[0];
+  if (targetUser.id === actorUserId)
+    throw new Error("INDEPENDENT_SITE_TRANSFER_TARGET_IS_CURRENT_OWNER");
+  return db.transaction(async (tx) => {
+    const sites = await tx
+      .select({ ownerUserId: independentSites.ownerUserId, title: independentSites.title })
+      .from(independentSites)
+      .where(and(eq(independentSites.id, siteId), eq(independentSites.ownerUserId, actorUserId)))
+      .limit(1);
+    const site = sites[0];
+    if (!site) throw new Error("INDEPENDENT_SITE_TRANSFER_STALE_OWNER");
+    if (confirmationSiteTitle.trim() !== site.title)
+      throw new Error("INDEPENDENT_SITE_TRANSFER_CONFIRMATION_MISMATCH");
+    const previousOwner = site.ownerUserId;
+    const ownershipUpdate = await tx
+      .update(independentSites)
+      .set({ ownerUserId: targetUser.id })
+      .where(
+        and(
+          eq(independentSites.id, siteId),
+          eq(independentSites.ownerUserId, previousOwner),
+        ),
+      );
+    const ownershipAffectedRows = Number(
+      (ownershipUpdate as any)?.[0]?.affectedRows ??
+        (ownershipUpdate as any)?.affectedRows ??
+        0,
+    );
+    if (ownershipAffectedRows !== 1)
+      throw new Error("INDEPENDENT_SITE_TRANSFER_CONFLICT");
+    const existingTarget = await tx
+      .select()
+      .from(independentSiteMembers)
+      .where(and(eq(independentSiteMembers.siteId, siteId), eq(independentSiteMembers.email, normalizedEmail)))
+      .limit(1);
+    if (existingTarget[0]) {
+      await tx.update(independentSiteMembers).set({
+        userId: targetUser.id,
+        role: "owner",
+        status: "active",
+        invitationTokenHash: null,
+        invitationExpiresAt: null,
+        invitationUsedAt: null,
+      }).where(eq(independentSiteMembers.id, existingTarget[0].id));
+    } else {
+      await tx.insert(independentSiteMembers).values({
+        siteId,
+        userId: targetUser.id,
+        email: normalizedEmail,
+        role: "owner",
+        status: "active",
+      });
+    }
+    const previousOwnerUser = await tx.select({ email: users.email }).from(users).where(eq(users.id, previousOwner)).limit(1);
+    const previousOwnerEmail = previousOwnerUser[0]?.email ?? `owner-${previousOwner}@local.invalid`;
+    const existingPreviousOwner = await tx
+      .select()
+      .from(independentSiteMembers)
+      .where(and(eq(independentSiteMembers.siteId, siteId), eq(independentSiteMembers.email, previousOwnerEmail)))
+      .limit(1);
+    if (existingPreviousOwner[0]) {
+      await tx.update(independentSiteMembers).set({ userId: previousOwner, role: "admin", status: "active" }).where(eq(independentSiteMembers.id, existingPreviousOwner[0].id));
+    } else {
+      await tx.insert(independentSiteMembers).values({ siteId, userId: previousOwner, email: previousOwnerEmail, role: "admin", status: "active" });
+    }
+    await tx.update(independentSiteVersions).set({ ownerUserId: targetUser.id }).where(and(eq(independentSiteVersions.siteId, siteId), eq(independentSiteVersions.ownerUserId, previousOwner)));
+    await tx.update(independentSiteMedia).set({ ownerUserId: targetUser.id }).where(and(eq(independentSiteMedia.siteId, siteId), eq(independentSiteMedia.ownerUserId, previousOwner)));
+    await tx.update(independentSiteDomains).set({ ownerUserId: targetUser.id }).where(and(eq(independentSiteDomains.siteId, siteId), eq(independentSiteDomains.ownerUserId, previousOwner)));
+    await tx.insert(independentSiteAccessAuditLogs).values({
+      siteId,
+      actorUserId,
+      action: "ownership_transfer",
+      targetUserId: targetUser.id,
+      targetEmail: normalizedEmail,
+      metadataJson: JSON.stringify({ previousOwnerUserId: previousOwner }),
+    });
+    return { siteId, previousOwnerUserId: previousOwner, ownerUserId: targetUser.id };
+  });
 }
 export async function inspectIndependentSiteInvitation(
   token: string,

@@ -38,6 +38,7 @@ import {
   inviteIndependentSiteAccess,
   revokeIndependentSiteAccess,
   updateIndependentSiteAccessRole,
+  transferIndependentSiteOwnership,
   inspectIndependentSiteInvitation,
   acceptIndependentSiteInvitation,
   assertIndependentSiteAccess,
@@ -583,6 +584,22 @@ export const isolatedSiteBuilderRouter = router({
         input.siteId,
         input.memberId,
         input.role,
+      ),
+    ),
+  transferOwnership: protectedProcedure
+    .input(
+      z.object({
+        siteId: z.number().int().positive(),
+        targetEmail: z.string().email(),
+        confirmationSiteTitle: z.string().min(1).max(180),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      transferIndependentSiteOwnership(
+        ctx.user.id,
+        input.siteId,
+        input.targetEmail,
+        input.confirmationSiteTitle,
       ),
     ),
   inspectSiteInvitation: publicProcedure

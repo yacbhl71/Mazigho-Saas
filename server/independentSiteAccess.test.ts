@@ -10,6 +10,7 @@ import {
   listIndependentSiteAccess,
   revokeIndependentSiteAccess,
   updateIndependentSiteAccessRole,
+  transferIndependentSiteOwnership,
 } from "./isolatedSiteBuilderDb";
 import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
@@ -289,6 +290,83 @@ describe("independent site access isolation", () => {
         "tresorier@village.test",
       ),
     ).rejects.toThrow("INDEPENDENT_SITE_INVITATION_INVALID:EXPIRED");
+  });
+
+  it("transfers independent ownership only to an active invited user and keeps the former owner as admin", async () => {
+    const site = await createIndependentSiteProject(9801, {
+      title: "Transfert sécurisé",
+    });
+    const targetInvite = await inviteIndependentSiteAccess(9801, {
+      siteId: site.id,
+      email: "new-owner@example.test",
+      role: "admin",
+    });
+    await acceptIndependentSiteInvitation(
+      9802,
+      targetInvite.developmentOnlyToken!,
+      "new-owner@example.test",
+    );
+
+    await expect(
+      transferIndependentSiteOwnership(
+        9801,
+        site.id,
+        "new-owner@example.test",
+        "Mauvais titre",
+      ),
+    ).rejects.toThrow("INDEPENDENT_SITE_TRANSFER_CONFIRMATION_MISMATCH");
+    await expect(
+      transferIndependentSiteOwnership(
+        9802,
+        site.id,
+        "new-owner@example.test",
+        "Transfert sécurisé",
+      ),
+    ).rejects.toThrow();
+    const editorInvite = await inviteIndependentSiteAccess(9801, {
+      siteId: site.id,
+      email: "editor-transfer@example.test",
+      role: "editor",
+    });
+    await acceptIndependentSiteInvitation(
+      9803,
+      editorInvite.developmentOnlyToken!,
+      "editor-transfer@example.test",
+    );
+    await expect(
+      makeCaller({ id: 9802, email: "new-owner@example.test" }).transferOwnership({
+        siteId: site.id,
+        targetEmail: "new-owner@example.test",
+        confirmationSiteTitle: "Transfert sécurisé",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      makeCaller({ id: 9803, email: "editor-transfer@example.test" }).transferOwnership({
+        siteId: site.id,
+        targetEmail: "new-owner@example.test",
+        confirmationSiteTitle: "Transfert sécurisé",
+      }),
+    ).rejects.toThrow();
+
+    const result = await transferIndependentSiteOwnership(
+      9801,
+      site.id,
+      "NEW-OWNER@example.test",
+      "Transfert sécurisé",
+    );
+    expect(result).toMatchObject({
+      siteId: site.id,
+      previousOwnerUserId: 9801,
+      ownerUserId: 9802,
+    });
+    await expect(assertIndependentSiteAccess(9802, site.id, "owner")).resolves.toMatchObject({ role: "owner" });
+    await expect(assertIndependentSiteAccess(9801, site.id, "admin")).resolves.toMatchObject({ role: "admin" });
+    await expect(
+      transferIndependentSiteOwnership(9801, site.id, "new-owner@example.test", "Transfert sécurisé"),
+    ).rejects.toThrow();
+    const members = await listIndependentSiteAccess(9802, site.id);
+    expect(members.filter((member) => member.role === "owner")).toHaveLength(1);
+    expect(members.find((member) => member.userId === 9801)?.role).toBe("admin");
   });
 
   it("provides non-technical French role presentations and safe returnTo paths without boutique escape", () => {
