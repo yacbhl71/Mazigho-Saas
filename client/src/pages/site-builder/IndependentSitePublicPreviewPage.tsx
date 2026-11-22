@@ -151,6 +151,34 @@ export default function IndependentSitePublicPreviewPage() {
   }, [safePages, activePageSlug]);
 
   useEffect(() => {
+    if (!site || !activePage || typeof document === "undefined") return;
+    const fallbackTitle = site.title || "Site indépendant";
+    document.title = `${activePage.seoTitle || activePage.title || fallbackTitle} | ${fallbackTitle}`;
+    const description = activePage.seoDescription?.trim();
+    let metaDescription = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (!metaDescription) {
+      metaDescription = document.createElement("meta");
+      metaDescription.name = "description";
+      document.head.appendChild(metaDescription);
+    }
+    metaDescription.content = description || `Site indépendant de ${fallbackTitle}`;
+
+    const faviconUrl = site.settings.faviconUrl?.trim();
+    let favicon = document.querySelector<HTMLLinkElement>('link[data-independent-favicon="true"]');
+    if (faviconUrl) {
+      if (!favicon) {
+        favicon = document.createElement("link");
+        favicon.rel = "icon";
+        favicon.dataset.independentFavicon = "true";
+        document.head.appendChild(favicon);
+      }
+      favicon.href = faviconUrl;
+    } else {
+      favicon?.remove();
+    }
+  }, [activePage?.id, site?.settings.faviconUrl, site?.title]);
+
+  useEffect(() => {
     if (isPreviewRoute || !site || !activePage || typeof window === "undefined") return;
     try {
       const pageViewKey = `${site.slug}:${activePage.slug || "/"}`;
