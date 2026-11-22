@@ -33,6 +33,7 @@ import {
   Save,
   Settings,
   ShieldCheck,
+  Sparkles,
   Smartphone,
   Tablet,
   Trash2,
@@ -203,6 +204,10 @@ export default function IndependentSiteAdminPage() {
   const [draftImageAlt, setDraftImageAlt] = useState("");
   const [draftSeoTitle, setDraftSeoTitle] = useState("");
   const [draftSeoDescription, setDraftSeoDescription] = useState("");
+  const [aiSuggestion, setAiSuggestion] = useState<{
+    kind: "heading" | "intro" | "seoTitle" | "seoDescription";
+    text: string;
+  } | null>(null);
   const [draftTheme, setDraftTheme] = useState({
     primaryColor: "#1e3a2f",
     accentColor: "#6b8e6e",
@@ -554,6 +559,35 @@ export default function IndependentSiteAdminPage() {
       toast.error(msg);
     },
   });
+  const contentAiMutation = trpc.independentSiteBuilder.generateContentSuggestion.useMutation({
+    onSuccess: (suggestion) => {
+      setAiSuggestion({ kind: suggestion.kind, text: suggestion.text });
+      toast.success("Suggestion prête à comparer. Rien n’a été enregistré.");
+    },
+    onError: (error) => toast.error(error.message || "Impossible de générer une suggestion."),
+  });
+  const requestAiSuggestion = (kind: "heading" | "intro" | "seoTitle" | "seoDescription", currentText: string) => {
+    if (!siteId || !activePage || !canEdit || contentAiMutation.isPending) return;
+    contentAiMutation.mutate({
+      siteId,
+      kind,
+      currentText,
+      pageTitle: activePage.title,
+      siteTitle: project?.title ?? "",
+      instruction: currentText.trim()
+        ? "Reformule ce contenu en conservant son intention et ses informations."
+        : "Rédige une première proposition pertinente pour cette page.",
+    });
+  };
+  const keepAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    if (aiSuggestion.kind === "heading") setDraftHeading(aiSuggestion.text);
+    if (aiSuggestion.kind === "intro") setDraftIntro(aiSuggestion.text);
+    if (aiSuggestion.kind === "seoTitle") setDraftSeoTitle(aiSuggestion.text);
+    if (aiSuggestion.kind === "seoDescription") setDraftSeoDescription(aiSuggestion.text);
+    setAiSuggestion(null);
+    toast.success("Suggestion conservée dans le brouillon. Enregistrez la page pour la sauvegarder.");
+  };
 
   const publishMutation = trpc.independentSiteBuilder.publishSite.useMutation({
     onSuccess: async (published) => {
@@ -1843,7 +1877,13 @@ export default function IndependentSiteAdminPage() {
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <Label htmlFor="admin-heading">Titre principal affiché (H1)</Label>
+                              <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="admin-heading">Titre principal affiché (H1)</Label>
+                                <Button type="button" variant="outline" size="sm" disabled={!canEdit || contentAiMutation.isPending} onClick={() => requestAiSuggestion("heading", draftHeading)}>
+                                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                                  {contentAiMutation.isPending ? "Génération…" : "IA"}
+                                </Button>
+                              </div>
                               <Input
                                 id="admin-heading"
                                 value={draftHeading}
@@ -1856,7 +1896,13 @@ export default function IndependentSiteAdminPage() {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label htmlFor="admin-intro">Texte principal / présentation</Label>
+                            <div className="flex items-center justify-between gap-2">
+                              <Label htmlFor="admin-intro">Texte principal / présentation</Label>
+                              <Button type="button" variant="outline" size="sm" disabled={!canEdit || contentAiMutation.isPending} onClick={() => requestAiSuggestion("intro", draftIntro)}>
+                                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                                IA
+                              </Button>
+                            </div>
                             <Textarea
                               id="admin-intro"
                               rows={5}
@@ -1905,7 +1951,12 @@ export default function IndependentSiteAdminPage() {
 
                           <div className="grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
                             <div className="space-y-1.5">
-                              <Label htmlFor="admin-seo-title">Titre pour Google (SEO)</Label>
+                              <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="admin-seo-title">Titre pour Google (SEO)</Label>
+                                <Button type="button" variant="outline" size="sm" disabled={!canEdit || contentAiMutation.isPending} onClick={() => requestAiSuggestion("seoTitle", draftSeoTitle)}>
+                                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> IA
+                                </Button>
+                              </div>
                               <Input
                                 id="admin-seo-title"
                                 value={draftSeoTitle}
@@ -1916,7 +1967,12 @@ export default function IndependentSiteAdminPage() {
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <Label htmlFor="admin-seo-desc">Résumé pour Google (SEO)</Label>
+                              <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="admin-seo-desc">Résumé pour Google (SEO)</Label>
+                                <Button type="button" variant="outline" size="sm" disabled={!canEdit || contentAiMutation.isPending} onClick={() => requestAiSuggestion("seoDescription", draftSeoDescription)}>
+                                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> IA
+                                </Button>
+                              </div>
                               <Input
                                 id="admin-seo-desc"
                                 value={draftSeoDescription}
@@ -1946,6 +2002,35 @@ export default function IndependentSiteAdminPage() {
                             </span>
                           </div>
                         </form>
+
+                        {aiSuggestion && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-label="Comparer la suggestion IA">
+                            <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Assistant IA indépendant</p>
+                                  <h3 className="mt-1 text-lg font-semibold text-slate-900">Comparer avant de remplacer</h3>
+                                  <p className="mt-1 text-sm text-slate-600">La proposition n’est pas enregistrée. Vérifiez-la puis choisissez son usage.</p>
+                                </div>
+                                <Button type="button" variant="ghost" size="icon" onClick={() => setAiSuggestion(null)} aria-label="Annuler"><X className="h-4 w-4" /></Button>
+                              </div>
+                              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Texte actuel</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{aiSuggestion.kind === "heading" ? draftHeading : aiSuggestion.kind === "intro" ? draftIntro : aiSuggestion.kind === "seoTitle" ? draftSeoTitle : draftSeoDescription || "(vide)"}</p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Suggestion</p>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{aiSuggestion.text}</p>
+                                </div>
+                              </div>
+                              <div className="mt-6 flex flex-wrap justify-end gap-2">
+                                <Button type="button" variant="outline" onClick={() => setAiSuggestion(null)}>Annuler</Button>
+                                <Button type="button" className="bg-[#1e3a2f] text-white hover:bg-[#162b23]" onClick={keepAiSuggestion}>Conserver la suggestion</Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Colonne latérale : Publier une actualité ou ajouter une section */}
                         <form

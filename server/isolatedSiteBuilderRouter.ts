@@ -14,7 +14,9 @@ import {
   RESPONSIVE_VIEWPORTS,
 } from "../shared/isolatedSiteBuilder";
 import { platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { invokeLLM, listLLMModels } from "./_core/llm";
 import { consumeIndependentFormRateLimit } from "./independentFormRateLimit";
+import { consumeIndependentContentAiRateLimit } from "./independentContentAiRateLimit";
 import {
   addIndependentSiteDomain,
   addIndependentSiteMedia,
@@ -147,6 +149,29 @@ const reusableBlockSchema = z.object({
   html: z.string().min(1),
   createdAt: z.string(),
 });
+
+const contentAiKindSchema = z.enum(["heading", "intro", "seoTitle", "seoDescription"]);
+const contentAiMaxLength: Record<z.infer<typeof contentAiKindSchema>, number> = {
+  heading: 160,
+  intro: 1200,
+  seoTitle: 180,
+  seoDescription: 320,
+};
+function sanitizeContentAiSuggestion(value: string, maxLength: number) {
+  return value
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength)
+    .trim();
+}
+function chooseContentAiModel(models: Awaited<ReturnType<typeof listLLMModels>>["data"]) {
+  const available = new Set(models.map((model) => model.id));
+  const preferred = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
+  return preferred.find((model) => available.has(model)) ?? models.find((model) => /^gemini-/i.test(model.id))?.id ?? models[0]?.id;
+}
 
 const imageTransformsSchema = z.object({
   rotationDeg: z.number().min(-180).max(180).optional(),
@@ -370,6 +395,49 @@ export const isolatedSiteBuilderRouter = router({
         }
         throw new TRPCError({ code: "BAD_REQUEST", message: msg });
       }
+    }),
+
+  generateContentSuggestion: protectedProcedure
+    .input(z.object({
+      siteId: z.number().int().positive(),
+      kind: contentAiKindSchema,
+      instruction: z.string().trim().min(3).max(500),
+      currentText: z.string().max(4000).default(""),
+      pageTitle: z.string().trim().max(160).default(""),
+      siteTitle: z.string().trim().max(160).default(""),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertIndependentSiteAccess(ctx.user.id, input.siteId, "editor");
+      const rateLimit = consumeIndependentContentAiRateLimit(`site:${input.siteId}:user:${ctx.user.id}`);
+      if (!rateLimit.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: `Trop de suggestions rapprochées. Réessayez dans ${rateLimit.retryAfterSeconds} secondes.`,
+        });
+      }
+      const { data: models } = await listLLMModels();
+      const model = chooseContentAiModel(models);
+      if (!model) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Aucun modèle IA disponible actuellement." });
+      const maxLength = contentAiMaxLength[input.kind];
+      const labels = { heading: "un titre H1", intro: "un texte de présentation", seoTitle: "un titre SEO", seoDescription: "une description SEO" };
+      const response = await invokeLLM({
+        model,
+        maxTokens: 1200,
+        messages: [
+          {
+            role: "system",
+            content: `Tu es l'assistant éditorial d'un site indépendant. Réponds uniquement avec le texte final en français, sans Markdown, sans HTML, sans guillemets et sans commentaire. Produis ${labels[input.kind]} clair, naturel et adapté à un site ${input.siteTitle || "professionnel"}. Respecte strictement la longueur maximale de ${maxLength} caractères. Ne fabrique aucune donnée factuelle, adresse, prix ou promesse non fournie.`,
+          },
+          {
+            role: "user",
+            content: `Site : ${input.siteTitle || "Site indépendant"}\nPage : ${input.pageTitle || "Page"}\nTexte actuel : ${input.currentText || "(vide)"}\nDemande : ${input.instruction}`,
+          },
+        ],
+      });
+      const raw = response.choices[0]?.message?.content;
+      const text = typeof raw === "string" ? sanitizeContentAiSuggestion(raw, maxLength) : "";
+      if (!text) throw new TRPCError({ code: "BAD_GATEWAY", message: "La suggestion reçue est vide ou invalide." });
+      return { text, kind: input.kind, maxLength, model };
     }),
 
   repairKnownInternalLinks: protectedProcedure
