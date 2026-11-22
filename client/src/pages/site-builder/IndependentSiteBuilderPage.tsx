@@ -58,6 +58,7 @@ import {
   renderVisualCardGridHtml,
   reorderIndependentPagesMenu,
   replaceMediaUrlAcrossPages,
+  sanitizeIndependentCss,
   sanitizeIndependentHtml,
   setVisualCardGridShape,
   setVisualCardGridTextPlacement,
@@ -216,6 +217,10 @@ const LIBRARY_TAB_META: Record<
 export default function IndependentSiteBuilderPage() {
   const utils = trpc.useUtils();
   const editorRef = useRef<Editor | null>(null);
+  const canvasHostRef = useRef<HTMLDivElement | null>(null);
+  const isSyncingCanvasRef = useRef<boolean>(false);
+  const activePageRef = useRef<IndependentSitePage | undefined>(undefined);
+  const devicePresetRef = useRef<ResponsiveDevicePresetId>("desktop");
   const saveInFlightRef = useRef<boolean>(false);
   const requestedPageSlugRef = useRef<string | null>(null);
 
@@ -1012,14 +1017,16 @@ export default function IndependentSiteBuilderPage() {
     }
   }
 
-  function syncCanvasPage(editor: Editor, page: IndependentSitePage) {
-    const css = `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${page.css || ""}`;
-    editor.setComponents(page.html || "");
-    editor.setStyle(css);
+  function stripResponsiveBaseCss(rawCss: string): string {
+    const trimmed = (rawCss || "").trim();
+    if (!trimmed) return "";
+    return trimmed
+      .replace(INDEPENDENT_RESPONSIVE_BASE_CSS, "")
+      .replace(INDEPENDENT_RESPONSIVE_BASE_CSS.trim(), "")
+      .trim();
+  }
 
-    // GrapesJS may receive the project before its iframe document has finished
-    // loading. Keep a named stylesheet in the iframe head as a final source of
-    // truth so the private canvas cannot fall back to unstyled raw HTML.
+  function applyCanvasBaseStyleSheet(editor: Editor) {
     try {
       const canvasDocument = editor.Canvas.getDocument();
       if (canvasDocument?.head) {
@@ -1031,11 +1038,72 @@ export default function IndependentSiteBuilderPage() {
           styleElement.dataset.independentCanvasStyle = "true";
           canvasDocument.head.appendChild(styleElement);
         }
-        styleElement.textContent = css;
+        styleElement.textContent = INDEPENDENT_RESPONSIVE_BASE_CSS;
       }
     } catch {
       // The canvas:load handler retries after the iframe is ready.
     }
+  }
+
+  function syncCanvasDeviceAndZoom(editor: Editor | null, presetId: ResponsiveDevicePresetId) {
+    if (!editor) return;
+    const preset =
+      RESPONSIVE_DEVICE_PRESETS.find((p) => p.id === presetId) ?? RESPONSIVE_DEVICE_PRESETS[0];
+    const targetFrameWidth = `${preset.maxWidthPx}px`;
+    try {
+      const device = editor.DeviceManager?.get?.(preset.id);
+      if (device && device.get("width") !== targetFrameWidth) {
+        device.set({ width: targetFrameWidth, widthMedia: targetFrameWidth });
+      }
+      if (editor.getDevice() !== preset.id) {
+        editor.setDevice(preset.id);
+      }
+      const frame = editor.Canvas?.getFrame?.();
+      if (frame && frame.get("width") !== targetFrameWidth) {
+        frame.set({ width: targetFrameWidth }, { noUndo: 1 });
+      }
+      const frameWrapper = canvasHostRef.current?.querySelector<HTMLElement>(".gjs-frame-wrapper");
+      if (frameWrapper && frameWrapper.style.width !== targetFrameWidth) {
+        frameWrapper.style.width = targetFrameWidth;
+      }
+    } catch {
+      // DeviceManager or Canvas may not be initialized yet
+    }
+    try {
+      const canvasEl = canvasHostRef.current?.querySelector<HTMLElement>(".gjs-cv-canvas");
+      const fallbackWidth = (canvasHostRef.current?.clientWidth || 0) * 0.84;
+      const availableWidth = canvasEl?.clientWidth || fallbackWidth;
+      if (availableWidth > 0 && preset.maxWidthPx > availableWidth) {
+        const fittedZoom = Math.max(
+          40,
+          Math.floor(((availableWidth - 20) / preset.maxWidthPx) * 100),
+        );
+        editor.Canvas.setZoom(fittedZoom);
+      } else {
+        editor.Canvas.setZoom(100);
+      }
+    } catch {
+      // Canvas zoom may throw before mount completes
+    }
+  }
+
+  function syncCanvasPage(editor: Editor, page: IndependentSitePage) {
+    const cleanCss = stripResponsiveBaseCss(sanitizeIndependentCss(page.css || ""));
+    const cleanHtml = sanitizeIndependentHtml(page.html || "");
+
+    isSyncingCanvasRef.current = true;
+    try {
+      // Ordre critique : setStyle AVANT setComponents pour préserver les styles inline
+      // et éviter que setStyle() ne vide les règles générées dans CssComposer.
+      editor.setStyle(cleanCss);
+      editor.setComponents(cleanHtml);
+    } finally {
+      isSyncingCanvasRef.current = false;
+    }
+
+    // Injecter la feuille responsive/structurelle dans <head> de l'iframe uniquement
+    // afin qu'elle ne pollue jamais page.css lors des sauvegardes.
+    applyCanvasBaseStyleSheet(editor);
   }
 
   function requestRestoreLocalSafetySnapshot() {
@@ -1059,10 +1127,7 @@ export default function IndependentSiteBuilderPage() {
         setHasUnsavedChanges(true);
         setPendingSafetySnapshot(null);
         if (editorRef.current && restoredActive) {
-          editorRef.current.setComponents(restoredActive.html);
-          editorRef.current.setStyle(
-            `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${restoredActive.css}`
-          );
+          syncCanvasPage(editorRef.current, restoredActive);
           refreshLayersFromEditor(editorRef.current);
         }
         setStatusBanner(
@@ -1097,15 +1162,29 @@ export default function IndependentSiteBuilderPage() {
     return pages.find((p) => p.id === activePageId) ?? pages[0];
   }, [pages, activePageId]);
 
+  activePageRef.current = activePage;
+  devicePresetRef.current = devicePresetId;
+
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || !activePage) return;
-    // Le projet arrive après l'initialisation de GrapesJS : resynchroniser ici
-    // garantit que le canvas privé reflète la vitrine, styles compris, au lieu
-    // d'afficher uniquement le HTML brut.
     syncCanvasPage(editor, activePage);
     refreshLayersFromEditor(editor);
   }, [activePage?.id, activePage?.html, activePage?.css]);
+
+  useEffect(() => {
+    syncCanvasDeviceAndZoom(editorRef.current, devicePresetId);
+  }, [devicePresetId]);
+
+  useEffect(() => {
+    const host = canvasHostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      syncCanvasDeviceAndZoom(editorRef.current, devicePresetRef.current);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
 
   const navigationTree = useMemo(() => buildNavigationFromPages(pages), [pages]);
 
@@ -1176,8 +1255,8 @@ export default function IndependentSiteBuilderPage() {
     const editor = editorRef.current;
     if (!editor || !activePage) return pages;
     const html = editor.getHtml();
-    const rawCss = editor.getCss() || "";
-    const css = rawCss.replace(INDEPENDENT_RESPONSIVE_BASE_CSS, "").trim() || activePage.css;
+    const rawCss = stripResponsiveBaseCss(editor.getCss() || "");
+    const css = rawCss || stripResponsiveBaseCss(activePage.css || "");
     const next = pages.map((p) => (p.id === activePage.id ? { ...p, html, css } : p));
     setPages(next);
     return next;
@@ -1200,7 +1279,7 @@ export default function IndependentSiteBuilderPage() {
     setPages(next);
     setHasUnsavedChanges(true);
     if (editorRef.current) {
-      editorRef.current.setComponents(updatedHtml);
+      syncCanvasPage(editorRef.current, { ...current, html: updatedHtml });
     }
     setStatusBanner(`Texte alternatif de l’image #${imageIndex + 1} mis à jour.`);
   }
@@ -1210,8 +1289,7 @@ export default function IndependentSiteBuilderPage() {
     const target = updatedPages.find((p) => p.id === pageId);
     setActivePageId(pageId);
     if (editorRef.current && target) {
-      editorRef.current.setComponents(target.html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${target.css}`);
+      syncCanvasPage(editorRef.current, target);
       refreshLayersFromEditor(editorRef.current);
     }
   }
@@ -1238,8 +1316,7 @@ export default function IndependentSiteBuilderPage() {
     const socle = INDEPENDENT_PAGE_SOCLES.find((s) => s.id === socleId);
     if (!socle || !activePage) return;
     if (editorRef.current) {
-      editorRef.current.setComponents(socle.html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${activePage.css}`);
+      syncCanvasPage(editorRef.current, { ...activePage, html: socle.html });
       refreshLayersFromEditor(editorRef.current);
     }
     const next = pages.map((p) =>
@@ -1278,8 +1355,7 @@ export default function IndependentSiteBuilderPage() {
     setActivePageId(clonedPages[0].id);
     setHasUnsavedChanges(true);
     if (editorRef.current && clonedPages[0]) {
-      editorRef.current.setComponents(clonedPages[0].html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${clonedPages[0].css}`);
+      syncCanvasPage(editorRef.current, clonedPages[0]);
       refreshLayersFromEditor(editorRef.current);
     }
     setStatusBanner(
@@ -1327,8 +1403,7 @@ export default function IndependentSiteBuilderPage() {
     setActivePageId(id);
     setHasUnsavedChanges(true);
     if (editorRef.current) {
-      editorRef.current.setComponents(createdPage.html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${createdPage.css}`);
+      syncCanvasPage(editorRef.current, createdPage);
       refreshLayersFromEditor(editorRef.current);
     }
     setNewPageTitle("");
@@ -1354,8 +1429,7 @@ export default function IndependentSiteBuilderPage() {
     setDuplicatePageCustomTitle("");
     setHasUnsavedChanges(true);
     if (editorRef.current) {
-      editorRef.current.setComponents(duplicatedPage.html);
-      editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${duplicatedPage.css}`);
+      syncCanvasPage(editorRef.current, duplicatedPage);
       refreshLayersFromEditor(editorRef.current);
     }
     setStatusBanner(
@@ -1461,10 +1535,7 @@ export default function IndependentSiteBuilderPage() {
           setReusableBlocks(imported.reusableBlocks);
           setHasUnsavedChanges(true);
           if (editorRef.current && imported.pages[0]) {
-            editorRef.current.setComponents(imported.pages[0].html);
-            editorRef.current.setStyle(
-              `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${imported.pages[0].css}`
-            );
+            syncCanvasPage(editorRef.current, imported.pages[0]);
             refreshLayersFromEditor(editorRef.current);
           }
           setImportJsonRawInput("");
@@ -1512,8 +1583,7 @@ export default function IndependentSiteBuilderPage() {
         if (activePageId === pageId) {
           setActivePageId(filtered[0].id);
           if (editorRef.current) {
-            editorRef.current.setComponents(filtered[0].html);
-            editorRef.current.setStyle(`${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${filtered[0].css}`);
+            syncCanvasPage(editorRef.current, filtered[0]);
           }
         }
         setStatusBanner(`Page « ${target.title} » supprimée.`);
@@ -4561,11 +4631,8 @@ export default function IndependentSiteBuilderPage() {
 
               <CardContent className="bg-[#efebe4] p-3 md:p-4">
                 <div
-                  className="mx-auto overflow-x-hidden rounded-xl border border-slate-300 bg-white shadow-md transition-all motion-reduce:transition-none"
-                  style={{
-                    width: currentDevicePreset.widthCss,
-                    maxWidth: `${currentDevicePreset.maxWidthPx}px`,
-                  }}
+                  ref={canvasHostRef}
+                  className="w-full overflow-hidden rounded-xl border border-slate-300 bg-white shadow-md"
                 >
                   <GjsEditor
                     grapesjs={grapesjs}
@@ -4573,9 +4640,32 @@ export default function IndependentSiteBuilderPage() {
                       height: "700px",
                       storageManager: false,
                       noticeOnUnload: false,
+                      avoidInlineStyle: false,
+                      forceClass: false,
+                      deviceManager: {
+                        default: "desktop",
+                        devices: RESPONSIVE_DEVICE_PRESETS.map((preset) => ({
+                          id: preset.id,
+                          name: preset.shortLabel,
+                          width: `${preset.maxWidthPx}px`,
+                          widthMedia: `${preset.maxWidthPx}px`,
+                        })),
+                      },
                     }}
                     onEditor={(editor) => {
                       editorRef.current = editor;
+                      const dm = editor.DeviceManager;
+                      dm.getDevices()
+                        .slice()
+                        .forEach((device) => dm.remove(device));
+                      RESPONSIVE_DEVICE_PRESETS.forEach((preset) => {
+                        dm.add({
+                          id: preset.id,
+                          name: preset.shortLabel,
+                          width: `${preset.maxWidthPx}px`,
+                          widthMedia: `${preset.maxWidthPx}px`,
+                        });
+                      });
                       const bm = editor.BlockManager;
                       INDEPENDENT_BUILDER_BLOCKS.forEach((blk) => {
                         bm.add(blk.id, {
@@ -4591,25 +4681,52 @@ export default function IndependentSiteBuilderPage() {
                           content: mod.html,
                         });
                       });
-                      if (activePage) {
-                        syncCanvasPage(editor, activePage);
+                      if (activePageRef.current) {
+                        syncCanvasPage(editor, activePageRef.current);
                       }
+                      syncCanvasDeviceAndZoom(editor, devicePresetRef.current);
                       editor.on("load", () => {
-                        if (activePage) syncCanvasPage(editor, activePage);
+                        if (activePageRef.current) {
+                          syncCanvasPage(editor, activePageRef.current);
+                        } else {
+                          applyCanvasBaseStyleSheet(editor);
+                        }
+                        syncCanvasDeviceAndZoom(editor, devicePresetRef.current);
                         refreshLayersFromEditor(editor);
                       });
                       editor.on("canvas:load", () => {
-                        if (activePage) syncCanvasPage(editor, activePage);
+                        applyCanvasBaseStyleSheet(editor);
+                        syncCanvasDeviceAndZoom(editor, devicePresetRef.current);
                         refreshLayersFromEditor(editor);
                       });
+                      editor.on("canvas:frame:load", () => {
+                        applyCanvasBaseStyleSheet(editor);
+                        syncCanvasDeviceAndZoom(editor, devicePresetRef.current);
+                      });
+                      editor.on("device:select", (deviceModel) => {
+                        const selectedId = (deviceModel?.get?.("id") ?? deviceModel?.id) as
+                          | ResponsiveDevicePresetId
+                          | undefined;
+                        if (
+                          selectedId &&
+                          RESPONSIVE_DEVICE_PRESETS.some((p) => p.id === selectedId) &&
+                          selectedId !== devicePresetRef.current
+                        ) {
+                          handleSelectDevicePreset(selectedId);
+                        }
+                        syncCanvasDeviceAndZoom(editor, selectedId || devicePresetRef.current);
+                      });
                       editor.on("component:update", () => {
+                        if (isSyncingCanvasRef.current) return;
                         setHasUnsavedChanges(true);
                       });
                       editor.on("component:add", () => {
+                        if (isSyncingCanvasRef.current) return;
                         setHasUnsavedChanges(true);
                         refreshLayersFromEditor(editor);
                       });
                       editor.on("component:remove", () => {
+                        if (isSyncingCanvasRef.current) return;
                         setHasUnsavedChanges(true);
                         refreshLayersFromEditor(editor);
                       });
