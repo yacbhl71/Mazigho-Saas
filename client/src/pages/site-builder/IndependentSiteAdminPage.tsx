@@ -749,6 +749,18 @@ export default function IndependentSiteAdminPage() {
     hasAnyUnsavedChanges,
     currentProject.updatedAt,
   );
+  const launchChecklist = [
+    { label: "Définir le titre du site", done: Boolean(currentProject.title.trim()) },
+    { label: "Remplacer les images provisoires", done: embeddedPageImages.length === 0 || mediaQuery.data?.length === 0 ? false : embeddedPageImages.every((image) => mediaQuery.data?.some((media) => media.url === image.src)) },
+    { label: "Vérifier les titres et descriptions SEO", done: pages.length > 0 && pages.every((page) => Boolean(page.seoTitle?.trim()) && Boolean(page.seoDescription?.trim())) },
+    { label: "Publier le site", done: currentProject.status === "published" },
+  ];
+  const completedLaunchSteps = launchChecklist.filter((step) => step.done).length;
+  const launchProgress = Math.round((completedLaunchSteps / launchChecklist.length) * 100);
+  const recentActivity = (versionsQuery.data ?? []).slice(0, 4).map((version) => ({
+    label: version.label || `Version ${version.versionNumber}`,
+    date: formatClientDateTime(version.createdAt),
+  }));
   const selectedInviteRoleDetail = CLIENT_ADMIN_ROLE_MATRIX.find(
     (item) => item.role === inviteRole,
   )!;
@@ -1281,6 +1293,17 @@ export default function IndependentSiteAdminPage() {
                   <p className="mt-2 text-lg font-bold text-slate-900">{roleInfo.shortLabel}</p>
                   <p className="mt-1 text-xs text-slate-600">{currentRoleDetail.audience}</p>
                 </div>
+              </section>
+
+              <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a2f]">Avant publication</p><h2 className="mt-1 text-lg font-bold text-slate-900">Checklist de lancement</h2><p className="mt-1 text-sm text-slate-600">{completedLaunchSteps} étape{completedLaunchSteps > 1 ? "s" : ""} sur {launchChecklist.length} terminée{completedLaunchSteps > 1 ? "s" : ""}.</p></div><span className="text-2xl font-bold tabular-nums text-[#1e3a2f]">{launchProgress}%</span>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-700 transition-all" style={{ width: `${launchProgress}%` }} /></div>
+                  <ul className="mt-5 space-y-3">{launchChecklist.map((step) => <li key={step.label} className="flex items-center gap-3 text-sm"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${step.done ? "bg-emerald-100 text-emerald-800" : "border border-slate-300 text-slate-400"}`}>{step.done ? <Check className="h-4 w-4" /> : <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />}</span><span className={step.done ? "text-slate-700" : "font-medium text-slate-900"}>{step.label}</span></li>)}</ul>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#1e3a2f]">Pilotage</p><h2 className="mt-1 text-lg font-bold text-slate-900">Activité récente</h2></div><History className="h-5 w-5 text-slate-400" /></div>{recentActivity.length > 0 ? <ul className="mt-5 space-y-4">{recentActivity.map((activity, index) => <li key={`${activity.date}-${index}`} className="border-l-2 border-slate-200 pl-3"><p className="text-sm font-medium text-slate-800">{activity.label}</p><p className="mt-1 text-xs text-slate-500">{activity.date}</p></li>)}</ul> : <p className="mt-5 rounded-lg bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">Les actions récentes apparaîtront ici après votre première sauvegarde ou publication.</p>}</div>
               </section>
 
               {/* Identité du site + Actions principales */}
