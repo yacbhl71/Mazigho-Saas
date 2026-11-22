@@ -10,7 +10,9 @@ import {
   activateAccountFromInvitation,
   createGuestCustomer,
   createPasswordUser,
+  deleteIndependentShadowUser,
   getUserByEmail,
+  getUserByOpenId,
   getFirstActiveOwnerStoreForUser,
   getOwnerStoreSwitcherOptionsForUser,
   getStoreMembershipForUser,
@@ -24,6 +26,10 @@ import {
   isTransactionalEmailConfigured,
   sendPasswordResetEmail,
 } from "./transactionalEmail";
+import {
+  acceptIndependentSiteInvitation,
+  inspectIndependentSiteInvitation,
+} from "./isolatedSiteBuilderDb";
 import {
   checkAuthRateLimit,
   clearAuthRateLimit,
@@ -182,6 +188,56 @@ export const authRouter = router({
 
       const sessionToken = await createSession(ctx, user);
       return { user: safeUser(user), sessionToken };
+    }),
+
+  registerIndependentSiteAccess: publicProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(2, "Indiquez votre nom").max(120),
+        email: emailSchema,
+        password: passwordSchema,
+        invitationToken: tokenSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email.toLowerCase();
+      enforceAuthRateLimit("register", ctx.req, `${email}:independent`);
+      const inspection = await inspectIndependentSiteInvitation(input.invitationToken, email);
+      if (inspection.status !== "valid" || inspection.emailMatchesViewer !== true) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cette invitation est invalide, expirée ou ne correspond pas à cette adresse e-mail.",
+        });
+      }
+
+      // Independent access deliberately uses a shadow user. The same e-mail may
+      // already own a MAZIGHO/Shop account; its password must never be changed
+      // by a site invitation.
+      const user = await createPasswordUser({
+        openId: `independent_${randomUUID()}`,
+        email,
+        name: input.name,
+        passwordHash: await hashPassword(input.password),
+      });
+      if (!user) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Impossible de créer l’accès indépendant pour le moment.",
+        });
+      }
+
+      try {
+        const accepted = await acceptIndependentSiteInvitation(user.id, input.invitationToken, email);
+        const sessionToken = await createSession(ctx, user);
+        return { user: safeUser(user), sessionToken, accepted };
+      } catch (error) {
+        await deleteIndependentShadowUser(user.openId);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cette invitation n’est plus disponible. Aucun accès n’a été activé.",
+          cause: error,
+        });
+      }
     }),
 
   /**
@@ -363,6 +419,7 @@ export const authRouter = router({
         uid: z.string().trim().min(1).max(128).optional(),
         email: emailSchema.optional(),
         displayName: z.string().trim().min(1).max(120).optional(),
+        invitationToken: tokenSchema.optional(),
         idToken: z.string().min(10, "Jeton Firebase requis"),
       })
     )
@@ -390,6 +447,30 @@ export const authRouter = router({
 
       const verifiedEmail = decoded.email.toLowerCase();
       const displayName = decoded.name?.trim() || input.displayName?.trim() || verifiedEmail;
+
+      if (input.invitationToken) {
+        const inspection = await inspectIndependentSiteInvitation(input.invitationToken, verifiedEmail);
+        if (inspection.status !== "valid" || inspection.emailMatchesViewer !== true) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Cette invitation est invalide, expirée ou ne correspond pas à cette adresse e-mail." });
+        }
+        const independentOpenId = `independent_google_${decoded.uid}`;
+        let independentUser = await getUserByOpenId(independentOpenId);
+        let createdShadow = false;
+        if (!independentUser) {
+          independentUser = await createPasswordUser({ openId: independentOpenId, email: verifiedEmail, name: displayName, passwordHash: await hashPassword(randomUUID()) });
+          createdShadow = true;
+        }
+        if (!independentUser) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Impossible de créer l’accès Google indépendant." });
+        try {
+          await acceptIndependentSiteInvitation(independentUser.id, input.invitationToken, verifiedEmail);
+        } catch (error) {
+          if (createdShadow) await deleteIndependentShadowUser(independentOpenId);
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Cette invitation n’est plus disponible.", cause: error });
+        }
+        clearAuthRateLimit("login", ctx.req, verifiedEmail);
+        const sessionToken = await createSession(ctx, independentUser);
+        return { user: safeUser(independentUser), ownerStore: null, sessionToken };
+      }
 
       let user = await getUserByEmail(verifiedEmail);
       if (!user) {

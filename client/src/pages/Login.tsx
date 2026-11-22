@@ -42,6 +42,10 @@ export default function Login() {
     : publicSiteReturnTo ||
       setupOwnerReturnTo ||
       (candidateReturn.startsWith("/demarrer-boutique") ? candidateReturn : "/demarrer-boutique?plan=free");
+  const independentInvitationToken = (() => {
+    const match = returnTo.match(/^\/constructeur-sites\/invitation\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  })();
   const [email, setEmail] = useState(invitedEmailHint);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -107,7 +111,7 @@ export default function Login() {
         toast.error("Aucune adresse e-mail associée à ce compte Google.");
         return;
       }
-      const data = await firebaseLogin.mutateAsync({ idToken: fbUser.idToken });
+      const data = await firebaseLogin.mutateAsync({ idToken: fbUser.idToken, invitationToken: independentInvitationToken || undefined });
       await handleAuthSuccess(data);
     } catch (error: any) {
       console.error("[Firebase Auth]", error);

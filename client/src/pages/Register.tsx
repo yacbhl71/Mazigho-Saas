@@ -35,6 +35,10 @@ export default function Register() {
     : candidateReturn.startsWith("/demarrer-boutique")
       ? candidateReturn
       : "/demarrer-boutique?plan=free";
+  const independentInvitationToken = (() => {
+    const match = returnTo.match(/^\/constructeur-sites\/invitation\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  })();
   const [name, setName] = useState("");
   const [email, setEmail] = useState(invitedEmailHint);
   const [password, setPassword] = useState("");
@@ -82,6 +86,20 @@ export default function Register() {
     onError: error => toast.error(error.message || copy.register.error),
   });
 
+  const registerIndependent = trpc.auth.registerIndependentSiteAccess.useMutation({
+    onSuccess: async data => {
+      if (typeof window !== "undefined" && data.sessionToken) {
+        window.localStorage.setItem("mazigho_session_token", data.sessionToken);
+      }
+      utils.auth.me.setData(undefined, data.user as any);
+      await utils.auth.me.invalidate();
+      toast.success("Votre accès indépendant est activé.");
+      if (typeof window !== "undefined") window.location.assign(returnTo);
+      else setLocation(returnTo);
+    },
+    onError: error => toast.error(error.message || "Impossible d’activer cette invitation."),
+  });
+
   const firebaseLogin = trpc.auth.firebaseLogin.useMutation({
     onSuccess: async data => {
       if (typeof window !== "undefined" && data.sessionToken) {
@@ -108,7 +126,7 @@ export default function Register() {
         toast.error("Aucune adresse e-mail associée à ce compte Google.");
         return;
       }
-      await firebaseLogin.mutateAsync({ idToken: fbUser.idToken });
+      await firebaseLogin.mutateAsync({ idToken: fbUser.idToken, invitationToken: independentInvitationToken || undefined });
     } catch (error) {
       console.error("[Firebase Auth]", error);
       toast.error("Inscription Google interrompue ou refusée.");
@@ -117,7 +135,22 @@ export default function Register() {
     }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); if (password !== confirmation) { toast.error(copy.register.mismatch); return; } register.mutate({ name, email, password }); };
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (password !== confirmation) {
+      toast.error(copy.register.mismatch);
+      return;
+    }
+    if (independentSiteIntent) {
+      if (!independentInvitationToken) {
+        toast.error("Ouvrez le lien personnel de l’invitation pour activer cet accès.");
+        return;
+      }
+      registerIndependent.mutate({ name, email, password, invitationToken: independentInvitationToken });
+      return;
+    }
+    register.mutate({ name, email, password });
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-white">

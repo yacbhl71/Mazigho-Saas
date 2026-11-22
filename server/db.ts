@@ -7951,6 +7951,17 @@ export async function createPasswordUser(input: {
   }
 }
 
+/** Remove only a freshly-created independent shadow user when invitation activation fails. */
+export async function deleteIndependentShadowUser(openId: string) {
+  if (!openId.startsWith("independent_")) throw new Error("INVALID_INDEPENDENT_SHADOW_USER");
+  const db = await getDb();
+  if (!db) return;
+  const user = await db.select({ id: users.id }).from(users).where(eq(users.openId, openId)).limit(1);
+  if (!user[0]) return;
+  await db.delete(accountTokens).where(eq(accountTokens.userId, user[0].id));
+  await db.delete(users).where(eq(users.id, user[0].id));
+}
+
 /** Passwordless customer created at checkout; the owner of the address claims it later through a password reset. */
 export async function createGuestCustomer(input: { openId: string; email: string; name: string }) {
   await ensurePasswordHashColumn();
