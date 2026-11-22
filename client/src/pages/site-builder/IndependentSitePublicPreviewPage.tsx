@@ -34,6 +34,9 @@ import {
   Tablet,
 } from "lucide-react";
 
+const PUBLIC_IMAGE_FALLBACK =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect width='640' height='480' fill='%23263653'/%3E%3Ccircle cx='320' cy='210' r='92' fill='%23f5b98f' fill-opacity='.65'/%3E%3Cpath d='M0 390 Q160 280 320 390 T640 390 V480 H0Z' fill='%23172033'/%3E%3C/svg%3E";
+
 export default function IndependentSitePublicPreviewPage() {
   const [, previewParams] = useRoute("/constructeur-sites/apercu/:slug");
   const [, publicParams] = useRoute("/sites/:slug");
@@ -144,6 +147,19 @@ export default function IndependentSitePublicPreviewPage() {
       // Le suivi est facultatif : un navigateur qui bloque sessionStorage reste pleinement utilisable.
     }
   }, [activePage?.slug, isPreviewRoute, recordPageViewMutation, site?.slug]);
+
+  useEffect(() => {
+    const container = publicContentRef.current;
+    if (!container || !site || !activePage) return;
+    const imageElements = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
+    imageElements.forEach((image) => {
+      if (!image.getAttribute("src")?.trim()) image.src = PUBLIC_IMAGE_FALLBACK;
+      image.addEventListener("error", () => {
+        if (image.src !== PUBLIC_IMAGE_FALLBACK) image.src = PUBLIC_IMAGE_FALLBACK;
+      }, { once: true });
+    });
+    return () => imageElements.forEach((image) => image.replaceWith(image.cloneNode(true)));
+  }, [activePage, isPreviewRoute, site]);
 
   useEffect(() => {
     const container = publicContentRef.current;
