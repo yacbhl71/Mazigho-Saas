@@ -372,6 +372,10 @@ export const authRouter = router({
       let user = input.independent
         ? await getIndependentUserByEmail(email)
         : await getUserByEmail(email);
+      // Le propriétaire initial d’un site peut être son compte global. On ne
+      // retombe sur cette identité qu’en l’absence d’un shadow indépendant;
+      // lorsqu’il existe, l’identité indépendante reste toujours prioritaire.
+      if (!user && input.independent) user = await getUserByEmail(email);
 
       let passwordMatches = false;
       if (user?.passwordHash) {
