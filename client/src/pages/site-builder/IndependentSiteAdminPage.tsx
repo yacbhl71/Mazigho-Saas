@@ -155,6 +155,8 @@ export default function IndependentSiteAdminPage() {
   const [inviteRole, setInviteRole] = useState<"admin" | "editor">("editor");
   const [inviteExpiresHours, setInviteExpiresHours] = useState<number>(72);
   const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
+  const [transferTargetEmail, setTransferTargetEmail] = useState("");
+  const [transferConfirmationTitle, setTransferConfirmationTitle] = useState("");
   const [lastInvitation, setLastInvitation] = useState<{
     email: string;
     role: "admin" | "editor";
@@ -598,6 +600,30 @@ export default function IndependentSiteAdminPage() {
     },
     onError: (err) => {
       const msg = err.message || "Impossible de révoquer cet accès.";
+      setFeedbackBanner({ tone: "error", message: msg });
+      toast.error(msg);
+    },
+  });
+  const transferOwnershipMutation = trpc.independentSiteBuilder.transferOwnership.useMutation({
+    onSuccess: async () => {
+      if (siteId) {
+        await Promise.all([
+          utils.independentSiteBuilder.listProjects.invalidate(),
+          utils.independentSiteBuilder.listAccess.invalidate({ siteId }),
+          utils.independentSiteBuilder.getAccessRole.invalidate({ siteId }),
+          utils.independentSiteBuilder.getProject.invalidate({ siteId }),
+        ]);
+      }
+      setTransferTargetEmail("");
+      setTransferConfirmationTitle("");
+      setFeedbackBanner({
+        tone: "success",
+        message: "La propriété du site a été transférée. Votre accès est conservé comme administrateur.",
+      });
+      toast.success("Propriété transférée.");
+    },
+    onError: (err) => {
+      const msg = err.message || "Le transfert de propriété n’a pas été effectué.";
       setFeedbackBanner({ tone: "error", message: msg });
       toast.error(msg);
     },
@@ -2536,6 +2562,77 @@ export default function IndependentSiteAdminPage() {
                   </div>
                 )}
               </section>
+              {canManageTeam && (
+                <section className="rounded-xl border border-amber-300 bg-amber-50 p-6">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                    <div>
+                      <h2 className="text-base font-bold text-amber-950">Transfert de propriété du site</h2>
+                      <p className="mt-1 text-sm leading-relaxed text-amber-900">
+                        Opération sensible : le nouveau propriétaire recevra les droits complets sur ce site. Votre accès sera conservé comme administrateur. Cette action ne concerne que ce site.
+                      </p>
+                    </div>
+                  </div>
+                  <form
+                    className="mt-5 grid gap-4 md:grid-cols-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!siteId || !transferTargetEmail.trim() || !project) return;
+                      if (transferConfirmationTitle.trim() !== project.title.trim()) {
+                        toast.error("Saisissez le nom exact du site pour confirmer.");
+                        return;
+                      }
+                      setInlineConfirm({
+                        title: `Transférer « ${project.title} » ?`,
+                        description: `Le compte ${transferTargetEmail.trim()} deviendra propriétaire de ce site. Votre accès restera administrateur.`,
+                        confirmLabel: "Confirmer le transfert",
+                        tone: "danger",
+                        onConfirm: () => transferOwnershipMutation.mutate({
+                          siteId,
+                          targetEmail: transferTargetEmail.trim(),
+                          confirmationSiteTitle: transferConfirmationTitle.trim(),
+                        }),
+                      });
+                    }}
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="transfer-target-email">E-mail du nouveau propriétaire</Label>
+                      <Input
+                        id="transfer-target-email"
+                        type="email"
+                        required
+                        value={transferTargetEmail}
+                        onChange={(event) => setTransferTargetEmail(event.target.value)}
+                        placeholder="responsable@association.org"
+                        className="min-h-[44px] border-amber-300 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="transfer-confirmation-title">
+                        Saisir exactement : <strong>{project.title}</strong>
+                      </Label>
+                      <Input
+                        id="transfer-confirmation-title"
+                        required
+                        value={transferConfirmationTitle}
+                        onChange={(event) => setTransferConfirmationTitle(event.target.value)}
+                        placeholder={project.title}
+                        className="min-h-[44px] border-amber-300 bg-white"
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white/70 p-3 text-xs text-amber-950">
+                      <span>Site concerné : <strong>{project.title}</strong> · aucun autre site ni aucune boutique ne sera modifié.</span>
+                      <Button
+                        type="submit"
+                        disabled={transferOwnershipMutation.isPending || !transferTargetEmail.trim() || transferConfirmationTitle.trim() !== project.title.trim()}
+                        className="min-h-[42px] bg-amber-700 text-white hover:bg-amber-800"
+                      >
+                        {transferOwnershipMutation.isPending ? "Transfert en cours…" : "Préparer le transfert"}
+                      </Button>
+                    </div>
+                  </form>
+                </section>
+              )}
             </div>
           )}
         </main>
