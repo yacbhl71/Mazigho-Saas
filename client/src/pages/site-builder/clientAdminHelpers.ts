@@ -284,6 +284,10 @@ export function buildClientPreviewSrcDoc(input: {
     [style*="background:#f3eee8"], [style*="background: #f3eee8"] {
       background: var(--site-background) !important;
     }
+    [style*="color:#172033"], [style*="color: #172033"] { color: var(--site-primary) !important; }
+    [style*="color:#9b563e"], [style*="color: #9b563e"], [style*="color:#f5b98f"], [style*="color: #f5b98f"] { color: var(--site-accent) !important; }
+    [style*="background:#9b563e"], [style*="background: #9b563e"], [style*="background:#f5b98f"], [style*="background: #f5b98f"] { background: var(--site-accent) !important; }
+    [style*="border:#9b563e"], [style*="border: #9b563e"], [style*="border-left:5px solid #9b563e"] { border-color: var(--site-accent) !important; }
     body { color: var(--site-primary) !important; font-family: var(--site-body-font); }
     h1, h2, h3, h4, h5, h6 { color: var(--site-primary) !important; font-family: var(--site-heading-font) !important; }
     a { color: var(--site-primary); }

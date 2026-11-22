@@ -656,7 +656,7 @@ export default function IndependentSitePublicPreviewPage() {
             {INDEPENDENT_RESPONSIVE_BASE_CSS}
             {"\n"}
             {sanitizeIndependentCss(activePage.css)}
-            {`\n            [style*="background:#faf8f5"], [style*="background: #faf8f5"], [style*="background:#f7f4ef"], [style*="background: #f7f4ef"], [style*="background:#f3eee8"], [style*="background: #f3eee8"] { background: var(--site-background) !important; }\n            `}
+            {`\n            [style*="background:#faf8f5"], [style*="background: #faf8f5"], [style*="background:#f7f4ef"], [style*="background: #f7f4ef"], [style*="background:#f3eee8"], [style*="background: #f3eee8"] { background: var(--site-background) !important; }\n            [style*="color:#172033"], [style*="color: #172033"] { color: var(--site-primary) !important; }\n            [style*="color:#9b563e"], [style*="color: #9b563e"], [style*="color:#f5b98f"], [style*="color: #f5b98f"] { color: var(--site-accent) !important; }\n            [style*="background:#9b563e"], [style*="background: #9b563e"], [style*="background:#f5b98f"], [style*="background: #f5b98f"] { background: var(--site-accent) !important; }\n            [style*="border:#9b563e"], [style*="border: #9b563e"], [style*="border-left:5px solid #9b563e"] { border-color: var(--site-accent) !important; }\n            `}
           </style>
           <div
             ref={publicContentRef}
