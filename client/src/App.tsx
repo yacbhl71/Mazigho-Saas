@@ -478,6 +478,7 @@ function Router() {
   const maintenancePreview = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const forcePreview = maintenancePreview?.get("preview_maintenance") === "1";
   const forceStoreMaintenancePreview = maintenancePreview?.get("preview_store_maintenance") === "1";
+  const isMazighoShopVisualReplica = import.meta.env.VITE_MAZIGHOSHOP_VISUAL_REPLICA === "true";
   const publishedPathEligible = path !== "/" && path !== "/admin" && !path.startsWith("/admin/") && path !== "/administration-site" && path !== "/connexion-administration" && !path.startsWith("/api") && !path.startsWith("/constructeur-sites") && !path.startsWith("/sites/") && !["/login", "/register", "/mon-compte", "/parametres"].some(prefix => path === prefix || path.startsWith(`${prefix}/`));
   const publishedPathQuery = trpc.design.getPublishedBuilder.useQuery({ path }, { enabled: publishedPathEligible, retry: false, refetchOnWindowFocus: false });
 
@@ -503,14 +504,14 @@ function Router() {
     return <ExternalLocationRedirect href="/gestion-boutique" />;
   }
 
-  if (storefrontAvailabilityQuery.isLoading && !isPublicSaasLanding && !isStudioHost) {
+  if (storefrontAvailabilityQuery.isLoading && !isMazighoShopVisualReplica && !isPublicSaasLanding && !isStudioHost) {
     return <div className="min-h-screen bg-slate-950" aria-busy="true" />;
   }
 
   // A setup boutique stays unavailable to the public. Its authenticated owner
   // may nevertheless reach the isolated management panel through the explicit
   // preparation hint; server-side membership guards still enforce access.
-  if (!storefrontAvailabilityQuery.data?.publicStorefront && !isPrivateSetupOwnerPanel && !isSupportImpersonating && !isPublicSaasLanding && !isStudioHost && !(isPrimaryMazighoHost && isExemptPath)) {
+  if (!storefrontAvailabilityQuery.data?.publicStorefront && !isMazighoShopVisualReplica && !isPrivateSetupOwnerPanel && !isSupportImpersonating && !isPublicSaasLanding && !isStudioHost && !(isPrimaryMazighoHost && isExemptPath)) {
     return <StorefrontUnavailablePage />;
   }
 

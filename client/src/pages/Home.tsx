@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, Quote, Search, ShoppingCart, Sparkles, Star, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -182,6 +182,61 @@ function InteractiveBeforeAfterSlider({
   );
 }
 
+type MazighoReplicaTile = { href: string; image: string; title: string; description?: string };
+type MazighoReplicaProduct = { id: number | string; slug: string; name: string; price: number; originalPrice?: number | null; images?: Array<{ imageUrl?: string | null }> };
+
+function MazighoShopReplicaSections({
+  tiles,
+  products,
+  formatPrice,
+}: {
+  tiles: MazighoReplicaTile[];
+  products: MazighoReplicaProduct[];
+  formatPrice: (price: number) => string;
+}) {
+  const guarantees = [
+    ["Livraison rapide", "Suisse & Europe"],
+    ["Retours gratuits", "Sous 30 jours"],
+    ["Paiement sécurisé", "Transactions protégées"],
+    ["Support client", "Une équipe à votre écoute"],
+    ["Sélection vérifiée", "Des produits utiles"],
+    ["Offres exclusives", "Les meilleurs prix"],
+  ];
+  const productCard = (product: MazighoReplicaProduct) => {
+    const image = product.images?.[0]?.imageUrl || "";
+    const discounted = Boolean(product.originalPrice && product.originalPrice > product.price);
+    return <Link key={product.id} href={`/produit/${product.slug}`} className="group block min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:-translate-y-1 hover:shadow-xl">
+      <div className="relative aspect-square overflow-hidden bg-[#f7f7f7]">{image ? <img src={image} alt={product.name} width={720} height={720} loading="lazy" decoding="async" onError={event => { event.currentTarget.style.display = "none"; }} className="h-full w-full object-contain transition duration-500 group-hover:scale-105" /> : <div className="grid h-full place-items-center text-4xl text-slate-300">✦</div>}{discounted && <span className="absolute left-3 top-3 rounded-full bg-[#f47b20] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white">Promo</span>}</div>
+      <div className="p-4"><h3 className="line-clamp-2 min-h-12 text-sm font-bold leading-5 text-slate-900">{product.name}</h3><div className="mt-3 flex flex-wrap items-baseline gap-2"><span className="text-base font-extrabold text-[#f47b20]">{formatPrice(product.price)}</span>{discounted && <span className="text-xs text-slate-400 line-through">{formatPrice(product.originalPrice!)}</span>}</div></div>
+    </Link>;
+  };
+  const newProducts = products.slice(0, 4);
+  const bestProducts = products.slice(0, 8);
+  const promoProducts = products.filter(product => Boolean(product.originalPrice && product.originalPrice > product.price)).slice(0, 4);
+  return <>
+    <section className="border-y border-slate-200 bg-white" aria-label="Garanties MAZIGHOSHOP"><div className="container grid divide-y divide-slate-200 py-2 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-6 lg:divide-x lg:divide-y-0">{guarantees.map(([title, text]) => <div key={title} className="flex items-center gap-3 px-3 py-4 lg:justify-center"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-orange-50 text-lg text-[#f47b20]">✓</span><div><p className="text-xs font-bold text-slate-900">{title}</p><p className="mt-0.5 text-[10px] text-slate-500">{text}</p></div></div>)}</div></section>
+    <section className="bg-white px-4 py-12 sm:py-16" aria-labelledby="replica-categories"><div className="container"><div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f47b20]">Explorez nos univers</p><h2 id="replica-categories" className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Tout pour votre quotidien</h2></div><Link href="/categories" className="hidden items-center gap-1 text-sm font-bold text-slate-700 hover:text-[#f47b20] sm:inline-flex">Voir toutes les catégories <ArrowRight className="h-4 w-4" /></Link></div><div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">{tiles.slice(0, 6).map(tile => <Link key={tile.href} href={tile.href} className="group text-center"><div className="aspect-[4/5] overflow-hidden rounded-xl bg-slate-100"><img src={tile.image} srcSet={responsiveHomeImageSources[tile.image]} sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 16vw" alt={tile.title} width={480} height={600} loading="lazy" decoding="async" onError={event => { event.currentTarget.style.display = "none"; }} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><h3 className="mt-3 text-sm font-bold text-slate-900 group-hover:text-[#f47b20]">{tile.title}</h3></Link>)}</div></div></section>
+    <ReplicaProductSection eyebrow="Nouveautés" title="Les dernières nouveautés" products={newProducts} productCard={productCard} href="/nouveautes" />
+    <ReplicaProductSection eyebrow="Nos favoris" title="Les best-sellers" products={bestProducts} productCard={productCard} href="/best-sellers" muted />
+    <section className="bg-[#fff7f0] px-4 py-12 sm:py-16"><div className="container"><div className="rounded-2xl bg-[#f47b20] px-6 py-10 text-white sm:px-12"><div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-white/75">Offres flash</p><h2 className="mt-2 text-3xl font-black tracking-tight">Des offres à ne pas manquer</h2><p className="mt-3 max-w-xl text-sm leading-6 text-white/85">Profitez de nos sélections promotionnelles tant qu’elles sont disponibles.</p></div><Link href="/promos" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-[#e86d16] transition hover:bg-orange-50">Voir les promos <ArrowRight className="h-4 w-4" /></Link></div>{promoProducts.length > 0 && <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{promoProducts.map(productCard)}</div>}</div></div></section>
+    <section className="bg-white px-4 py-12 sm:py-16"><div className="container grid items-center gap-8 rounded-2xl bg-[#fff7f0] px-6 py-10 sm:px-12 lg:grid-cols-[1fr_auto]"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f47b20]">Idées cadeaux</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Trouvez une attention qui fait plaisir</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Des idées utiles et originales pour chaque occasion, sélectionnées avec soin.</p></div><Link href="/boutique" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#f47b20] px-6 text-sm font-bold text-white transition hover:bg-[#df6810]">Découvrir la boutique <ArrowRight className="h-4 w-4" /></Link></div></section>
+    <section className="border-t border-slate-200 bg-white px-4 py-12 sm:py-16"><div className="container grid gap-6 rounded-2xl bg-slate-950 px-6 py-10 text-white sm:px-12 lg:grid-cols-[1fr_auto] lg:items-center"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-[#ff9b52]">Newsletter</p><h2 className="mt-2 text-2xl font-black sm:text-3xl">Recevez nos nouveautés et offres</h2><p className="mt-3 max-w-xl text-sm leading-6 text-white/70">Inscrivez-vous pour ne rien manquer de l’actualité MAZIGHOSHOP.</p></div><Link href="/contact" className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#f47b20] px-6 text-sm font-bold text-white hover:bg-[#df6810]">Je m’inscris</Link></div></section>
+  </>;
+}
+
+function ReplicaProductSection({ eyebrow, title, products, productCard, href, muted = false }: { eyebrow: string; title: string; products: MazighoReplicaProduct[]; productCard: (product: MazighoReplicaProduct) => ReactNode; href: string; muted?: boolean }) {
+  return <section className={`${muted ? "bg-[#fffaf6]" : "bg-white"} px-4 py-12 sm:py-16`}><div className="container"><div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-[#f47b20]">{eyebrow}</p><h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{title}</h2></div><Link href={href} className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 hover:text-[#f47b20]">Tout voir <ArrowRight className="h-4 w-4" /></Link></div>{products.length > 0 ? <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">{products.map(productCard)}</div> : <div className="mt-8 rounded-xl border border-dashed border-slate-300 px-6 py-12 text-center text-sm text-slate-500">La sélection sera bientôt disponible.</div>}</div></section>;
+}
+
+function MazighoShopReplicaFooter() {
+  const columns = [
+    { title: "Boutique", links: [["Accueil", "/"], ["Boutique", "/boutique"], ["Nouveautés", "/nouveautes"], ["Best-sellers", "/best-sellers"], ["Promos", "/promos"]] },
+    { title: "Catégories", links: [["High-Tech & Gadgets", "/categorie/high-tech-gadgets"], ["Maison & Organisation", "/categorie/maison-organisation"], ["Beauté & Bien-Être", "/categorie/beaute-bien-etre"], ["Sport & Fitness", "/categorie/sport-fitness"], ["Auto & Accessoires", "/categorie/auto-accessoires"]] },
+    { title: "Besoin d’aide ?", links: [["Suivi de commande", "/suivi"], ["FAQ", "/faq"], ["Contact", "/contact"], ["Livraison & retours", "/livraison-retours"]] },
+  ];
+  return <footer className="border-t border-slate-800 bg-[#171717] text-white"><div className="container py-12 sm:py-16"><div className="grid gap-10 lg:grid-cols-[1.2fr_2fr] lg:gap-16"><div><Link href="/" className="inline-flex items-center gap-2 text-xl font-black tracking-[0.08em] text-[#f47b20]">MAZIGHOSHOP</Link><p className="mt-5 max-w-xs text-sm leading-6 text-white/65">Votre boutique en ligne pour découvrir des produits utiles, tendance et accessibles.</p><div className="mt-6 flex gap-2"><a href="https://instagram.com" target="_blank" rel="noreferrer" aria-label="Instagram" className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-xs font-bold hover:border-[#f47b20] hover:text-[#f47b20]">IG</a><a href="https://facebook.com" target="_blank" rel="noreferrer" aria-label="Facebook" className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-xs font-bold hover:border-[#f47b20] hover:text-[#f47b20]">f</a></div></div><div className="grid gap-8 sm:grid-cols-3">{columns.map(column => <div key={column.title}><h3 className="text-sm font-bold uppercase tracking-[0.14em] text-white">{column.title}</h3><ul className="mt-4 space-y-3">{column.links.map(([label, href]) => <li key={href}><Link href={href} className="text-sm text-white/65 transition hover:text-[#ff9b52]">{label}</Link></li>)}</ul></div>)}</div></div><div className="mt-12 grid gap-5 border-y border-white/10 py-6 text-sm sm:grid-cols-3"><div><p className="font-bold">Livraison Suisse &amp; Europe</p><p className="mt-1 text-white/55">Des options adaptées à votre destination.</p></div><div><p className="font-bold">Retours gratuits 30 jours</p><p className="mt-1 text-white/55">Achetez en toute tranquillité.</p></div><div><p className="font-bold">Paiement sécurisé</p><p className="mt-1 text-white/55">Vos transactions sont protégées.</p></div></div><div className="flex flex-col gap-3 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between"><p>© {new Date().getFullYear()} MAZIGHOSHOP. Tous droits réservés.</p><div className="flex flex-wrap gap-x-3 gap-y-2"><Link href="/conditions-generales" className="hover:text-white">Conditions générales</Link><Link href="/confidentialite" className="hover:text-white">Confidentialité</Link><Link href="/mentions-legales" className="hover:text-white">Mentions légales</Link></div></div></div></footer>;
+}
+
 export default function Home() {
   const { locale } = useLocale();
   const { formatStorePrice: formatPrice } = useStorePrice();
@@ -235,6 +290,7 @@ export default function Home() {
   } as const;
 
   const isClientStore = Boolean(storeAvailability.data && !storeAvailability.data.isPlatformStore);
+  const isMazighoShopReplica = import.meta.env.VITE_MAZIGHOSHOP_VISUAL_REPLICA === "true";
   const limitedShowcase = Boolean(storeAvailability.data?.publicStorefront && storeAvailability.data.commerceEnabled === false);
   const hasSingleActiveMarket = marketSettings.data?.activeCountries.length === 1;
   const limitedCopy = getLimitedStorefrontCopy(locale);
@@ -278,7 +334,7 @@ export default function Home() {
   // resolving its own identity and carousel. A neutral, size-stable shell is
   // preferable to showing MAZIGHO content for a fraction of a second.
   const initialStorefrontLoading = designProfileLoading || storeAvailability.isLoading || activeBannersQuery.isLoading || publishedBuilderQuery.isLoading;
-  if (initialStorefrontLoading) {
+  if (initialStorefrontLoading && !isMazighoShopReplica) {
     return <div className="min-h-screen bg-slate-50" aria-busy="true" aria-label="Chargement de la boutique">
       <div className="h-[104px] border-b border-slate-100 bg-white" />
       <div className="h-[520px] animate-pulse bg-slate-200/80 md:h-[560px] lg:h-[640px]" />
@@ -289,6 +345,10 @@ export default function Home() {
   if (publishedBuilderQuery.data) {
     const metadata = publishedBuilderQuery.data.metadata || { title: "Votre boutique", description: "", language: "fr", socialCoverUrl: "", faviconUrl: "" };
     return <PublishedBuilderFrame data={{ html: publishedBuilderQuery.data.html, css: publishedBuilderQuery.data.css, metadata }} />;
+  }
+
+  if (isMazighoShopReplica) {
+    return <div className="min-h-screen bg-white text-slate-900"><Header /><main><HeroBanner allowPlatformFallback={false} /><MazighoShopReplicaSections tiles={platformDiscoveryTiles.map(tile => ({ href: tile.href, image: tile.image, title: tile.title, description: tile.description }))} products={catalogProducts as MazighoReplicaProduct[]} formatPrice={price => formatPrice(price, locale)} /></main><MazighoShopReplicaFooter /></div>;
   }
 
   // Le statut « limited » bloque le commerce, pas le design. Une boutique

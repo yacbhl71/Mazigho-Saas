@@ -13,6 +13,13 @@ import { isCarouselVideoUrl } from "@shared/carouselMedia";
 const DEFAULT_HERO_IMAGE = "/assets/hero-best-offers.webp";
 const HERO_MODE_IMAGE = "/assets/hero-mode-accessoires.webp";
 const HERO_BEAUTE_IMAGE = "/assets/hero-beaute-bien-etre.webp";
+const MAZIGHOSHOP_REPLICA_SLIDES: HeroSlide[] = [
+  { id: 101, title: "High-Tech & Gadgets", subtitle: "Les innovations qui simplifient votre quotidien.", imageUrl: "/assets/category-high-tech-hero.webp", buttonLink: "/categorie/high-tech-gadgets", buttonText: "Commander Maintenant" },
+  { id: 102, title: "Maison & Organisation", subtitle: "Des idées pratiques pour un intérieur plus simple et plus beau.", imageUrl: "/assets/category-maison-hero.webp", buttonLink: "/categorie/maison-organisation", buttonText: "Commander Maintenant" },
+  { id: 103, title: "Beauté & Bien-Être", subtitle: "Prenez soin de vous avec notre sélection bien-être.", imageUrl: "/assets/category-beaute-hero.webp", buttonLink: "/categorie/beaute-bien-etre", buttonText: "Commander Maintenant" },
+  { id: 104, title: "Sport & Fitness", subtitle: "Bougez mieux, vivez plus fort, chaque jour.", imageUrl: "/assets/category-sport-hero.webp", buttonLink: "/categorie/sport-fitness", buttonText: "Commander Maintenant" },
+  { id: 105, title: "Auto & Accessoires", subtitle: "Les accessoires utiles pour prendre la route sereinement.", imageUrl: "/assets/category-auto-hero.webp", buttonLink: "/categorie/auto-accessoires", buttonText: "Commander Maintenant" },
+];
 
 const localizedHeroTitles: Record<StorefrontLocale, Record<string, string>> = {
   fr: { "Découvrez nos Meilleures Offres": "Découvrez nos Meilleures Offres", "Mode & Accessoires": "Mode & Accessoires", "Beauté & Bien-Être": "Beauté & Bien-Être" },
@@ -48,6 +55,7 @@ export default function HeroBanner({ allowPlatformFallback = true }: { allowPlat
   const { profile, palette, isLoading: designProfileLoading } = useDesignProfile(locale);
   const copy = getPublicCopy(locale);
   const remoteBanners = trpc.content.getActiveBanners.useQuery(locale);
+  const isMazighoShopReplica = import.meta.env.VITE_MAZIGHOSHOP_VISUAL_REPLICA === "true";
   const [currentSlide, setCurrentSlide] = useState(0);
   const [videoSoundEnabled, setVideoSoundEnabled] = useState(false);
   // These labels belong to the storefront profile, not to MAZIGHO's generic
@@ -120,9 +128,35 @@ export default function HeroBanner({ allowPlatformFallback = true }: { allowPlat
   };
 
   const currentBanner = banners[currentSlide];
-  if (remoteBanners.isLoading || designProfileLoading) return <div className="h-[520px] w-full animate-pulse bg-slate-200/80 md:h-[560px] lg:h-[640px]" aria-busy="true" aria-label="Chargement de la bannière" />;
-  if (!currentBanner) {
+  if ((remoteBanners.isLoading || designProfileLoading) && !isMazighoShopReplica) return <div className="h-[520px] w-full animate-pulse bg-slate-200/80 md:h-[560px] lg:h-[640px]" aria-busy="true" aria-label="Chargement de la bannière" />;
+  if (!currentBanner && !isMazighoShopReplica) {
     return <div className="relative flex h-[520px] w-full items-end overflow-hidden bg-slate-950 px-6 py-10 text-white md:h-[560px] md:px-10 lg:h-[640px] lg:px-16"><div className="absolute inset-0 opacity-30" style={{ background: `linear-gradient(135deg, ${palette.primary}, #020617)` }} /><div className="relative z-10 max-w-xl"><p className="text-xs font-bold uppercase tracking-[0.28em] text-white/70">{profile.brandMessage || "Votre boutique"}</p><h1 className="mt-4 text-4xl font-semibold leading-tight md:text-6xl">{profile.brandName}</h1><p className="mt-4 text-base leading-7 text-white/80">Préparez une bannière personnalisée depuis votre panneau de gestion.</p></div></div>;
+  }
+
+  if (isMazighoShopReplica) {
+    const replicaBanner = MAZIGHOSHOP_REPLICA_SLIDES[currentSlide] || MAZIGHOSHOP_REPLICA_SLIDES[0];
+    const replicaImage = replicaBanner.imageUrl || "/assets/category-high-tech-hero.webp";
+    return (
+      <section className="relative min-h-[470px] overflow-hidden bg-[#171717] text-white sm:min-h-[560px] lg:min-h-[620px]" data-storefront-hero="mazighoshop-replica" aria-roledescription="carrousel">
+        <img key={replicaBanner.id} src={replicaImage} alt={replicaBanner.title} width={1920} height={900} loading="eager" fetchPriority="high" decoding="async" onError={event => { event.currentTarget.src = "/assets/category-high-tech-hero.webp"; }} className="absolute inset-0 h-full w-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
+        <div className="container relative z-10 flex min-h-[470px] items-center px-6 py-16 sm:min-h-[560px] sm:px-10 lg:min-h-[620px] lg:px-16">
+          <div className="max-w-xl">
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-[#ff9b52]">MAZIGHOSHOP</p>
+            <h1 className="mb-5 text-4xl font-black leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">{replicaBanner.title}</h1>
+            <p className="mb-8 max-w-lg text-base leading-7 text-white/85 sm:text-lg">{replicaBanner.subtitle}</p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href={replicaBanner.buttonLink}><Button className="min-h-12 bg-[#f47b20] px-7 text-base font-bold text-white shadow-lg hover:bg-[#df6810]">{replicaBanner.buttonText}</Button></Link>
+              <Button asChild variant="outline" className="min-h-12 border-white/70 bg-white/10 px-7 text-base font-bold text-white backdrop-blur-sm hover:bg-white hover:text-slate-900"><Link href="/best-sellers">Voir les Best-sellers</Link></Button>
+            </div>
+          </div>
+        </div>
+        <button type="button" onClick={goToPrevious} className="absolute left-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/35 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/60" aria-label="Bannière précédente"><ChevronLeft className="h-6 w-6" /></button>
+        <button type="button" onClick={goToNext} className="absolute right-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/35 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/60" aria-label="Bannière suivante"><ChevronRight className="h-6 w-6" /></button>
+        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 gap-2" role="tablist" aria-label="Univers de la boutique">{MAZIGHOSHOP_REPLICA_SLIDES.map((slide, index) => <button key={slide.id} type="button" onClick={() => selectSlide(index)} className={`h-2.5 rounded-full transition-all ${index === currentSlide ? "w-10 bg-[#f47b20]" : "w-2.5 bg-white/60 hover:bg-white"}`} aria-label={`Afficher ${slide.title}`} aria-selected={index === currentSlide} />)}</div>
+      </section>
+    );
   }
 
   // The market composition keeps the catalogue immediately legible: a large

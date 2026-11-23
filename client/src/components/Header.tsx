@@ -50,6 +50,7 @@ export default function Header() {
   const storeAvailability = trpc.storefront.getAvailability.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const marketSettings = trpc.storefront.getMarketSettings.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
   const isPlatformStore = Boolean(storeAvailability.data?.isPlatformStore);
+  const isMazighoShopReplica = import.meta.env.VITE_MAZIGHOSHOP_VISUAL_REPLICA === "true";
   const hasResolvedNonPlatformStore = Boolean(storeAvailability.data && !storeAvailability.data.isPlatformStore);
   const commerceEnabled = storeAvailability.data?.commerceEnabled !== false;
   const limitedShowcase = Boolean(storeAvailability.data?.publicStorefront && storeAvailability.data.commerceEnabled === false);
@@ -174,8 +175,46 @@ export default function Header() {
     return <Link key={item.id} href={item.href}><div onClick={close} className={`flex min-h-11 cursor-pointer items-center rounded px-4 py-2 text-sm ${item.id === "promos" ? "font-semibold text-orange-500 hover:bg-orange-50" : "text-slate-700 hover:bg-gray-100"}`}>{label}</div></Link>;
   };
 
-  if (designProfileLoading || storeAvailability.isLoading) {
+  if ((designProfileLoading || storeAvailability.isLoading) && !isMazighoShopReplica) {
     return <header className="sticky top-0 z-50 border-b border-slate-100 bg-white" aria-busy="true" aria-label="Chargement de l’identité de la boutique"><div className="h-9 animate-pulse bg-slate-200/80" /><div className="flex h-16 items-center gap-3 px-4 sm:px-6"><div className="h-9 w-32 animate-pulse rounded-lg bg-slate-100" /><div className="hidden h-6 flex-1 animate-pulse rounded bg-slate-100 xl:block" /><div className="ml-auto h-9 w-28 animate-pulse rounded-lg bg-slate-100" /></div></header>;
+  }
+
+  if (isMazighoShopReplica) {
+    const replicaNavigation = [
+      ["Accueil", "/"],
+      ["Boutique", "/boutique"],
+      ["Catégories", "/categories"],
+      ["Nouveautés", "/nouveautes"],
+      ["Best-sellers", "/best-sellers"],
+      ["Promos", "/promos"],
+      ["Suivi", "/suivi"],
+      ["Contact", "/contact"],
+    ] as const;
+    return (
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white text-slate-900 shadow-sm" data-storefront-header-layout="mazighoshop-replica">
+        <div className="bg-[#f47b20] px-4 py-2 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-white sm:text-xs">-10% avec le code BIENVENUE</div>
+        <div className="hidden border-b border-slate-100 bg-[#fffaf6] px-4 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600 sm:block">Livraison Suisse &amp; Europe <span className="mx-3 text-[#f47b20]">•</span> Retours gratuits 30 jours</div>
+        <nav className="container flex min-h-[74px] items-center gap-4 py-3" aria-label="Navigation principale">
+          <Link href="/" aria-label="MAZIGHOSHOP accueil" className="flex min-w-0 items-center gap-2.5">
+            {brandLogoUrl ? <img src={brandLogoUrl} alt="" width={42} height={42} className="h-10 w-10 shrink-0 object-contain" /> : <img src={MAZIGHO_BOUTIQUE_LOGO} alt="" width={42} height={42} className="h-10 w-10 shrink-0 object-contain" />}
+            <span className="truncate text-lg font-black tracking-[0.08em] text-[#f47b20] sm:text-xl">MAZIGHOSHOP</span>
+          </Link>
+          <div className="hidden flex-1 items-center justify-center gap-5 xl:flex">
+            {replicaNavigation.map(([label, href]) => <Link key={href} href={href} className={`whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.05em] transition-colors hover:text-[#f47b20] ${location === href ? "text-[#f47b20]" : "text-slate-700"}`}>{label}</Link>)}
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2" aria-label="Actions boutique">
+            <div className="hidden w-48 xl:block"><SearchBar /></div>
+            <Link href="/boutique" aria-label="Rechercher" className="rounded-full p-2 text-slate-700 transition hover:bg-orange-50 hover:text-[#f47b20]"><span aria-hidden="true" className="text-lg">⌕</span></Link>
+            <Link href="/favoris" aria-label={`Favoris${favoritesCount ? `, ${favoritesCount}` : ""}`} className="rounded-full p-2 text-slate-700 transition hover:bg-orange-50 hover:text-[#f47b20]"><Heart className="h-5 w-5" /></Link>
+            {commerceEnabled && <Link href="/panier" aria-label={`Panier${cartCount ? `, ${cartCount}` : ""}`} className="relative rounded-full p-2 text-slate-700 transition hover:bg-orange-50 hover:text-[#f47b20]"><ShoppingCart className="h-5 w-5" />{cartCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#f47b20] px-1 text-[9px] font-bold text-white">{cartCount}</span>}</Link>}
+            <Link href="/mon-compte" aria-label="Mon compte" className="rounded-full p-2 text-slate-700 transition hover:bg-orange-50 hover:text-[#f47b20]"><User className="h-5 w-5" /></Link>
+            <button type="button" onClick={() => setIsMenuOpen(open => !open)} className="rounded-full p-2 text-slate-700 hover:bg-orange-50 xl:hidden" aria-label={isMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}>{isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+          </div>
+        </nav>
+        <div className="border-t border-slate-100 bg-white px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:hidden">Livraison Suisse &amp; Europe <span className="mx-1 text-[#f47b20]">•</span> Retours gratuits 30 jours</div>
+        {isMenuOpen && <div className="border-t border-slate-100 bg-white px-5 py-3 xl:hidden"><div className="grid gap-1 sm:grid-cols-2">{replicaNavigation.map(([label, href]) => <Link key={href} href={href} onClick={() => setIsMenuOpen(false)} className="rounded-lg px-3 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-orange-50 hover:text-[#f47b20]">{label}</Link>)}</div></div>}
+      </header>
+    );
   }
 
   return (
