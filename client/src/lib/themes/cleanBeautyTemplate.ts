@@ -156,6 +156,43 @@ export const CLEAN_BEAUTY_CSS = `
 .mz-cb-nav-list a:hover {
   color: #ec4899;
 }
+.mz-cb-mobile-menu {
+  display: none;
+  position: relative;
+}
+.mz-cb-mobile-menu summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 7px 11px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0;
+  color: #111827;
+}
+.mz-cb-mobile-menu summary::-webkit-details-marker {
+  display: none;
+}
+.mz-cb-mobile-menu summary::after {
+  content: '☰';
+  font-size: 18px;
+}
+.mz-cb-mobile-menu-panel {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: 42px;
+  min-width: 190px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.14);
+}
+.mz-cb-mobile-menu-panel a {
+  display: block;
+  padding: 10px 8px;
+  color: #111827;
+}
 
 /* Boutons */
 .mz-cb-btn {
@@ -576,6 +613,9 @@ export const CLEAN_BEAUTY_CSS = `
 @media (max-width: 600px) {
   .mz-cb-header-top { flex-wrap: wrap; }
   .mz-cb-search { order: 3; max-width: 100%; flex-basis: 100%; }
+  .mz-cb-nav-list { justify-content: flex-end; gap: 0; padding: 8px 16px; }
+  .mz-cb-nav-list > a { display: none; }
+  .mz-cb-mobile-menu { display: block; }
   .mz-cb-cat-grid,
   .mz-cb-prod-grid,
   .mz-cb-testi-grid,
@@ -628,6 +668,19 @@ const BLOCK_HEADER: MazighoGrapesBlock = {
           <a href="#coffrets">Coffrets ▾</a>
           <a href="#blog">Blog</a>
           <a href="#contact">Contact</a>
+          <details class="mz-cb-mobile-menu">
+            <summary aria-label="Ouvrir le menu mobile">Menu</summary>
+            <div class="mz-cb-mobile-menu-panel">
+              <a href="#accueil">Accueil</a>
+              <a href="#cosmetiques">Cosmétiques</a>
+              <a href="#coiffure">Coiffure</a>
+              <a href="#accessoires">Accessoires</a>
+              <a href="#vetements">Vêtements</a>
+              <a href="#coffrets">Coffrets</a>
+              <a href="#blog">Blog</a>
+              <a href="#contact">Contact</a>
+            </div>
+          </details>
         </div>
       </nav>
     </header>
