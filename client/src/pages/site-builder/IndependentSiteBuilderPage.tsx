@@ -154,6 +154,14 @@ const INDEPENDENT_BLOCK_PALETTE: Record<
   "Contact & Décoration": { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
 };
 
+const INDEPENDENT_MODULE_PALETTE = [
+  { surface: "#e5f2ff", border: "#9bc7f2", text: "#2563a8", active: "#3b82c4" },
+  { surface: "#e4fbf7", border: "#9bded5", text: "#0b716a", active: "#10b9a8" },
+  { surface: "#fff0f5", border: "#efb5c8", text: "#a2184d", active: "#e51d61" },
+  { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
+  { surface: "#fff3d6", border: "#f3cc72", text: "#a16207", active: "#d69b16" },
+];
+
 const INDEPENDENT_WORKSPACE_PALETTE = {
   organisation: { surface: "#e5f6ff", border: "#9ed8ef", text: "#0f617d", dot: "#16a8dc" },
   creation: { surface: "#f2e8ff", border: "#cdb2f4", text: "#6330a0", dot: "#803be8" },
@@ -187,11 +195,11 @@ function decorateIndependentGrapesjsBlockManager(root: ParentNode = document) {
     const style = document.createElement("style");
     style.id = styleId;
     style.textContent = `
-      .gjs-block-category[data-mz-block-category] { border: 1px solid var(--mz-block-border); border-radius: 10px; margin: 6px 4px; overflow: hidden; background: var(--mz-block-surface); }
-      .gjs-block-category[data-mz-block-category] > .gjs-title { background: var(--mz-block-active); color: #fff; font-weight: 800; letter-spacing: .01em; }
-      .gjs-block-category[data-mz-block-category] .gjs-blocks { padding: 7px; background: var(--mz-block-surface); }
-      .gjs-block-category[data-mz-block-category] .gjs-block { border-color: var(--mz-block-border); background: rgba(255,255,255,.86); color: var(--mz-block-text); box-shadow: none; }
-      .gjs-block-category[data-mz-block-category] .gjs-block:hover { border-color: var(--mz-block-active); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mz-block-active) 20%, transparent); }
+      .gjs-block-category[data-mz-palette-category] { border: 1px solid var(--mz-block-border); border-radius: 10px; margin: 6px 4px; overflow: hidden; background: var(--mz-block-surface); }
+      .gjs-block-category[data-mz-palette-category] > .gjs-title { background: var(--mz-block-active); color: #fff; font-weight: 800; letter-spacing: .01em; }
+      .gjs-block-category[data-mz-palette-category] .gjs-blocks { padding: 7px; background: var(--mz-block-surface); }
+      .gjs-block-category[data-mz-palette-category] .gjs-block { border-color: var(--mz-block-border); background: rgba(255,255,255,.86); color: var(--mz-block-text); box-shadow: none; }
+      .gjs-block-category[data-mz-palette-category] .gjs-block:hover { border-color: var(--mz-block-active); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mz-block-active) 20%, transparent); }
     `;
     document.head.appendChild(style);
   }
@@ -202,9 +210,15 @@ function decorateIndependentGrapesjsBlockManager(root: ParentNode = document) {
     const match = Object.keys(INDEPENDENT_BLOCK_PALETTE).find((category) =>
       label.includes(category)
     );
-    if (!match) return;
-    const palette = getIndependentBlockPalette(match as IndependentBuilderBlock["category"]);
-    categoryElement.dataset.mzBlockCategory = match;
+    const moduleMatch = label.startsWith("Modules ·");
+    if (!match && !moduleMatch) return;
+    const palette = match
+      ? getIndependentBlockPalette(match as IndependentBuilderBlock["category"])
+      : INDEPENDENT_MODULE_PALETTE[
+          Math.max(0, label.split("").reduce((hash, char) => hash + char.charCodeAt(0), 0)) %
+            INDEPENDENT_MODULE_PALETTE.length
+        ];
+    categoryElement.dataset.mzPaletteCategory = match ?? "module";
     categoryElement.style.setProperty("--mz-block-surface", palette.surface);
     categoryElement.style.setProperty("--mz-block-border", palette.border);
     categoryElement.style.setProperty("--mz-block-text", palette.text);
