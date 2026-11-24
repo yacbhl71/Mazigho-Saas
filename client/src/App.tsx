@@ -463,6 +463,7 @@ function Router() {
     path.startsWith("/constructeur-sites/") ||
     path.startsWith("/sites/") ||
     isIndependentSitesHost ||
+    isIndependentBuilderHost ||
     isSaasLandingHost;
   const isPrivateSetupOwnerPanel = typeof window !== "undefined" && isPrivateSetupOwnerPanelPath(path, window.location.search);
   const STAFF_ROLES = ["admin", "catalog_editor", "order_operator", "support_agent"];
