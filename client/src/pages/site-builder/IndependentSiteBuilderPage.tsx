@@ -175,6 +175,8 @@ const INDEPENDENT_TAB_PALETTE: Record<
   modeles: { surface: "#f1e5ff", border: "#c7a4f3", text: "#6731a2", active: "#7c20e8" },
 };
 
+let independentBlockPaletteObserver: MutationObserver | null = null;
+
 function getIndependentBlockPalette(category: IndependentBuilderBlock["category"]) {
   return INDEPENDENT_BLOCK_PALETTE[category] ?? INDEPENDENT_BLOCK_PALETTE["Textes & Actions"];
 }
@@ -196,8 +198,10 @@ function decorateIndependentGrapesjsBlockManager(root: ParentNode = document) {
 
   root.querySelectorAll<HTMLElement>(".gjs-block-category").forEach((categoryElement) => {
     const title = categoryElement.querySelector<HTMLElement>(":scope > .gjs-title");
-    const label = title?.textContent?.trim() ?? "";
-    const match = Object.keys(INDEPENDENT_BLOCK_PALETTE).find((category) => label === category);
+    const label = title?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    const match = Object.keys(INDEPENDENT_BLOCK_PALETTE).find((category) =>
+      label.includes(category)
+    );
     if (!match) return;
     const palette = getIndependentBlockPalette(match as IndependentBuilderBlock["category"]);
     categoryElement.dataset.mzBlockCategory = match;
@@ -206,6 +210,13 @@ function decorateIndependentGrapesjsBlockManager(root: ParentNode = document) {
     categoryElement.style.setProperty("--mz-block-text", palette.text);
     categoryElement.style.setProperty("--mz-block-active", palette.active);
   });
+
+  if (!independentBlockPaletteObserver && document.body) {
+    independentBlockPaletteObserver = new MutationObserver(() => {
+      decorateIndependentGrapesjsBlockManager(document);
+    });
+    independentBlockPaletteObserver.observe(document.body, { childList: true, subtree: true });
+  }
 }
 
 interface LayerSummaryItem {
