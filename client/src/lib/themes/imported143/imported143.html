@@ -1,0 +1,463 @@
+<div class="page-143">
+  <!-- Checkbox invisible pour le menu burger responsive en CSS pur -->
+  <input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox" aria-hidden="true">
+
+  <!-- HEADER -->
+  <header class="site-header">
+    <!-- Barre utilitaire supérieure (ordinateur) -->
+    <div class="header-topbar">
+      <div class="container header-topbar-inner">
+        <nav class="topbar-links" aria-label="Liens utilitaires">
+          <a href="#contact">Contact</a>
+          <a href="#faq">FAQ</a>
+          <a href="#telechargements">Téléchargements</a>
+          <a href="#medias">Médias</a>
+        </nav>
+        <div class="topbar-tools">
+          <a href="#langage-simplifie" class="tool-link">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span>Langage simplifié</span>
+          </a>
+          <a href="#chercher" class="tool-link">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span>Chercher</span>
+          </a>
+          <a href="#fr" class="tool-link lang-selector">
+            <span>FR</span>
+            <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barre de navigation principale -->
+    <div class="header-main">
+      <div class="container header-main-inner">
+        <a href="#accueil" class="brand-logo" aria-label="143.ch La Main Tendue">
+          <svg class="logo-svg" viewBox="0 0 165 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- Coeur rouge -->
+            <path d="M25.5 7.2C23.7 4.8 19.6 5.1 18.2 8C16.8 5.1 12.7 4.8 10.9 7.2C9.2 9.5 9.8 13.1 12.6 15.6L18.2 20.6L23.8 15.6C26.6 13.1 27.2 9.5 25.5 7.2Z" fill="#D82519"/>
+            <!-- Main stylisée (La Main Tendue) -->
+            <path d="M4 27.5C10 25 16 24.5 24 26.5C30 28 36 27 42 23" stroke="#222222" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M5.5 32C12 29.5 18.5 29 26.5 31C32.5 32.5 38 31.2 44.5 27.5" stroke="#222222" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8 36.2C14.5 33.8 21 33.4 28.5 35.2C34 36.5 39.5 35.5 45.5 32" stroke="#222222" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M12.5 39.8C18.5 37.8 24.5 37.6 31 39.2C35.5 40.3 39.8 39.5 44.5 37" stroke="#222222" stroke-width="1.8" stroke-linecap="round"/>
+            <!-- Texte 143.ch -->
+            <text x="53" y="33" fill="#222222" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="23" font-weight="700" letter-spacing="-0.5">143.ch</text>
+          </svg>
+        </a>
+
+        <!-- Menu horizontal ordinateur -->
+        <nav class="desktop-nav" aria-label="Navigation principale">
+          <a href="#qui-sommes-nous" class="nav-link">Qui sommes-nous</a>
+          <a href="#postes-regionaux" class="nav-link">Postes régionaux</a>
+          <a href="#actualites" class="nav-link">Actualités</a>
+        </nav>
+
+        <!-- Actions droite (Dons + Burger mobile) -->
+        <div class="header-actions">
+          <a href="#dons" class="btn-dons-pill">Dons</a>
+          <label for="nav-toggle" class="burger-btn" aria-label="Ouvrir le menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu mobile ouvert (fidèle à la capture du menu) -->
+    <div class="mobile-drawer" role="dialog" aria-label="Menu mobile">
+      <div class="mobile-drawer-top">
+        <div class="mobile-drawer-tools">
+          <a href="#fr" class="mobile-lang">
+            <span>FR</span>
+            <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </a>
+          <a href="#chercher" class="mobile-search">
+            <span>Chercher</span>
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </a>
+        </div>
+        <label for="nav-toggle" class="mobile-close-btn" aria-label="Fermer le menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#D82519" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </label>
+      </div>
+
+      <div class="mobile-drawer-body">
+        <nav class="mobile-primary-nav" aria-label="Navigation mobile principale">
+          <a href="#dons" class="mobile-nav-item is-red">
+            <span>Dons</span>
+            <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </a>
+          <a href="#qui-sommes-nous" class="mobile-nav-item">
+            <span>Qui sommes-nous</span>
+            <svg class="arrow-icon red-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </a>
+          <a href="#postes-regionaux" class="mobile-nav-item">
+            <span>Postes régionaux</span>
+          </a>
+          <a href="#actualites" class="mobile-nav-item">
+            <span>Actualités</span>
+          </a>
+          <a href="#langage-simplifie" class="mobile-nav-item">
+            <span class="mobile-icon-label">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#333333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+              </svg>
+              <span>Langage simplifié</span>
+            </span>
+          </a>
+        </nav>
+
+        <nav class="mobile-secondary-nav" aria-label="Liens secondaires">
+          <a href="#contact">Contact</a>
+          <a href="#faq">FAQ</a>
+          <a href="#telechargements">Téléchargements</a>
+          <a href="#medias">Médias</a>
+        </nav>
+
+        <div class="mobile-help-box">
+          <p class="mobile-help-title">Pour ceux qui cherchent de l'aide</p>
+          <div class="help-buttons-stack">
+            <a href="tel:143" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+              <span>Appeler le 143</span>
+            </a>
+            <a href="#tchat" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                <line x1="8" y1="9" x2="16" y2="9"></line>
+                <line x1="8" y1="13" x2="13" y2="13"></line>
+              </svg>
+              <span>Commencer le tchat</span>
+            </a>
+            <a href="#mail" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+              <span>Écrire un mail</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENU PRINCIPAL -->
+  <main>
+    <!-- BANNIÈRE HERO -->
+    <section class="hero-banner">
+      <div class="hero-overlay"></div>
+      <div class="container hero-content">
+        <div class="hero-text">
+          <h1 class="hero-title">En parler aide</h1>
+          <p class="hero-subtitle">
+            Nous sommes là pour vous. De jour comme de nuit, personnel, anonyme et confidentiel.
+          </p>
+        </div>
+
+        <a href="#dons" class="hero-donate-badge">
+          <span>Faire un don</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- CARTES EN SUPERPOSITION + BOUTON SUPPORT ANGLAIS -->
+    <section class="cards-section">
+      <div class="container">
+        <div class="cards-grid">
+          <!-- Carte 1 -->
+          <article class="service-card">
+            <div class="card-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+            </div>
+            <h2 class="card-title">Appeler le 143</h2>
+            <p class="card-desc">Pour une écoute attentive</p>
+            <a href="#appeler" class="card-link">
+              <span>En savoir plus</span>
+              <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="4" y1="12" x2="20" y2="12"></line>
+                <polyline points="14 6 20 12 14 18"></polyline>
+              </svg>
+            </a>
+          </article>
+
+          <!-- Carte 2 -->
+          <article class="service-card">
+            <div class="card-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                <line x1="8" y1="9" x2="16" y2="9"></line>
+                <line x1="8" y1="13" x2="13" y2="13"></line>
+              </svg>
+            </div>
+            <h2 class="card-title">Faire un tchat</h2>
+            <p class="card-desc">Quand écrire semble plus facile</p>
+            <a href="#tchat" class="card-link">
+              <span>En savoir plus</span>
+              <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="4" y1="12" x2="20" y2="12"></line>
+                <polyline points="14 6 20 12 14 18"></polyline>
+              </svg>
+            </a>
+          </article>
+
+          <!-- Carte 3 -->
+          <article class="service-card">
+            <div class="card-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </div>
+            <h2 class="card-title">Écrire un mail</h2>
+            <p class="card-desc">Développer et partager ses pensées</p>
+            <a href="#mail" class="card-link">
+              <span>En savoir plus</span>
+              <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="4" y1="12" x2="20" y2="12"></line>
+                <polyline points="14 6 20 12 14 18"></polyline>
+              </svg>
+            </a>
+          </article>
+        </div>
+
+        <!-- Bouton Support in English -->
+        <div class="english-support-wrap">
+          <a href="tel:0800143000" class="btn-outline-pill">
+            <span>Support in English: Call 0800 143 000 from 6-11 pm</span>
+            <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- TÉMOIGNAGES -->
+    <section class="testimonials-section">
+      <div class="container">
+        <h2 class="section-heading">Ce que disent les personnes en recherche d’aide</h2>
+
+        <div class="testimonial-row">
+          <div class="testimonial-quote-wrap">
+            <span class="quote-mark quote-open" aria-hidden="true">«</span>
+            <div class="quote-body">
+              <blockquote class="quote-text">
+                Sans 143.ch je ne serais plus là.
+              </blockquote>
+              <p class="quote-author">Anonyme</p>
+            </div>
+            <span class="quote-mark quote-close" aria-hidden="true">»</span>
+          </div>
+
+          <button type="button" class="testimonial-next" aria-label="Témoignage suivant">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <div class="testimonial-dots" aria-label="Pagination des témoignages">
+          <span class="dot is-active"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION MAUVE AVEC VAGUE DU BAS -->
+    <section class="mauve-section">
+      <div class="container mauve-grid">
+        <div class="mauve-col">
+          <h2 class="mauve-heading">Voilà comment nous soutenir</h2>
+          <ul class="mauve-list">
+            <li>
+              <a href="#benevole" class="mauve-link">
+                <span>Devenez bénévole</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="#votre-don" class="mauve-link">
+                <span>Votre don compte</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="#heritage" class="mauve-link">
+                <span>Héritage et legs</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="mauve-col">
+          <h2 class="mauve-heading">Informations</h2>
+          <ul class="mauve-list">
+            <li>
+              <a href="#actualites" class="mauve-link">
+                <span>Actualités</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="#themes" class="mauve-link">
+                <span>Thèmes d'entretien</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="#faq" class="mauve-link">
+                <span>Foire aux questions (FAQ)</span>
+                <svg class="link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <polyline points="14 6 20 12 14 18"></polyline>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Vague mauve asymétrique vers le fond crème du footer -->
+      <div class="mauve-wave" aria-hidden="true">
+        <svg viewBox="0 0 1440 160" preserveAspectRatio="none">
+          <!-- Légère bande translucide au-dessus de la vague -->
+          <path d="M0,108 C220,38 460,26 780,74 C1040,113 1260,116 1440,68 L1440,160 L0,160 Z" fill="rgba(255, 255, 255, 0.14)"/>
+          <!-- Vague principale couleur footer -->
+          <path d="M0,122 C240,48 490,38 800,88 C1060,130 1275,126 1440,84 L1440,160 L0,160 Z" fill="#F4EEE7"/>
+        </svg>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top-grid">
+        <div class="footer-col-cta">
+          <h3 class="footer-heading">Pour ceux qui cherchent de l'aide</h3>
+          <div class="help-buttons-stack">
+            <a href="tel:143" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+              <span>Appeler le 143</span>
+            </a>
+            <a href="#tchat" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                <line x1="8" y1="9" x2="16" y2="9"></line>
+                <line x1="8" y1="13" x2="13" y2="13"></line>
+              </svg>
+              <span>Commencer le tchat</span>
+            </a>
+            <a href="#mail" class="btn-red-cta">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+              <span>Écrire un mail</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="footer-col-links">
+          <h3 class="footer-heading">Infos utiles</h3>
+          <ul class="footer-links">
+            <li><a href="#contact">Contact</a></li>
+            <li><a href="#postes-regionaux">Nos postes régionaux</a></li>
+            <li><a href="#faq">Foire aux questions</a></li>
+            <li><a href="#telechargements">Téléchargements</a></li>
+            <li><a href="#utile">Utile à savoir</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col-links">
+          <h3 class="footer-heading">Participer</h3>
+          <ul class="footer-links">
+            <li><a href="#benevole">Devenir bénévole</a></li>
+            <li><a href="#coeurs-chocolat">Vente de coeurs en chocolat</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-divider"></div>
+
+      <div class="footer-legal-row">
+        <ul class="legal-links">
+          <li><a href="#impressum">Impressum</a></li>
+          <li><a href="#protection-donnees">Déclaration de protection des données</a></li>
+          <li><a href="#confidentialite">Préférence de confidentialité</a></li>
+          <li><a href="#conditions">Conditions d'utilisation</a></li>
+        </ul>
+
+        <div class="zewo-badge">
+          <svg class="zewo-svg" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="32" cy="32" r="29" fill="#ffffff" stroke="#222222" stroke-width="1.5"/>
+            <circle cx="32" cy="32" r="21" fill="none" stroke="#222222" stroke-width="0.9"/>
+            <text x="32" y="13" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="7.5" font-weight="800" fill="#222222" letter-spacing="1.2">ZEWO</text>
+            <text x="32" y="57" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="6.2" font-weight="700" fill="#222222" letter-spacing="0.6">CERTIFIÉ</text>
+            <path d="M22 33.5L28.5 40L43 24.5" fill="none" stroke="#D82519" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="zewo-text">Votre don en<br>bonnes mains.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom-bar">
+      <div class="container">
+        <p class="copyright-text">© 2026 – 143.ch La Main Tendue | Mise en scène par <span class="agency-name">POMCANYS</span></p>
+      </div>
+    </div>
+  </footer>
+</div>
