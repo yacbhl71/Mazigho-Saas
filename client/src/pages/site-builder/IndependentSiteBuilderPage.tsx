@@ -154,8 +154,58 @@ const INDEPENDENT_BLOCK_PALETTE: Record<
   "Contact & Décoration": { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
 };
 
+const INDEPENDENT_WORKSPACE_PALETTE = {
+  organisation: { surface: "#e5f6ff", border: "#9ed8ef", text: "#0f617d", dot: "#16a8dc" },
+  creation: { surface: "#f2e8ff", border: "#cdb2f4", text: "#6330a0", dot: "#803be8" },
+  media: { surface: "#fff6da", border: "#f2d47c", text: "#8a5b05", dot: "#f2b600" },
+  structure: { surface: "#e4fbf7", border: "#9bded5", text: "#0b716a", dot: "#10b9a8" },
+  review: { surface: "#fff0f4", border: "#f0b4c6", text: "#a3134a", dot: "#e91e63" },
+};
+
+const INDEPENDENT_TAB_PALETTE: Record<
+  IndependentBuilderLibraryTab,
+  { surface: string; border: string; text: string; active: string }
+> = {
+  pages: { surface: "#e8f7ff", border: "#a8d9ed", text: "#145b78", active: "#18a9d8" },
+  blocs: { surface: "#f1e5ff", border: "#c7a4f3", text: "#6731a2", active: "#7c20e8" },
+  medias: { surface: "#fff6dc", border: "#f2d47c", text: "#855707", active: "#edb313" },
+  calques: { surface: "#e3fbf6", border: "#9bded5", text: "#0d7069", active: "#15b7a6" },
+  modules: { surface: "#fff0f5", border: "#efb5c8", text: "#a2184d", active: "#e51d61" },
+  socles: { surface: "#e3fbf6", border: "#9bded5", text: "#0d7069", active: "#15b7a6" },
+  modeles: { surface: "#f1e5ff", border: "#c7a4f3", text: "#6731a2", active: "#7c20e8" },
+};
+
 function getIndependentBlockPalette(category: IndependentBuilderBlock["category"]) {
   return INDEPENDENT_BLOCK_PALETTE[category] ?? INDEPENDENT_BLOCK_PALETTE["Textes & Actions"];
+}
+
+function decorateIndependentGrapesjsBlockManager(root: ParentNode = document) {
+  const styleId = "independent-grapesjs-block-palette";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .gjs-block-category[data-mz-block-category] { border: 1px solid var(--mz-block-border); border-radius: 10px; margin: 6px 4px; overflow: hidden; background: var(--mz-block-surface); }
+      .gjs-block-category[data-mz-block-category] > .gjs-title { background: var(--mz-block-active); color: #fff; font-weight: 800; letter-spacing: .01em; }
+      .gjs-block-category[data-mz-block-category] .gjs-blocks { padding: 7px; background: var(--mz-block-surface); }
+      .gjs-block-category[data-mz-block-category] .gjs-block { border-color: var(--mz-block-border); background: rgba(255,255,255,.86); color: var(--mz-block-text); box-shadow: none; }
+      .gjs-block-category[data-mz-block-category] .gjs-block:hover { border-color: var(--mz-block-active); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mz-block-active) 20%, transparent); }
+    `;
+    document.head.appendChild(style);
+  }
+
+  root.querySelectorAll<HTMLElement>(".gjs-block-category").forEach((categoryElement) => {
+    const title = categoryElement.querySelector<HTMLElement>(":scope > .gjs-title");
+    const label = title?.textContent?.trim() ?? "";
+    const match = Object.keys(INDEPENDENT_BLOCK_PALETTE).find((category) => label === category);
+    if (!match) return;
+    const palette = getIndependentBlockPalette(match as IndependentBuilderBlock["category"]);
+    categoryElement.dataset.mzBlockCategory = match;
+    categoryElement.style.setProperty("--mz-block-surface", palette.surface);
+    categoryElement.style.setProperty("--mz-block-border", palette.border);
+    categoryElement.style.setProperty("--mz-block-text", palette.text);
+    categoryElement.style.setProperty("--mz-block-active", palette.active);
+  });
 }
 
 interface LayerSummaryItem {
@@ -2977,6 +3027,26 @@ export default function IndependentSiteBuilderPage() {
                     <p className="mt-0.5 text-xs text-slate-600">
                       7 espaces organisés par usage pour construire vos pages sans compétence technique.
                     </p>
+                    <div className="mt-3 rounded-2xl border border-[#e2d8f5] bg-gradient-to-br from-[#fff4fb] via-[#f8f0ff] to-[#eef4ff] p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-fuchsia-600 text-lg text-white shadow-sm">✣</span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-sm font-extrabold text-[#34205f]">Panneau de travail</h3>
+                          <p className="text-[11px] leading-4 text-[#77507d]">Outils classés par couleur</p>
+                        </div>
+                        <span className="hidden rounded-xl border border-[#e7c9e9] bg-white/80 px-2.5 py-2 text-center text-[11px] font-bold text-[#34205f] sm:block">Mode<br />contenu</span>
+                        <span className="rounded-full bg-white/80 px-2 py-1 text-lg leading-none text-slate-600">↶</span>
+                        <span className="rounded-full bg-white/80 px-2 py-1 text-lg leading-none text-slate-600">↷</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Familles d’outils par couleur">
+                        {Object.entries(INDEPENDENT_WORKSPACE_PALETTE).map(([key, family]) => (
+                          <span key={key} className="inline-flex items-center gap-1 rounded-full border bg-white/75 px-2 py-1 text-[10px] font-bold" style={{ borderColor: family.border, color: family.text }}>
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: family.dot }} />
+                            {key === "organisation" ? "Organisation" : key === "creation" ? "Création" : key === "media" ? "Média" : key === "structure" ? "Structure" : "Revue"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   <Badge
                     variant="outline"
@@ -3058,11 +3128,13 @@ export default function IndependentSiteBuilderPage() {
                           }
                         }}
                         title={tab.description}
-                        className={`group rounded-lg px-2 py-2 text-left text-xs font-bold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e] ${
-                          isSelected
-                            ? meta.activeClass
-                            : "border border-[#ece5dc] bg-[#faf8f5] text-[#172033] hover:bg-[#efe9e0]"
-                        }`}
+                        className="group rounded-xl border px-2 py-2 text-left text-xs font-bold transition motion-reduce:transition-none hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
+                        style={(() => {
+                          const palette = INDEPENDENT_TAB_PALETTE[tab.id];
+                          return isSelected
+                            ? { borderColor: palette.active, backgroundColor: palette.active, color: "#ffffff", boxShadow: `0 0 0 2px ${palette.border}` }
+                            : { borderColor: palette.border, backgroundColor: palette.surface, color: palette.text };
+                        })()}
                       >
                         <span className="flex items-center justify-between gap-1">
                           <span className="flex items-center gap-1 truncate">
@@ -3379,6 +3451,15 @@ export default function IndependentSiteBuilderPage() {
                 {/* ESPACE 2 : BLOCS & ATELIER CARTES VISUELLES COMPLET (Chantiers 2 & 3) */}
                 {activeLibraryTab === "blocs" && (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-[#decff3] bg-gradient-to-r from-[#fff5fb] to-[#f1edff] px-3.5 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-[#34205f]">Bibliothèque de blocs</h3>
+                          <p className="mt-0.5 text-[11px] text-[#6d527c]">Ajoutez des sections prêtes à l’emploi en un clic.</p>
+                        </div>
+                        <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-[#6330a0]">{INDEPENDENT_BUILDER_BLOCKS.length} blocs</span>
+                      </div>
+                    </div>
                     {/* ATELIER CARTES VISUELLES COMPLET (Chantier 3) */}
                     <div className="space-y-3 rounded-xl border border-[#d9c3b0] bg-[#faf5ef] p-3.5">
                       <div className="flex items-center justify-between gap-2">
@@ -4991,6 +5072,7 @@ export default function IndependentSiteBuilderPage() {
                           content: mod.html,
                         });
                       });
+                      requestAnimationFrame(() => decorateIndependentGrapesjsBlockManager());
                       if (activePageRef.current) {
                         syncCanvasPage(editor, activePageRef.current);
                       }
@@ -5012,6 +5094,7 @@ export default function IndependentSiteBuilderPage() {
                       editor.on("canvas:frame:load", () => {
                         applyCanvasBaseStyleSheet(editor);
                         syncCanvasDeviceAndZoom(editor, devicePresetRef.current);
+                        requestAnimationFrame(() => decorateIndependentGrapesjsBlockManager());
                       });
                       editor.on("device:select", (deviceModel) => {
                         const selectedId = (deviceModel?.get?.("id") ?? deviceModel?.id) as
