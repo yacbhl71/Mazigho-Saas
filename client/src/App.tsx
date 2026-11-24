@@ -451,6 +451,7 @@ function Router() {
   const path = location.split("?")[0];
   const currentHostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
   const isStudioHost = currentHostname === "studio.mazigho.com" || currentHostname === "studio.mazigho.ch";
+  const isIndependentBuilderHost = currentHostname === "builder.mazigho.com" || currentHostname === "builder.mazigho.ch";
   const isSaasLandingHost = currentHostname === "pro.mazigho.com" || currentHostname === "pro.mazigho.ch";
   const isPrimaryMazighoHost = currentHostname === "mazigho.ch" || currentHostname === "www.mazigho.ch";
   const isIndependentSitesHost = currentHostname.includes("mazigho-independent-sites");
@@ -492,6 +493,9 @@ function Router() {
   }
   if (isStudioHost && path.startsWith("/admin/") && !path.startsWith("/admin/studio")) {
     return <Redirect to="/admin/studio" replace />;
+  }
+  if (isIndependentBuilderHost && (path === "/" || path === "/admin")) {
+    return <Redirect to="/constructeur-sites" replace />;
   }
   if (isPrimaryMazighoHost && path.startsWith("/admin/studio")) {
     return <ExternalLocationRedirect href={`https://studio.mazigho.com${location}`} />;
