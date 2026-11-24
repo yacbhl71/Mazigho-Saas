@@ -1401,6 +1401,7 @@ export interface IndependentBuilderBlock {
   id: string;
   label: string;
   category:
+    | "Code"
     | "Navigation & Structure"
     | "Hero & Bannières"
     | "Textes & Actions"
@@ -1712,6 +1713,13 @@ export const INDEPENDENT_BUILDER_BLOCKS: ReadonlyArray<IndependentBuilderBlock> 
     category: "Contact & Décoration",
     description: "Bloc informatif de soutien associatif avec coordonnées bancaires ou CCP éditables, sans module marchand.",
     content: `<section data-site-block="adhesion-dons" style="padding:56px 28px;background:#ffffff;color:#172033"><div style="max-width:1040px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;align-items:stretch"><div style="padding:30px;background:#172033;color:#ffffff;border-radius:18px"><p style="margin:0;color:#f5b98f;font-size:13px;font-weight:700">Soutien &amp; Adhésion</p><h2 style="font-size:30px;margin:10px 0 14px;color:#ffffff">Soutenir la vie de l’association</h2><p style="margin:0 0 20px;color:#d6dce6;font-size:15px;line-height:1.65">Les cotisations et contributions volontaires financent exclusivement les salles de rencontre, l’entretien du matériel partagé et la préservation des archives familiales.</p><a href="/contact" style="display:inline-block;padding:12px 20px;background:#f5b98f;color:#172033;border-radius:8px;text-decoration:none;font-weight:800;font-size:14px">Demander un bulletin d’adhésion</a></div><div style="padding:30px;background:#faf8f5;border:1px solid #e6dfd5;border-radius:18px"><h3 style="margin:0 0 14px;font-size:20px;color:#172033">Coordonnées de virement (à personnaliser)</h3><div style="display:grid;gap:12px;font-size:14px;color:#334155"><div style="padding:12px 14px;background:#ffffff;border-radius:10px;border:1px solid #e6dfd5"><strong style="display:block;font-size:12px;color:#64748b;margin-bottom:4px">Titulaire du compte</strong><span>Association Familiale · Nom à renseigner</span></div><div style="padding:12px 14px;background:#ffffff;border-radius:10px;border:1px solid #e6dfd5"><strong style="display:block;font-size:12px;color:#64748b;margin-bottom:4px">IBAN / Compte bancaire</strong><span style="font-family:monospace">CH00 0000 0000 0000 0000 0</span></div><div style="padding:12px 14px;background:#ffffff;border-radius:10px;border:1px solid #e6dfd5"><strong style="display:block;font-size:12px;color:#64748b;margin-bottom:4px">CCP / Référence de motif</strong><span>Cotisation annuelle + Prénom et Nom</span></div></div><p style="margin:14px 0 0;font-size:12px;color:#64748b;line-height:1.5">Section purement informative : aucun encaissement automatique n’est effectué sur ce site.</p></div></div></section>`,
+  },
+  {
+    id: "independent-custom-code",
+    label: "Code personnalisé HTML",
+    category: "Code",
+    description: "Zone neutre pour ajouter du HTML/CSS personnalisé, sans script, secret ni donnée métier.",
+    content: `<section data-site-custom-code="true" style="box-sizing:border-box;max-width:100%;padding:28px 24px;background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;overflow-wrap:anywhere"><div data-site-custom-code-slot="true" style="max-width:100%"><p style="margin:0 0 8px;color:#334155;font-size:14px;font-weight:700">Zone de code personnalisé</p><p style="margin:0;color:#64748b;font-size:13px;line-height:1.6">Sélectionnez cette zone, puis modifiez son HTML/CSS avec les outils du constructeur. Les scripts, accès sensibles et données métier restent interdits.</p></div></section>`,
   },
 ] as const;
 
@@ -3034,6 +3042,7 @@ athVahloulTemplate.pages.forEach((page) => {
 // ---------------------------------------------------------------------------
 
 export const INDEPENDENT_BLOCK_CATEGORIES: ReadonlyArray<IndependentBuilderBlock["category"]> = [
+  "Code",
   "Navigation & Structure",
   "Hero & Bannières",
   "Textes & Actions",

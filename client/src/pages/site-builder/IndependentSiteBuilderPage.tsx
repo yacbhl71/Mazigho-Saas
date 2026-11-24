@@ -69,6 +69,7 @@ import {
   updateImageAltInPageHtml,
   validateAndSanitizeIndependentSiteImport,
   verifyIndependentInternalLinks,
+  type IndependentBuilderBlock,
   type IndependentBuilderLibraryTab,
   type IndependentBuilderLocalSafetySnapshot,
   type IndependentImageTransforms,
@@ -138,6 +139,24 @@ import {
   type TrainingModalMode,
 } from "@/components/site-guides/SiteTrainingModal";
 import { buildClientPreviewSrcDoc } from "./clientAdminHelpers";
+
+const INDEPENDENT_BLOCK_PALETTE: Record<
+  string,
+  { surface: string; border: string; text: string; active: string }
+> = {
+  Code: { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
+  "Navigation & Structure": { surface: "#e2f8f5", border: "#8bd8cf", text: "#0f766e", active: "#0f9f93" },
+  "Hero & Bannières": { surface: "#fff3d6", border: "#f3cc72", text: "#a16207", active: "#d69b16" },
+  "Textes & Actions": { surface: "#e5f2ff", border: "#9bc7f2", text: "#2563a8", active: "#3b82c4" },
+  "Images & Médias": { surface: "#fff3d6", border: "#f3cc72", text: "#a16207", active: "#d69b16" },
+  "Cartes & Grilles": { surface: "#f7e8f1", border: "#e4a8c5", text: "#a63d70", active: "#c05286" },
+  "Confiance & Contenu": { surface: "#e5f2ff", border: "#9bc7f2", text: "#2563a8", active: "#3b82c4" },
+  "Contact & Décoration": { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
+};
+
+function getIndependentBlockPalette(category: IndependentBuilderBlock["category"]) {
+  return INDEPENDENT_BLOCK_PALETTE[category] ?? INDEPENDENT_BLOCK_PALETTE["Textes & Actions"];
+}
 
 interface LayerSummaryItem {
   id: string;
@@ -3834,11 +3853,20 @@ export default function IndependentSiteBuilderPage() {
                           key={cat}
                           type="button"
                           onClick={() => setBlockCategoryFilter(cat)}
-                          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                          className="rounded-md border px-2 py-1 text-[11px] font-semibold transition hover:brightness-95"
+                          style={
                             blockCategoryFilter === cat
-                              ? "bg-[#9b563e] text-white"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
+                              ? {
+                                  backgroundColor: getIndependentBlockPalette(cat).active,
+                                  borderColor: getIndependentBlockPalette(cat).active,
+                                  color: "#ffffff",
+                                }
+                              : {
+                                  backgroundColor: getIndependentBlockPalette(cat).surface,
+                                  borderColor: getIndependentBlockPalette(cat).border,
+                                  color: getIndependentBlockPalette(cat).text,
+                                }
+                          }
                         >
                           {cat}
                         </button>
@@ -3865,12 +3893,19 @@ export default function IndependentSiteBuilderPage() {
                         </div>
                       ) : (
                         filteredBlocks.map((blk) => (
-                          <div
-                            key={blk.id}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2.5 transition hover:border-[#9b563e]"
-                          >
+                          (() => {
+                            const palette = getIndependentBlockPalette(blk.category);
+                            return (
+                              <div
+                                key={blk.id}
+                                className="flex items-center justify-between gap-2 rounded-xl border p-2.5 transition hover:shadow-sm"
+                                style={{ borderColor: palette.border, backgroundColor: palette.surface }}
+                              >
                             <div className="min-w-0">
-                              <span className="block text-[10px] font-bold uppercase tracking-wider text-[#9b563e]">
+                              <span
+                                className="mb-0.5 inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                                style={{ backgroundColor: palette.border, color: palette.text }}
+                              >
                                 {blk.category}
                               </span>
                               <strong className="block truncate text-xs text-[#172033]">
@@ -3880,16 +3915,19 @@ export default function IndependentSiteBuilderPage() {
                                 {blk.description}
                               </p>
                             </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 shrink-0 border-[#e2dad0] text-xs font-semibold hover:border-[#9b563e] hover:text-[#9b563e]"
-                              onClick={() => insertHtmlIntoCanvas(blk.content, blk.label)}
-                            >
-                              + Insérer
-                            </Button>
-                          </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                              className="h-7 shrink-0 bg-white/80 text-xs font-semibold"
+                              style={{ borderColor: palette.border, color: palette.text }}
+                                onClick={() => insertHtmlIntoCanvas(blk.content, blk.label)}
+                              >
+                                + Insérer
+                              </Button>
+                              </div>
+                            );
+                          })()
                         ))
                       )}
                     </div>
