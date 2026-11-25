@@ -4,6 +4,7 @@ export type InteractiveBlockTrait = {
   label: string;
   default?: string;
   options?: string[];
+  category?: string;
 };
 
 export type SharedInteractiveBlock = {
@@ -18,9 +19,16 @@ export type SharedInteractiveBlock = {
 };
 
 const root = "data-mazigho-interactive=\"true\"";
-const commonTraits = [{ type: "text", name: "data-mazigho-label", label: "Libellé" }];
+const commonTraits = [{ type: "text", name: "data-mazigho-label", label: "Libellé", category: "Général" }];
 
-export const SHARED_INTERACTIVE_BLOCKS: ReadonlyArray<SharedInteractiveBlock> = [
+function interactiveTraitCategory(name: string): string {
+  if (name.includes("provider") || name.includes("phone") || name.includes("whatsapp") || name.includes("target")) return "Connexion";
+  if (name.includes("autoplay") || name.includes("interval") || name.includes("dismissible") || name.includes("position")) return "Interaction";
+  if (name.includes("label")) return "Général";
+  return "Contenu";
+}
+
+const RAW_SHARED_INTERACTIVE_BLOCKS: ReadonlyArray<SharedInteractiveBlock> = [
   {
     id: "mazigho-interactive-map",
     label: "Carte interactive & itinéraire",
@@ -119,6 +127,14 @@ export const SHARED_INTERACTIVE_BLOCKS: ReadonlyArray<SharedInteractiveBlock> = 
     traits: [...commonTraits, { type: "text", name: "data-mazigho-announcement-text", label: "Texte de l’annonce", default: "Annonce à personnaliser" }, { type: "checkbox", name: "data-mazigho-dismissible", label: "Fermeture autorisée", default: "true" }],
   },
 ];
+
+export const SHARED_INTERACTIVE_BLOCKS: ReadonlyArray<SharedInteractiveBlock> = RAW_SHARED_INTERACTIVE_BLOCKS.map((block) => ({
+  ...block,
+  traits: block.traits.map((trait) => ({
+    ...trait,
+    category: trait.category ?? interactiveTraitCategory(trait.name),
+  })),
+}));
 
 export const SHARED_INTERACTIVE_CSS = `
 [data-mazigho-interactive="true"], .mz-top-announcement { --mz-interactive-primary: var(--theme-primary, var(--mz-primary, #172033)); --mz-interactive-secondary: var(--theme-secondary, var(--mz-secondary, #f5b98f)); --mz-interactive-bg: var(--theme-background, var(--mz-bg, #fff)); --mz-interactive-surface: var(--theme-surface, #faf8f5); --mz-interactive-text: var(--theme-text, var(--mz-text, #172033)); --mz-interactive-muted: var(--theme-muted, #5b6470); --mz-interactive-font: var(--theme-font, var(--mz-font, sans-serif)); --mz-interactive-radius: var(--theme-radius, var(--mz-radius, 10px)); box-sizing:border-box; font-family:var(--mz-interactive-font); color:var(--mz-interactive-text); }

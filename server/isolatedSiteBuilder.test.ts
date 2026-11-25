@@ -10,6 +10,7 @@ import {
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
   INDEPENDENT_MODULE_CATEGORIES,
+  INDEPENDENT_INTERACTIVE_BLOCKS,
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
@@ -175,6 +176,10 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
       expect(module.html).toContain('data-mazigho-interactive="true"');
       expect(module.html).not.toMatch(/(?:\bCHF\b|\bEUR\b|49[,.]99|59[,.]99|stock disponible)/i);
     }
+    const settingGroups = new Set(INDEPENDENT_INTERACTIVE_BLOCKS.flatMap((block) => block.traits.map((trait) => trait.category)));
+    expect(settingGroups).toEqual(new Set(["Général", "Contenu", "Interaction", "Connexion"]));
+    expect(INDEPENDENT_INTERACTIVE_BLOCKS.find((block) => block.id === "mazigho-interactive-newsletter")?.traits.find((trait) => trait.name === "data-mazigho-lead-provider")?.default).toBe("a-configurer");
+    expect(INDEPENDENT_INTERACTIVE_BLOCKS.find((block) => block.id === "mazigho-interactive-countdown")?.traits.find((trait) => trait.name === "data-mazigho-target")?.default).toBe("");
     expect(INDEPENDENT_PAGE_SOCLES.length).toBe(9);
     expect(INDEPENDENT_SITE_TEMPLATES.length).toBe(10);
 

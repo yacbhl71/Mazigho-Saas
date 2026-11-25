@@ -7,7 +7,7 @@
  */
 
 import { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS } from "./independentCommerceBlocks";
-import { SHARED_INTERACTIVE_BLOCKS, SHARED_INTERACTIVE_CSS } from "./interactiveBlocks";
+import { SHARED_INTERACTIVE_BLOCKS, SHARED_INTERACTIVE_CSS, type InteractiveBlockTrait } from "./interactiveBlocks";
 
 export { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS };
 export const INDEPENDENT_INTERACTIVE_CSS = SHARED_INTERACTIVE_CSS;
@@ -1755,6 +1755,7 @@ export interface IndependentBuilderModule {
   description: string;
   html: string;
   script?: string;
+  traits?: ReadonlyArray<InteractiveBlockTrait>;
 }
 
 const INDEPENDENT_LEGACY_MODULES: ReadonlyArray<IndependentBuilderModule> = [
@@ -1825,6 +1826,7 @@ export const INDEPENDENT_BUILDER_MODULES: ReadonlyArray<IndependentBuilderModule
     description: block.description,
     html: block.html,
     script: block.script,
+    traits: block.traits,
   })),
 ];
 

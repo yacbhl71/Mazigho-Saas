@@ -5189,6 +5189,7 @@ export default function IndependentSiteBuilderPage() {
                           label: mod.label,
                           category: `Modules · ${mod.category}`,
                           content: mod.script ? { type: "default", components: mod.html, script: mod.script } : mod.html,
+                          ...(mod.traits ? { traits: mod.traits } : {}),
                         });
                       });
                       requestAnimationFrame(() => decorateIndependentGrapesjsBlockManager());
