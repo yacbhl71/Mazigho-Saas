@@ -17,7 +17,7 @@ export function auditVisualBuilderAccessibility(html: string) {
   const imagesWithoutAlt = html.match(/<img\b(?![^>]*\balt\s*=\s*["'][^"']+)[^>]*>/gi) ?? [];
   if (imagesWithoutAlt.length > 0) issues.push(`${imagesWithoutAlt.length} image(s) sans texte alternatif.`);
 
-  const unnamedButtons = html.match(/<button\b[^>]*>(?:\s|&nbsp;|<[^>]+>)*<\/button>/gi) ?? [];
+  const unnamedButtons = html.match(/<button\b(?![^>]*\b(?:aria-label|aria-labelledby|title)\s*=\s*["'][^"']+["'])[^>]*>(?:\s|&nbsp;|<[^>]+>)*<\/button>/gi) ?? [];
   if (unnamedButtons.length > 0) issues.push(`${unnamedButtons.length} bouton(s) sans nom accessible.`);
 
   const linksWithoutHref = html.match(/<a\b(?![^>]*\bhref\s*=)[^>]*>/gi) ?? [];

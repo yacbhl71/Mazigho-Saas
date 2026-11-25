@@ -54,5 +54,6 @@ describe("visualBuilderSafety", () => {
       "1 lien(s) externe(s) sans protection noopener/noreferrer.",
     ]);
     expect(auditVisualBuilderAccessibility('<img src="photo.jpg" alt="Photo"><a href="https://example.com" target="_blank" rel="noopener noreferrer">Voir</a>')).toEqual([]);
+    expect(auditVisualBuilderAccessibility('<button type="button" aria-label="Témoignage suivant"><svg aria-hidden="true"></svg></button>')).toEqual([]);
   });
 });
