@@ -269,6 +269,10 @@ function getBuilderPageLabel(title: string | undefined, siteTitle: string | unde
   return value;
 }
 
+function getBuilderTemplateLabel(name: string): string {
+  return /ath\s*vahloul/i.test(name) ? "Modèle associatif de démonstration" : name;
+}
+
 const LIBRARY_TAB_META: Record<
   IndependentBuilderLibraryTab,
   {
@@ -1603,7 +1607,7 @@ export default function IndependentSiteBuilderPage() {
       refreshLayersFromEditor(editorRef.current);
     }
     setStatusBanner(
-      `Modèle complet « ${tpl.name} » (${clonedPages.length} pages avec menus et sous-menus) chargé dans l’éditeur. Pensez à cliquer sur « Enregistrer » pour sauvegarder.`
+      `${getBuilderTemplateLabel(tpl.name)} (${clonedPages.length} pages avec menus et sous-menus) chargé dans l’éditeur. Pensez à cliquer sur « Enregistrer » pour sauvegarder.`
     );
   }
 
@@ -1611,8 +1615,8 @@ export default function IndependentSiteBuilderPage() {
     const tpl = INDEPENDENT_SITE_TEMPLATES.find((t) => t.id === templateId);
     if (!tpl) return;
     setPendingConfirmAction({
-      title: `Charger le modèle complet « ${tpl.name} » ?`,
-      description: `Ce modèle remplace les pages actuelles de l’éditeur par les ${tpl.pages.length} pages pré-construites du modèle « ${tpl.name} ».`,
+      title: `Charger ${getBuilderTemplateLabel(tpl.name)} ?`,
+      description: `Ce modèle remplace les pages actuelles de l’éditeur par les ${tpl.pages.length} pages pré-construites.`,
       confirmLabel: "Charger ce modèle complet",
       variant: "primary",
       onConfirm: () => executeApplyTemplateToSite(templateId),
@@ -2922,7 +2926,7 @@ export default function IndependentSiteBuilderPage() {
                   >
                     {INDEPENDENT_SITE_TEMPLATES.map((tpl) => (
                       <option key={tpl.id} value={tpl.id}>
-                        {tpl.name} ({tpl.pages.length} pages)
+                        {getBuilderTemplateLabel(tpl.name)} ({tpl.pages.length} pages)
                       </option>
                     ))}
                   </select>
@@ -4917,7 +4921,7 @@ export default function IndependentSiteBuilderPage() {
                               {tpl.pages.length} pages · Menu inclus
                             </span>
                           </div>
-                          <h4 className="mt-2 text-sm font-bold text-[#172033]">{tpl.name}</h4>
+                          <h4 className="mt-2 text-sm font-bold text-[#172033]">{getBuilderTemplateLabel(tpl.name)}</h4>
                           <p className="mt-1 line-clamp-2 text-xs text-slate-600">
                             {tpl.description}
                           </p>
@@ -4927,7 +4931,7 @@ export default function IndependentSiteBuilderPage() {
                                 key={p.id}
                                 className="rounded bg-[#faf8f5] px-1.5 py-0.5 text-[10px] text-slate-600"
                               >
-                                {p.title}
+                                {getBuilderPageLabel(p.title, tpl.name)}
                               </span>
                             ))}
                           </div>
