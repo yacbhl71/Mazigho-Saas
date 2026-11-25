@@ -254,6 +254,21 @@ interface PendingConfirmAction {
 
 type InspectorTabId = "seo" | "qualite" | "publication" | "versions" | "access";
 
+/**
+ * Garde les noms du site dans le projet et le contenu, mais standardise les
+ * libellés de navigation du constructeur pour ATH, 143.ch et les futurs thèmes.
+ */
+function getBuilderPageLabel(title: string | undefined, siteTitle: string | undefined): string {
+  const value = (title || "Page").trim();
+  const project = (siteTitle || "").trim();
+  for (const separator of [" — ", " | "]) {
+    if (project && value.endsWith(`${separator}${project}`)) {
+      return value.slice(0, -(`${separator}${project}`).length).trim() || "Page";
+    }
+  }
+  return value;
+}
+
 const LIBRARY_TAB_META: Record<
   IndependentBuilderLibraryTab,
   {
@@ -850,7 +865,7 @@ export default function IndependentSiteBuilderPage() {
       );
       setErrorBanner(null);
       setStatusBanner(
-        "Modèle complet « Association familiale ATH VAHLOUL » chargé avec ses 6 pages associatives et familiales (100 % sans boutique)."
+        "Modèle de démonstration chargé avec ses 6 pages prêtes à personnaliser (100 % sans boutique)."
       );
     },
     onError: (err) => {
@@ -2252,7 +2267,7 @@ export default function IndependentSiteBuilderPage() {
                 Projet : <strong className="text-[#172033]">{workflowSummary.projectTitle}</strong>{" "}
                 ({workflowSummary.projectModeLabel}) · {workflowSummary.statusDetailLabel} ·{" "}
                 <span className="text-slate-500">{workflowSummary.lastSavedLabel}</span> · Page
-                active : <strong className="text-[#9b563e]">{activePage?.title}</strong> (
+                active : <strong className="text-[#9b563e]">{getBuilderPageLabel(activePage?.title, siteTitle)}</strong> (
                 <code>{activePage?.slug}</code>)
               </p>
             </div>
@@ -2554,7 +2569,7 @@ export default function IndependentSiteBuilderPage() {
               variant="outline"
               size="sm"
               onClick={() =>
-                requestSwitchProjectWithGuard("charger la démonstration ATH VAHLOUL", () =>
+                requestSwitchProjectWithGuard("charger le modèle de démonstration", () =>
                   ensureAthVahloulMutation.mutate()
                 )
               }
@@ -2562,7 +2577,7 @@ export default function IndependentSiteBuilderPage() {
               className="h-7 border-amber-300 bg-amber-50/90 text-xs font-semibold text-amber-950 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-[#9b563e]"
             >
               <Sparkles className="mr-1 h-3.5 w-3.5 text-[#9b563e]" />
-              Démo ATH VAHLOUL (6 pages)
+              Charger un modèle de démonstration (6 pages)
             </Button>
           </div>
         </div>
@@ -3246,7 +3261,7 @@ export default function IndependentSiteBuilderPage() {
                               onClick={() => handleSelectPage(p.id)}
                               className="min-w-0 flex-1 truncate text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b563e]"
                             >
-                              <span>{p.parentPageId ? `↳ ${p.title}` : p.title}</span>
+                              <span>{p.parentPageId ? `↳ ${getBuilderPageLabel(p.title, siteTitle)}` : getBuilderPageLabel(p.title, siteTitle)}</span>
                               <span className="ml-1.5 text-[11px] font-normal text-slate-400">
                                 ({p.slug})
                               </span>
@@ -4950,7 +4965,7 @@ export default function IndependentSiteBuilderPage() {
                       </Badge>
                     </div>
                     <CardTitle className="mt-0.5 text-base text-[#172033]">
-                      {siteTitle} — Page « {activePage?.title} »
+                      {siteTitle} — Page « {getBuilderPageLabel(activePage?.title, siteTitle)} »
                     </CardTitle>
                     <CardDescription className="text-xs">
                       Double-cliquez sur un texte ou une image dans la page pour le modifier directement, ou utilisez la bibliothèque à gauche.
@@ -4970,7 +4985,7 @@ export default function IndependentSiteBuilderPage() {
                             : "bg-[#faf8f5] text-slate-700 hover:bg-[#ece5dc]"
                         }`}
                       >
-                        {p.parentPageId ? `↳ ${p.title}` : p.title}
+                        {p.parentPageId ? `↳ ${getBuilderPageLabel(p.title, siteTitle)}` : getBuilderPageLabel(p.title, siteTitle)}
                       </button>
                     ))}
                   </div>
