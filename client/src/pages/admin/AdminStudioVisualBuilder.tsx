@@ -28,7 +28,7 @@ import {
 } from "@/lib/visualBuilderSafety";
 import { CLEAN_BEAUTY_BLOCKS, CLEAN_BEAUTY_THEME, applyCleanBeautyTheme } from "@/lib/themes/cleanBeautyTemplate";
 import { getImported143BlockIcon, IMPORTED_143_BLOCKS, IMPORTED_143_THEME, registerImported143Components } from "@/lib/themes/imported143/imported143Template";
-import { createCommercePagesFromTheme, DEFAULT_THEME_STYLE_TOKENS, disableThemeCommerce, enableThemeCommerce, registerThemeCommerceBlocks, THEME_COMMERCE_BLOCKS, type ThemeStyleTokens } from "@/lib/themes/themeCommerceTransition";
+import { createCommercePagesFromTheme, DEFAULT_THEME_STYLE_TOKENS, disableThemeCommerce, enableThemeCommerce, registerThemeCommerceBlocks, registerThemeInteractiveBlocks, THEME_COMMERCE_BLOCKS, THEME_INTERACTIVE_CSS, type ThemeStyleTokens } from "@/lib/themes/themeCommerceTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -510,10 +510,11 @@ export default function AdminStudioVisualBuilder() {
     ),
     [projectMode, commerceEnabled]
   );
-  const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode, selectedThemeId), style: `${responsiveEditorCssWithAnimations}${selectedThemeId === "imported-143" ? IMPORTED_143_THEME.css : ""}`, canvas: { styles: selectedThemeId === "imported-143" ? IMPORTED_143_THEME.canvasStyles : [], scripts: selectedThemeId === "imported-143" ? IMPORTED_143_THEME.canvasScripts : [] }, blockManager: { blocks: modeAvailableBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode, selectedThemeId, modeAvailableBlocks]);
+  const editorOptions = useMemo(() => ({ height: "650px", storageManager: false, noticeOnUnload: false, components: initialComponents(selectedMode, selectedThemeId), style: `${responsiveEditorCssWithAnimations}${THEME_INTERACTIVE_CSS}${selectedThemeId === "imported-143" ? IMPORTED_143_THEME.css : ""}`, canvas: { styles: selectedThemeId === "imported-143" ? IMPORTED_143_THEME.canvasStyles : [], scripts: selectedThemeId === "imported-143" ? IMPORTED_143_THEME.canvasScripts : [] }, blockManager: { blocks: modeAvailableBlocks }, deviceManager: { devices: [{ id: "desktop", name: "Ordinateur", width: "" }, { id: "tablet", name: "Tablette", width: "768px", widthMedia: "992px" }, { id: "mobile", name: "Téléphone", width: "320px", widthMedia: "480px" }] } }), [selectedMode, selectedThemeId, modeAvailableBlocks]);
 
   useEffect(() => {
     const editor = editorRef.current;
+    if (editor) registerThemeInteractiveBlocks(editor);
     if (editor && commerceEnabled) registerThemeCommerceBlocks(editor);
   }, [commerceEnabled]);
 

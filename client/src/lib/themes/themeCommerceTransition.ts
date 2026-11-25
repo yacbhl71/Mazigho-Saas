@@ -1,3 +1,5 @@
+import { SHARED_INTERACTIVE_BLOCKS, SHARED_INTERACTIVE_CSS } from "@shared/interactiveBlocks";
+
 export type ThemeStyleTokens = {
   primary: string;
   secondary: string;
@@ -46,7 +48,9 @@ export const THEME_COMMERCE_CSS = `
 @media (max-width: 700px) { .mz-commerce-grid { grid-template-columns: 1fr; } .mz-commerce-shell { padding: 32px 16px; } }
 `;
 
-export type CommerceBlock = { id: string; label: string; category: string; content: string; traits?: Array<{ type: string; name: string; label: string; options?: string[] }> };
+export const THEME_INTERACTIVE_CSS = SHARED_INTERACTIVE_CSS;
+
+export type CommerceBlock = { id: string; label: string; category: string; content: string; script?: string; traits?: Array<{ type: string; name: string; label: string; options?: string[] }> };
 
 const icon = (symbol: string) => `${symbol} `;
 
@@ -153,7 +157,10 @@ export const THEME_COMMERCE_BLOCKS: CommerceBlock[] = [
     content: `<section class="mz-commerce-shell" data-mazigho-commerce-element="true" data-mazigho-zone="customer-portal" data-mazigho-dynamic="customer"><h2 class="mz-commerce-title">Mon espace</h2><p class="mz-commerce-empty" data-mazigho-state="empty">Connectez le portail client pour afficher les achats numériques, factures et réservations autorisés.</p><div data-mazigho-customer-portal-slot="true"></div></section>`,
     traits: [{ type: "select", name: "data-mazigho-portal-section", label: "Section", options: ["all", "downloads", "bookings", "invoices"] }],
   },
-]; 
+];
+
+export const THEME_INTERACTIVE_BLOCKS: CommerceBlock[] = SHARED_INTERACTIVE_BLOCKS.map((block) => ({ id: block.id, label: block.label, category: block.category, content: block.html, script: block.script, traits: block.traits }));
+export const ALL_THEME_BLOCKS: CommerceBlock[] = [...THEME_COMMERCE_BLOCKS, ...THEME_INTERACTIVE_BLOCKS];
 
 export function extractThemeStyleTokens(css: string, fallback: ThemeStyleTokens = DEFAULT_THEME_STYLE_TOKENS): ThemeStyleTokens {
   const read = (name: string, value: string) => {
@@ -180,12 +187,17 @@ export function injectThemeTokens(css: string, tokens: ThemeStyleTokens, selecto
   return `${themeTokenCss(tokens, selector)}\n${css}`;
 }
 
-export function registerThemeCommerceBlocks(editor: { BlockManager: { add: (id: string, config: { label: string; category: string; content: string; traits?: CommerceBlock["traits"] }) => unknown; get?: (id: string) => unknown } }): void {
-  for (const block of THEME_COMMERCE_BLOCKS) {
-    if (!editor.BlockManager.get?.(block.id)) editor.BlockManager.add(block.id, { label: block.label, category: block.category, content: block.content, traits: block.traits });
+export function registerThemeCommerceBlocks(editor: { BlockManager: { add: (id: string, config: any) => unknown; get?: (id: string) => unknown } }): void {
+  for (const block of ALL_THEME_BLOCKS) {
+    if (!editor.BlockManager.get?.(block.id)) editor.BlockManager.add(block.id, { label: block.label, category: block.category, content: block.script ? { type: "default", components: block.content, script: block.script } : block.content, traits: block.traits });
   }
 }
 
+export function registerThemeInteractiveBlocks(editor: { BlockManager: { add: (id: string, config: any) => unknown; get?: (id: string) => unknown } }): void {
+  for (const block of THEME_INTERACTIVE_BLOCKS) {
+    if (!editor.BlockManager.get?.(block.id)) editor.BlockManager.add(block.id, { label: block.label, category: block.category, content: block.script ? { type: "default", components: block.content, script: block.script } : block.content, traits: block.traits });
+  }
+}
 export function commerceHeaderMarkup(): string {
   return `<a href="#panier" class="mz-commerce-cart-trigger" data-mazigho-commerce-element="true" data-mazigho-commerce-action="open-cart" aria-label="Ouvrir le panier"><span aria-hidden="true">🛒</span><span data-mazigho-cart-count="true">0</span></a>`;
 }
@@ -223,7 +235,7 @@ export function hasInventedCommerceData(html: string): boolean {
 }
 
 export type ThemeCommerceEditor = {
-  BlockManager: { add: (id: string, config: { label: string; category: string; content: string; traits?: CommerceBlock["traits"] }) => unknown; get?: (id: string) => unknown };
+  BlockManager: { add: (id: string, config: any) => unknown; get?: (id: string) => unknown };
   setStyle: (style: string) => unknown;
   setComponents: (components: string) => unknown;
   getHtml?: () => string;
@@ -233,7 +245,7 @@ export function enableThemeCommerce(editor: ThemeCommerceEditor, css: string, to
   registerThemeCommerceBlocks(editor);
   const currentHtml = editor.getHtml?.() || "";
   const html = injectCommerceCartIntoHeader(setCommerceElementsHidden(currentHtml, false));
-  const nextCss = `${injectThemeTokens(css, tokens, themeSelector)}\n${THEME_COMMERCE_CSS}`;
+  const nextCss = `${injectThemeTokens(css, tokens, themeSelector)}\n${THEME_COMMERCE_CSS}\n${THEME_INTERACTIVE_CSS}`;
   if (html && html !== currentHtml) editor.setComponents(html);
   editor.setStyle(nextCss);
   return { html, css: nextCss };

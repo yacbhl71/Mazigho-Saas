@@ -19,6 +19,7 @@ import {
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
   INDEPENDENT_COMMERCE_CSS,
+  INDEPENDENT_INTERACTIVE_CSS,
   INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE,
   INDEPENDENT_SITE_ROLE_PRESENTATIONS,
   INDEPENDENT_SITE_TEMPLATES,
@@ -1284,7 +1285,7 @@ export default function IndependentSiteBuilderPage() {
           styleElement.dataset.independentCanvasStyle = "true";
           canvasDocument.head.appendChild(styleElement);
         }
-        styleElement.textContent = `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${INDEPENDENT_COMMERCE_CSS}`;
+        styleElement.textContent = `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${INDEPENDENT_COMMERCE_CSS}\n${INDEPENDENT_INTERACTIVE_CSS}`;
       }
     } catch {
       // The canvas:load handler retries after the iframe is ready.
@@ -1542,10 +1543,10 @@ export default function IndependentSiteBuilderPage() {
     }
   }
 
-  function insertHtmlIntoCanvas(html: string, label: string) {
+  function insertHtmlIntoCanvas(html: string, label: string, script?: string) {
     const editor = editorRef.current;
     if (editor) {
-      editor.addComponents(html);
+      editor.addComponents(script ? { type: "default", components: html, script } : html);
       syncCurrentEditorToPageState();
       refreshLayersFromEditor(editor);
       setHasUnsavedChanges(true);
@@ -4775,7 +4776,7 @@ export default function IndependentSiteBuilderPage() {
                             size="sm"
                             variant="outline"
                             className="mt-2.5 h-7 w-full border-[#e2dad0] text-xs font-semibold hover:border-[#9b563e] hover:text-[#9b563e]"
-                            onClick={() => insertHtmlIntoCanvas(mod.html, mod.label)}
+                          onClick={() => insertHtmlIntoCanvas(mod.html, mod.label, mod.script)}
                           >
                             + Ajouter ce module à la page
                           </Button>
@@ -5116,7 +5117,7 @@ export default function IndependentSiteBuilderPage() {
                         bm.add(mod.id, {
                           label: mod.label,
                           category: `Modules · ${mod.category}`,
-                          content: mod.html,
+                          content: mod.script ? { type: "default", components: mod.html, script: mod.script } : mod.html,
                         });
                       });
                       requestAnimationFrame(() => decorateIndependentGrapesjsBlockManager());

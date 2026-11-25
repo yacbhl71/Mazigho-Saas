@@ -151,7 +151,30 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(INDEPENDENT_COMMERCE_BLOCKS).toHaveLength(18);
     expect(INDEPENDENT_COMMERCE_BLOCKS.filter((block) => block.category === "Boutique")).toHaveLength(14);
     expect(INDEPENDENT_COMMERCE_BLOCKS.filter((block) => block.category === "Services & Numérique")).toHaveLength(4);
-    expect(INDEPENDENT_BUILDER_MODULES.length).toBe(8);
+    expect(INDEPENDENT_BUILDER_MODULES.length).toBe(18);
+    const interactiveIds = [
+      "mazigho-interactive-map",
+      "mazigho-interactive-opening-hours",
+      "mazigho-interactive-pricing-table",
+      "mazigho-interactive-tabs",
+      "mazigho-interactive-slider",
+      "mazigho-interactive-social-grid",
+      "mazigho-interactive-newsletter",
+      "mazigho-interactive-floating-contact",
+      "mazigho-interactive-countdown",
+      "mazigho-interactive-top-announcement",
+    ];
+    expect(INDEPENDENT_BUILDER_MODULES.filter((module) => interactiveIds.includes(module.id))).toHaveLength(10);
+    expect(INDEPENDENT_MODULE_CATEGORIES).toEqual(expect.arrayContaining([
+      "Modules · Information & Services",
+      "Modules · Interactions & Médias",
+      "Contact & Décoration",
+      "Navigation & Structure",
+    ]));
+    for (const module of INDEPENDENT_BUILDER_MODULES.filter((item) => interactiveIds.includes(item.id))) {
+      expect(module.html).toContain('data-mazigho-interactive="true"');
+      expect(module.html).not.toMatch(/(?:\bCHF\b|\bEUR\b|49[,.]99|59[,.]99|stock disponible)/i);
+    }
     expect(INDEPENDENT_PAGE_SOCLES.length).toBe(9);
     expect(INDEPENDENT_SITE_TEMPLATES.length).toBe(10);
 

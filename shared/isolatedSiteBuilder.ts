@@ -7,8 +7,11 @@
  */
 
 import { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS } from "./independentCommerceBlocks";
+import { SHARED_INTERACTIVE_BLOCKS, SHARED_INTERACTIVE_CSS } from "./interactiveBlocks";
 
 export { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS };
+export const INDEPENDENT_INTERACTIVE_CSS = SHARED_INTERACTIVE_CSS;
+export const INDEPENDENT_INTERACTIVE_BLOCKS = SHARED_INTERACTIVE_BLOCKS;
 
 export type IndependentSiteType =
   | "vitrine"
@@ -1741,12 +1744,20 @@ export const INDEPENDENT_BUILDER_BLOCKS: ReadonlyArray<IndependentBuilderBlock> 
 export interface IndependentBuilderModule {
   id: string;
   label: string;
-  category: "Vie Associative & Familiale" | "Interactions & Médias" | "Information & Services";
+  category:
+    | "Vie Associative & Familiale"
+    | "Interactions & Médias"
+    | "Information & Services"
+    | "Modules · Information & Services"
+    | "Modules · Interactions & Médias"
+    | "Contact & Décoration"
+    | "Navigation & Structure";
   description: string;
   html: string;
+  script?: string;
 }
 
-export const INDEPENDENT_BUILDER_MODULES: ReadonlyArray<IndependentBuilderModule> = [
+const INDEPENDENT_LEGACY_MODULES: ReadonlyArray<IndependentBuilderModule> = [
   {
     id: "module-events-calendar",
     label: "Module — Événements & Calendrier",
@@ -1804,6 +1815,18 @@ export const INDEPENDENT_BUILDER_MODULES: ReadonlyArray<IndependentBuilderModule
     html: `<section data-site-module="contact-location" style="padding:52px 28px;background:#172033;color:#ffffff"><div style="max-width:1040px;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px"><div style="padding:22px;background:rgba(255,255,255,.07);border-radius:14px"><h3 style="margin:0 0 8px;color:#f5b98f">Siège & Réunions</h3><p style="margin:0;color:#e6ebf2;font-size:14px;line-height:1.6">Maison des Associations · Salle polyvalente sur convocation.</p></div><div style="padding:22px;background:rgba(255,255,255,.07);border-radius:14px"><h3 style="margin:0 0 8px;color:#f5b98f">Permanence téléphonique</h3><p style="margin:0;color:#e6ebf2;font-size:14px;line-height:1.6">Chaque samedi de 10h00 à 12h30 auprès du secrétariat.</p></div><div style="padding:22px;background:rgba(255,255,255,.07);border-radius:14px"><h3 style="margin:0 0 8px;color:#f5b98f">Courriel officiel</h3><p style="margin:0;color:#e6ebf2;font-size:14px;line-height:1.6">contact@association-ath-vahloul.org</p></div></div></section>`,
   },
 ] as const;
+
+export const INDEPENDENT_BUILDER_MODULES: ReadonlyArray<IndependentBuilderModule> = [
+  ...INDEPENDENT_LEGACY_MODULES,
+  ...SHARED_INTERACTIVE_BLOCKS.map((block) => ({
+    id: block.id,
+    label: block.label,
+    category: block.category,
+    description: block.description,
+    html: block.html,
+    script: block.script,
+  })),
+];
 
 // ---------------------------------------------------------------------------
 // 5. Socles de Pages (9 Structures de page complètes prêtes à personnaliser)
@@ -3069,6 +3092,10 @@ export const INDEPENDENT_MODULE_CATEGORIES: ReadonlyArray<IndependentBuilderModu
   "Vie Associative & Familiale",
   "Interactions & Médias",
   "Information & Services",
+  "Modules · Information & Services",
+  "Modules · Interactions & Médias",
+  "Contact & Décoration",
+  "Navigation & Structure",
 ] as const;
 
 function normalizeSearchQuery(raw?: string | null): string {
