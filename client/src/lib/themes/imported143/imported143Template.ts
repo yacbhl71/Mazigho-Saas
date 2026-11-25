@@ -29,23 +29,23 @@ const titleFromSection = (html: string, fallback: string) => {
 
 const sectionBlocks = extract("section").map((content, index) => ({
   id: `imported-143-section-${index + 1}`,
-  label: `143.ch · ${titleFromSection(content, `Section ${index + 1}`)}`,
-  category: "Templates importés · 143.ch",
+  label: `Section importée · ${titleFromSection(content, `Section ${index + 1}`)}`,
+  category: "Thèmes importés",
   content,
-  attributes: { title: `Section 143.ch ${index + 1}`, class: "imported-143-block" },
+  attributes: { title: `Section importée ${index + 1}`, class: "imported-143-block" },
 }));
 
 export const IMPORTED_143_BLOCKS: Imported143Block[] = [
-  { id: "imported-143-header", label: "143.ch · En-tête et navigation", category: "Templates importés · 143.ch", content: extract("header"), attributes: { title: "En-tête 143.ch", class: "imported-143-block" } },
+  { id: "imported-143-header", label: "En-tête et navigation", category: "Thèmes importés", content: extract("header"), attributes: { title: "En-tête importé", class: "imported-143-block" } },
   ...sectionBlocks,
-  { id: "imported-143-footer", label: "143.ch · Pied de page", category: "Templates importés · 143.ch", content: extract("footer"), attributes: { title: "Pied de page 143.ch", class: "imported-143-block" } },
+  { id: "imported-143-footer", label: "Pied de page", category: "Thèmes importés", content: extract("footer"), attributes: { title: "Pied de page importé", class: "imported-143-block" } },
 ].filter(block => block.content.trim()).map((block, index) => ({ ...block, attributes: { ...block.attributes, "data-imported-block-index": String(index + 1) } }));
 
 const withEditorRoot = imported143Html.replace(/^\s*/, "").replace(/<div class="page-143">/, `<div class="page-143" data-mazigho-theme="imported-143" data-mazigho-zone="editorial-site">`);
 
 export const IMPORTED_143_THEME = {
   id: "imported-143",
-  name: "143.ch · La Main Tendue",
+  name: "Thème importé · Site éditorial",
   description: "Thème éditorial importé depuis une maquette HTML/CSS, avec navigation responsive et sections de contenu non marchand.",
   html: withEditorRoot,
   css: imported143Css,

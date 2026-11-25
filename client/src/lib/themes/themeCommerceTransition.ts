@@ -48,7 +48,7 @@ export const THEME_COMMERCE_CSS = `
 
 export type CommerceBlock = { id: string; label: string; category: string; content: string; traits?: Array<{ type: string; name: string; label: string; options?: string[] }> };
 
-const icon = (symbol: string) => `<span aria-hidden="true" style="display:inline-grid;place-items:center;font-size:18px">${symbol}</span>`;
+const icon = (symbol: string) => `${symbol} `;
 
 export const THEME_COMMERCE_BLOCKS: CommerceBlock[] = [
   {
