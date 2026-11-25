@@ -47,6 +47,14 @@ const STARS_HTML = `<span class="mz-cb-stars" aria-label="5 sur 5">★★★★�
 
 export const CLEAN_BEAUTY_CSS = `
 .mz-cb-root {
+  --theme-primary: #ec4899;
+  --theme-secondary: #a855f7;
+  --theme-background: #ffffff;
+  --theme-surface: #f9fafb;
+  --theme-text: #111827;
+  --theme-muted: #6b7280;
+  --theme-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --theme-radius: 999px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #111827;
   background-color: #ffffff;
@@ -643,7 +651,7 @@ const BLOCK_HEADER: MazighoGrapesBlock = {
   label: 'En-tête Boutique',
   category: 'Clean Beauty',
   content: `
-    <header class="mz-cb-header" data-gjs-name="En-tête Boutique">
+    <header class="mz-cb-header" data-gjs-name="En-tête Boutique" data-mazigho-header="true">
       <div class="mz-cb-container mz-cb-header-top">
         <a href="#accueil" class="mz-cb-logo">Maison Élégance</a>
         <div class="mz-cb-search">

@@ -1,5 +1,13 @@
 /* === BASE & VARIABLES === */
 .page-143 {
+  --theme-primary: var(--red, #d82519);
+  --theme-secondary: var(--mauve, #8d636e);
+  --theme-background: var(--white, #ffffff);
+  --theme-surface: var(--cream-light, #f5f0ec);
+  --theme-text: var(--text-dark, #222222);
+  --theme-muted: var(--text-muted, #5c5752);
+  --theme-font: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --theme-radius: 8px;
   --red: #d82519;
   --red-dark: #c01e13;
   --maroon: #7d1d26;

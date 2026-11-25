@@ -28,6 +28,7 @@ import {
 } from "@/lib/visualBuilderSafety";
 import { CLEAN_BEAUTY_BLOCKS, CLEAN_BEAUTY_THEME, applyCleanBeautyTheme } from "@/lib/themes/cleanBeautyTemplate";
 import { getImported143BlockIcon, IMPORTED_143_BLOCKS, IMPORTED_143_THEME, registerImported143Components } from "@/lib/themes/imported143/imported143Template";
+import { createCommercePagesFromTheme, DEFAULT_THEME_STYLE_TOKENS, disableThemeCommerce, enableThemeCommerce, registerThemeCommerceBlocks, type ThemeStyleTokens } from "@/lib/themes/themeCommerceTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -508,6 +509,11 @@ export default function AdminStudioVisualBuilder() {
 
   useEffect(() => {
     const editor = editorRef.current;
+    if (editor && commerceEnabled) registerThemeCommerceBlocks(editor);
+  }, [commerceEnabled]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
     if (!editor || !activeBuilderPage?.project || Object.keys(activeBuilderPage.project).length === 0) return;
     // Les pages peuvent arriver après l'initialisation de l'iframe GrapesJS.
     // Recharge le projet actif pour que le canvas Studio reflète ses styles
@@ -903,6 +909,18 @@ export default function AdminStudioVisualBuilder() {
     const enabled = enableVisualProjectCommerce(getProjectPayload(), targetStoreId, {
       targetMode: projectMode === "storefront" ? "storefront" : "hybrid",
     });
+    const editor = editorRef.current;
+    const themeTokens: ThemeStyleTokens = selectedThemeId === "imported-143"
+      ? { primary: "#d82519", secondary: "#8d636e", background: "#ffffff", surface: "#f5f0ec", text: "#222222", muted: "#5c5752", font: "'Segoe UI', Roboto, Arial, sans-serif", radius: "8px" }
+      : selectedThemeId === "clean-beauty-elegance"
+        ? { primary: "#ec4899", secondary: "#a855f7", background: "#ffffff", surface: "#f9fafb", text: "#111827", muted: "#6b7280", font: "'Inter', sans-serif", radius: "999px" }
+        : DEFAULT_THEME_STYLE_TOKENS;
+    if (editor) {
+      const baseCss = `${responsiveEditorCssWithAnimations}\n${selectedThemeId === "imported-143" ? IMPORTED_143_THEME.css : selectedThemeId === "clean-beauty-elegance" ? CLEAN_BEAUTY_THEME.css : editor.getCss?.() || ""}`;
+      const transition = enableThemeCommerce(editor, baseCss, themeTokens, selectedThemeId === "imported-143" ? ".page-143" : selectedThemeId === "clean-beauty-elegance" ? ".mz-cb-root" : ":root");
+      const nextPages = createCommercePagesFromTheme(capturePages() as any, transition.html || getRenderableEditorHtml(editor), transition.css) as unknown as BuilderPage[];
+      setPages(nextPages);
+    }
     setProjectMode(enabled.nextMode);
     setCommerceEnabled(enabled.commerceEnabled);
     setSelectedStoreId(targetStoreId);
@@ -936,6 +954,10 @@ export default function AdminStudioVisualBuilder() {
       return;
     }
     const disabled = disableVisualProjectCommerce(getProjectPayload());
+    if (editorRef.current) {
+      const hiddenHtml = disableThemeCommerce(editorRef.current);
+      if (hiddenHtml) setPages(previous => previous.map(page => page.id === activePageId ? { ...page, project: editorRef.current?.getProjectData() as BuilderPage["project"] } : page));
+    }
     setProjectMode(disabled.nextMode);
     setCommerceEnabled(disabled.commerceEnabled);
     setHasUnsavedChanges(true);

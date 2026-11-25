@@ -250,10 +250,14 @@ export function evaluateVisualProjectCapabilities(
 export const COMMERCE_BUILDER_BLOCK_IDS = new Set<string>([
   "mazigho-products",
   "mazigho-category-grid",
+  "mazigho-services-booking",
+  "mazigho-services-menu",
+  "mazigho-digital-asset-card",
+  "mazigho-customer-portal",
 ]);
 
 export function isCommerceBuilderBlock(block: { id: string; category?: string }): boolean {
-  return COMMERCE_BUILDER_BLOCK_IDS.has(block.id) || Boolean(block.category?.includes("Catalogue"));
+  return COMMERCE_BUILDER_BLOCK_IDS.has(block.id) || Boolean(block.category?.includes("Catalogue") || block.category?.includes("Boutique") || block.category?.includes("Services & Numérique"));
 }
 
 export function filterBuilderBlocksForProjectMode<
