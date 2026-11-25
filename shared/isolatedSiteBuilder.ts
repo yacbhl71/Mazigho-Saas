@@ -3061,6 +3061,8 @@ export const INDEPENDENT_BLOCK_CATEGORIES: ReadonlyArray<IndependentBuilderBlock
   "Cartes & Grilles",
   "Confiance & Contenu",
   "Contact & Décoration",
+  "Boutique",
+  "Services & Numérique",
 ] as const;
 
 export const INDEPENDENT_MODULE_CATEGORIES: ReadonlyArray<IndependentBuilderModule["category"]> = [
