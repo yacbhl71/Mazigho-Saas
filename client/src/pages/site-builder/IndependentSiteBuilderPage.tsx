@@ -129,6 +129,7 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Star,
   Tablet,
   Trash2,
   Undo2,
@@ -419,10 +420,41 @@ export default function IndependentSiteBuilderPage() {
   // Navigation dans la bibliothèque (7 espaces) + Recherche & Filtres par catégorie
   const [activeLibraryTab, setActiveLibraryTab] = useState<IndependentBuilderLibraryTab>("pages");
   const [librarySearch, setLibrarySearch] = useState("");
+  const [favoriteLibraryItems, setFavoriteLibraryItems] = useState<string[]>([]);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [blockCategoryFilter, setBlockCategoryFilter] = useState<string>("all");
   const [moduleCategoryFilter, setModuleCategoryFilter] = useState<string>("all");
   const [socleTypeFilter, setSocleTypeFilter] = useState<IndependentSiteType | "all">("all");
   const [templateTypeFilter, setTemplateTypeFilter] = useState<IndependentSiteType | "all">("all");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || selectedSiteId === null) {
+      setFavoriteLibraryItems([]);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(`mazigho-builder-favorites:${selectedSiteId}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setFavoriteLibraryItems(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+    } catch {
+      setFavoriteLibraryItems([]);
+    }
+  }, [selectedSiteId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || selectedSiteId === null) return;
+    try {
+      window.localStorage.setItem(`mazigho-builder-favorites:${selectedSiteId}`, JSON.stringify(favoriteLibraryItems));
+    } catch {
+      // Le navigateur peut refuser le stockage local ; les favoris restent alors temporaires.
+    }
+  }, [favoriteLibraryItems, selectedSiteId]);
+
+  function toggleLibraryFavorite(id: string) {
+    setFavoriteLibraryItems((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }
 
   // Panneau de droite : Réglages & SEO | Publication & Domaine | Versions & Historique
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTabId>("seo");
@@ -627,8 +659,8 @@ export default function IndependentSiteBuilderPage() {
       filterIndependentBlocks({
         search: librarySearch,
         category: blockCategoryFilter as any,
-      }),
-    [librarySearch, blockCategoryFilter]
+      }).filter((block) => !favoritesOnly || favoriteLibraryItems.includes(block.id)),
+    [librarySearch, blockCategoryFilter, favoritesOnly, favoriteLibraryItems]
   );
 
   const filteredModules = useMemo(
@@ -3968,6 +4000,16 @@ export default function IndependentSiteBuilderPage() {
                     <div className="flex flex-wrap items-center gap-1">
                       <button
                         type="button"
+                        onClick={() => setFavoritesOnly((current) => !current)}
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition ${favoritesOnly ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
+                        aria-pressed={favoritesOnly}
+                        title="Afficher uniquement mes blocs favoris"
+                      >
+                        <Star className="h-3 w-3" fill={favoritesOnly ? "currentColor" : "none"} />
+                        Favoris ({favoriteLibraryItems.length})
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setBlockCategoryFilter("all")}
                         className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
                           blockCategoryFilter === "all"
@@ -4037,9 +4079,18 @@ export default function IndependentSiteBuilderPage() {
                               >
                                 {blk.category}
                               </span>
-                              <strong className="block truncate text-xs text-[#172033]">
-                                {blk.label}
-                              </strong>
+                              <div className="flex items-center gap-1">
+                                <strong className="block truncate text-xs text-[#172033]">{blk.label}</strong>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-0.5 text-amber-500 hover:bg-amber-100"
+                                  onClick={() => toggleLibraryFavorite(blk.id)}
+                                  aria-label={`${favoriteLibraryItems.includes(blk.id) ? "Retirer" : "Ajouter"} ${blk.label} ${favoriteLibraryItems.includes(blk.id) ? "des" : "aux"} favoris`}
+                                  title={favoriteLibraryItems.includes(blk.id) ? "Retirer des favoris" : "Ajouter aux favoris"}
+                                >
+                                  <Star className="h-3.5 w-3.5" fill={favoriteLibraryItems.includes(blk.id) ? "currentColor" : "none"} />
+                                </button>
+                              </div>
                               <p className="line-clamp-2 text-[11px] text-slate-500">
                                 {blk.description}
                               </p>
