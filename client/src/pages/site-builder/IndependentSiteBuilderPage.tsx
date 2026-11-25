@@ -422,6 +422,7 @@ export default function IndependentSiteBuilderPage() {
   const [librarySearch, setLibrarySearch] = useState("");
   const [favoriteLibraryItems, setFavoriteLibraryItems] = useState<string[]>([]);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [previewedLibraryBlockId, setPreviewedLibraryBlockId] = useState<string | null>(null);
   const [blockCategoryFilter, setBlockCategoryFilter] = useState<string>("all");
   const [moduleCategoryFilter, setModuleCategoryFilter] = useState<string>("all");
   const [socleTypeFilter, setSocleTypeFilter] = useState<IndependentSiteType | "all">("all");
@@ -4094,6 +4095,14 @@ export default function IndependentSiteBuilderPage() {
                               <p className="line-clamp-2 text-[11px] text-slate-500">
                                 {blk.description}
                               </p>
+                              {previewedLibraryBlockId === blk.id && (
+                                <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-inner">
+                                  <div
+                                    className="origin-top-left scale-[0.92]"
+                                    dangerouslySetInnerHTML={{ __html: sanitizeIndependentHtml(blk.content) }}
+                                  />
+                                </div>
+                              )}
                             </div>
                               <Button
                                 type="button"
@@ -4104,6 +4113,17 @@ export default function IndependentSiteBuilderPage() {
                                 onClick={() => insertHtmlIntoCanvas(blk.content, blk.label)}
                               >
                                 + Insérer
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 shrink-0 px-2 text-[11px] text-slate-700"
+                                onClick={() => setPreviewedLibraryBlockId((current) => current === blk.id ? null : blk.id)}
+                                aria-expanded={previewedLibraryBlockId === blk.id}
+                              >
+                                <Eye className="mr-1 h-3 w-3" />
+                                {previewedLibraryBlockId === blk.id ? "Fermer" : "Aperçu"}
                               </Button>
                               </div>
                             );
