@@ -28,7 +28,7 @@ import {
 } from "@/lib/visualBuilderSafety";
 import { CLEAN_BEAUTY_BLOCKS, CLEAN_BEAUTY_THEME, applyCleanBeautyTheme } from "@/lib/themes/cleanBeautyTemplate";
 import { getImported143BlockIcon, IMPORTED_143_BLOCKS, IMPORTED_143_THEME, registerImported143Components } from "@/lib/themes/imported143/imported143Template";
-import { createCommercePagesFromTheme, DEFAULT_THEME_STYLE_TOKENS, disableThemeCommerce, enableThemeCommerce, registerThemeCommerceBlocks, type ThemeStyleTokens } from "@/lib/themes/themeCommerceTransition";
+import { createCommercePagesFromTheme, DEFAULT_THEME_STYLE_TOKENS, disableThemeCommerce, enableThemeCommerce, registerThemeCommerceBlocks, THEME_COMMERCE_BLOCKS, type ThemeStyleTokens } from "@/lib/themes/themeCommerceTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -500,7 +500,12 @@ export default function AdminStudioVisualBuilder() {
   );
   const modeAvailableBlocks = useMemo(
     () => filterBuilderBlocksForProjectMode(
-      [...editorBlocks, ...CLEAN_BEAUTY_BLOCKS.map(block => ({ ...block })), ...IMPORTED_143_BLOCKS.map(block => ({ ...block, icon: getImported143BlockIcon(block.id) }))],
+      [
+        ...editorBlocks,
+        ...CLEAN_BEAUTY_BLOCKS.map(block => ({ ...block })),
+        ...IMPORTED_143_BLOCKS.map(block => ({ ...block, icon: getImported143BlockIcon(block.id) })),
+        ...(commerceEnabled ? THEME_COMMERCE_BLOCKS : []),
+      ],
       { projectMode, commerceEnabled },
     ),
     [projectMode, commerceEnabled]
