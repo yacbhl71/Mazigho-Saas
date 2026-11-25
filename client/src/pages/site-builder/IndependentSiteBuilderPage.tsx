@@ -18,6 +18,7 @@ import {
   INDEPENDENT_PAGE_SOCLES,
   INDEPENDENT_PROJECT_MODE_OPTIONS,
   INDEPENDENT_RESPONSIVE_BASE_CSS,
+  INDEPENDENT_COMMERCE_CSS,
   INDEPENDENT_SITE_CLIENT_DELIVERY_GUIDE,
   INDEPENDENT_SITE_ROLE_PRESENTATIONS,
   INDEPENDENT_SITE_TEMPLATES,
@@ -152,6 +153,8 @@ const INDEPENDENT_BLOCK_PALETTE: Record<
   "Cartes & Grilles": { surface: "#f7e8f1", border: "#e4a8c5", text: "#a63d70", active: "#c05286" },
   "Confiance & Contenu": { surface: "#e5f2ff", border: "#9bc7f2", text: "#2563a8", active: "#3b82c4" },
   "Contact & Décoration": { surface: "#f1e8ff", border: "#c4a5f5", text: "#6d28d9", active: "#7c3aed" },
+  Boutique: { surface: "#fff0f5", border: "#efb5c8", text: "#a2184d", active: "#e51d61" },
+  "Services & Numérique": { surface: "#e5f2ff", border: "#9bc7f2", text: "#2563a8", active: "#3b82c4" },
 };
 
 const INDEPENDENT_MODULE_PALETTE = [
@@ -1262,7 +1265,7 @@ export default function IndependentSiteBuilderPage() {
           styleElement.dataset.independentCanvasStyle = "true";
           canvasDocument.head.appendChild(styleElement);
         }
-        styleElement.textContent = INDEPENDENT_RESPONSIVE_BASE_CSS;
+        styleElement.textContent = `${INDEPENDENT_RESPONSIVE_BASE_CSS}\n${INDEPENDENT_COMMERCE_CSS}`;
       }
     } catch {
       // The canvas:load handler retries after the iframe is ready.

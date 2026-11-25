@@ -5,6 +5,7 @@ import {
   ATH_VAHLOUL_DEMO_TEMPLATE_ID,
   INDEPENDENT_BLOCK_CATEGORIES,
   INDEPENDENT_BUILDER_BLOCKS,
+  INDEPENDENT_COMMERCE_BLOCKS,
   INDEPENDENT_BUILDER_HELP_GUIDES,
   INDEPENDENT_BUILDER_LIBRARY_TABS,
   INDEPENDENT_BUILDER_MODULES,
@@ -145,15 +146,18 @@ describe("Constructeur de Sites Internet Indépendant (Produit isolé sans bouti
     expect(INDEPENDENT_RESPONSIVE_BASE_CSS).toContain('[data-site-block="hero-ath-vahloul"] h1');
   });
 
-  it("2. garantit l’absence totale de composants e-commerce dans les Blocs, Modules, Socles et les 10 Modèles complets", () => {
-    expect(INDEPENDENT_BUILDER_BLOCKS.length).toBeGreaterThanOrEqual(20);
+  it("2. fournit les blocs commerce visuels sans injecter de données métier dans les projets indépendants", () => {
+    expect(INDEPENDENT_BUILDER_BLOCKS.length).toBeGreaterThanOrEqual(38);
+    expect(INDEPENDENT_COMMERCE_BLOCKS).toHaveLength(18);
+    expect(INDEPENDENT_COMMERCE_BLOCKS.filter((block) => block.category === "Boutique")).toHaveLength(14);
+    expect(INDEPENDENT_COMMERCE_BLOCKS.filter((block) => block.category === "Services & Numérique")).toHaveLength(4);
     expect(INDEPENDENT_BUILDER_MODULES.length).toBe(8);
     expect(INDEPENDENT_PAGE_SOCLES.length).toBe(9);
     expect(INDEPENDENT_SITE_TEMPLATES.length).toBe(10);
 
-    for (const block of INDEPENDENT_BUILDER_BLOCKS) {
-      expect(block.content).not.toContain('data-mazigho-dynamic="catalogue"');
-      expect(block.id).not.toMatch(/product|cart|checkout|payment|stock/i);
+    for (const block of INDEPENDENT_COMMERCE_BLOCKS) {
+      expect(block.content).toContain('data-mazigho-commerce-element="true"');
+      expect(block.content).not.toMatch(/(?:CHF|EUR|49[,.]99|59[,.]99|stock disponible)/i);
     }
 
     for (const socle of INDEPENDENT_PAGE_SOCLES) {

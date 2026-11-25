@@ -1,10 +1,14 @@
 /**
  * Constructeur de Sites Internet Indépendant — Noyau fonctionnel & Bibliothèques isolées
  *
- * Ce module est 100 % indépendant de Studio MAZIGHO et du moteur e-commerce.
- * Il ne contient ni catalogue produit, ni panier, ni checkout, ni paiement, ni stock,
- * ni commande, ni dépendance à un storeId.
+ * Ce module est 100 % indépendant de Studio MAZIGHO et de ses données métier.
+ * Il contient uniquement des structures visuelles commerce/services hydratables, sans
+ * catalogue réel, panier exécuté, checkout, paiement, stock, commande ou storeId.
  */
+
+import { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS } from "./independentCommerceBlocks";
+
+export { INDEPENDENT_COMMERCE_BLOCKS, INDEPENDENT_COMMERCE_CSS };
 
 export type IndependentSiteType =
   | "vitrine"
@@ -1408,12 +1412,14 @@ export interface IndependentBuilderBlock {
     | "Images & Médias"
     | "Cartes & Grilles"
     | "Confiance & Contenu"
-    | "Contact & Décoration";
+    | "Contact & Décoration"
+    | "Boutique"
+    | "Services & Numérique";
   description: string;
   content: string;
 }
 
-export const INDEPENDENT_BUILDER_BLOCKS: ReadonlyArray<IndependentBuilderBlock> = [
+const INDEPENDENT_EDITORIAL_BLOCKS: ReadonlyArray<IndependentBuilderBlock> = [
   {
     id: "site-header-configurable",
     label: "Header configurable + menu",
@@ -1722,6 +1728,11 @@ export const INDEPENDENT_BUILDER_BLOCKS: ReadonlyArray<IndependentBuilderBlock> 
     content: `<section data-site-custom-code="true" style="box-sizing:border-box;max-width:100%;padding:28px 24px;background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;overflow-wrap:anywhere"><div data-site-custom-code-slot="true" style="max-width:100%"><p style="margin:0 0 8px;color:#334155;font-size:14px;font-weight:700">Zone de code personnalisé</p><p style="margin:0;color:#64748b;font-size:13px;line-height:1.6">Sélectionnez cette zone, puis modifiez son HTML/CSS avec les outils du constructeur. Les scripts, accès sensibles et données métier restent interdits.</p></div></section>`,
   },
 ] as const;
+
+export const INDEPENDENT_BUILDER_BLOCKS: ReadonlyArray<IndependentBuilderBlock> = [
+  ...INDEPENDENT_EDITORIAL_BLOCKS,
+  ...INDEPENDENT_COMMERCE_BLOCKS,
+];
 
 // ---------------------------------------------------------------------------
 // 4. Modules Fonctionnels Réutilisables (8 Modules sans e-commerce)
