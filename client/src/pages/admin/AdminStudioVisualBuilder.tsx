@@ -846,6 +846,13 @@ export default function AdminStudioVisualBuilder() {
     reviewComments,
   });
 
+  const syncCanvasPage = (editor: Editor, project: BuilderPage["project"]) => {
+    const components = typeof project.components === "string" ? project.components : initialComponents("blank");
+    const styles = typeof project.styles === "string" ? project.styles : responsiveEditorCssWithAnimations;
+    editor.setStyle(styles);
+    editor.setComponents(components);
+  };
+
   const localDraftKey = useMemo(() => getVisualBuilderLocalDraftKey({ storeId: selectedStoreId, projectId: independentProjectId }), [selectedStoreId, independentProjectId]);
 
   useEffect(() => {
@@ -910,7 +917,7 @@ export default function AdminStudioVisualBuilder() {
     setSocialCoverUrl(target.settings?.socialCoverUrl ?? "");
     setFaviconUrl(target.settings?.faviconUrl ?? "");
     const project = target.project && Object.keys(target.project).length > 0 ? target.project : { components: initialComponents("blank"), styles: responsiveEditorCssWithAnimations };
-    editorRef.current.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
+    syncCanvasPage(editorRef.current, project);
     setSelectedComponent(null);
     setHasUnsavedChanges(true);
   };
