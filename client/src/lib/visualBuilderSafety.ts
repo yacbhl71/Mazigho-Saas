@@ -12,21 +12,34 @@ export function isDynamicCatalogueAttributes(attributes: Record<string, unknown>
   return attributes?.["data-mazigho-dynamic"] === "catalogue";
 }
 
-export function auditVisualBuilderAccessibility(html: string) {
-  const issues: string[] = [];
+export type VisualBuilderAccessibilityLevel = "Bloquant" | "À corriger" | "Conseil";
+export type VisualBuilderAccessibilityIssue = {
+  id: string;
+  level: VisualBuilderAccessibilityLevel;
+  category: string;
+  message: string;
+};
+
+export function auditVisualBuilderAccessibilityDetailed(html: string): VisualBuilderAccessibilityIssue[] {
+  const issues: VisualBuilderAccessibilityIssue[] = [];
   const imagesWithoutAlt = html.match(/<img\b(?![^>]*\balt\s*=\s*["'][^"']+)[^>]*>/gi) ?? [];
-  if (imagesWithoutAlt.length > 0) issues.push(`${imagesWithoutAlt.length} image(s) sans texte alternatif.`);
+  if (imagesWithoutAlt.length > 0) issues.push({ id: "images-alt", level: "Bloquant", category: "Images", message: `${imagesWithoutAlt.length} image(s) sans texte alternatif.` });
 
   const unnamedButtons = html.match(/<button\b(?![^>]*\b(?:aria-label|aria-labelledby|title)\s*=\s*["'][^"']+["'])[^>]*>(?:\s|&nbsp;|<[^>]+>)*<\/button>/gi) ?? [];
-  if (unnamedButtons.length > 0) issues.push(`${unnamedButtons.length} bouton(s) sans nom accessible.`);
+  if (unnamedButtons.length > 0) issues.push({ id: "buttons-name", level: "Bloquant", category: "Commandes", message: `${unnamedButtons.length} bouton(s) sans nom accessible.` });
 
   const linksWithoutHref = html.match(/<a\b(?![^>]*\bhref\s*=)[^>]*>/gi) ?? [];
-  if (linksWithoutHref.length > 0) issues.push(`${linksWithoutHref.length} lien(s) sans destination.`);
+  if (linksWithoutHref.length > 0) issues.push({ id: "links-href", level: "À corriger", category: "Navigation", message: `${linksWithoutHref.length} lien(s) sans destination.` });
 
   const externalLinks = html.match(/<a\b[^>]*target\s*=\s*["']_blank["'][^>]*>/gi) ?? [];
   const unsafeExternalLinks = externalLinks.filter(link => !/\brel\s*=\s*["'][^"']*\b(?:noopener|noreferrer)\b/i.test(link));
-  if (unsafeExternalLinks.length > 0) issues.push(`${unsafeExternalLinks.length} lien(s) externe(s) sans protection noopener/noreferrer.`);
+  if (unsafeExternalLinks.length > 0) issues.push({ id: "external-links-rel", level: "À corriger", category: "Liens externes", message: `${unsafeExternalLinks.length} lien(s) externe(s) sans protection noopener/noreferrer.` });
+  if (!/<h1\b/i.test(html)) issues.push({ id: "heading-h1", level: "Conseil", category: "Structure", message: "Ajouter un titre principal H1 pour clarifier la hiérarchie de la page." });
   return issues;
+}
+
+export function auditVisualBuilderAccessibility(html: string) {
+  return auditVisualBuilderAccessibilityDetailed(html).filter(issue => issue.level !== "Conseil").map(issue => issue.message);
 }
 
 const LOCAL_DRAFT_PREFIX = "mazigho:visual-builder:draft:";

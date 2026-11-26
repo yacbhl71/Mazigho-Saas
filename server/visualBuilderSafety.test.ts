@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditVisualBuilderAccessibility, clearVisualBuilderLocalDraft, getVisualBuilderLocalDraftKey, isDynamicCatalogueAttributes, normalizeBuilderHref, readVisualBuilderLocalDraft, sanitizeBuilderAlt, writeVisualBuilderLocalDraft } from "../client/src/lib/visualBuilderSafety";
+import { auditVisualBuilderAccessibility, auditVisualBuilderAccessibilityDetailed, clearVisualBuilderLocalDraft, getVisualBuilderLocalDraftKey, isDynamicCatalogueAttributes, normalizeBuilderHref, readVisualBuilderLocalDraft, sanitizeBuilderAlt, writeVisualBuilderLocalDraft } from "../client/src/lib/visualBuilderSafety";
 
 describe("visualBuilderSafety", () => {
   it("autorise les chemins internes et protocoles attendus", () => {
@@ -55,5 +55,12 @@ describe("visualBuilderSafety", () => {
     ]);
     expect(auditVisualBuilderAccessibility('<img src="photo.jpg" alt="Photo"><a href="https://example.com" target="_blank" rel="noopener noreferrer">Voir</a>')).toEqual([]);
     expect(auditVisualBuilderAccessibility('<button type="button" aria-label="Témoignage suivant"><svg aria-hidden="true"></svg></button>')).toEqual([]);
+  });
+
+  it("classe les contrôles détaillés par niveau sans changer l’audit historique", () => {
+    const detailed = auditVisualBuilderAccessibilityDetailed('<img src="photo.jpg" alt=""><button><svg></svg></button><a href="https://example.com" target="_blank">Voir</a>');
+    expect(detailed.map(issue => issue.level)).toEqual(["Bloquant", "Bloquant", "À corriger", "Conseil"]);
+    expect(detailed.map(issue => issue.category)).toEqual(["Images", "Commandes", "Liens externes", "Structure"]);
+    expect(auditVisualBuilderAccessibility('<img src="photo.jpg" alt=""><button><svg></svg></button><a href="https://example.com" target="_blank">Voir</a>')).not.toContain("Une amélioration de structure est conseillée pour ce lien externe.");
   });
 });
