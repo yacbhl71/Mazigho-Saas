@@ -1,9 +1,9 @@
 import htmlSource from "./delicesTresors.html?raw";
 import scopedCss from "./delicesTresors.scoped.css?raw";
-import heroImage from "./assets/dta-unsplash-olive-grove.jpg";
-import datesImage from "./assets/9b971a15-ff12-4cbe-ac25-5cd5fd79babb.webp";
-import oliveImage from "./assets/dta-unsplash-olive-oil.jpg";
-import figsImage from "./assets/dta-unsplash-figs.jpg";
+import heroImage from "./assets/dta-olive-grove.svg?raw";
+import datesImage from "./assets/dta-dates.svg?raw";
+import oliveImage from "./assets/dta-olive-oil.svg?raw";
+import figsImage from "./assets/dta-kabylie-figs.svg?raw";
 import heritageImage from "./assets/550630bb-9fa5-4f31-9e41-2c4913b42a5c.jpg";
 import beautyImage from "./assets/df9806b4-8598-44f5-92f8-5c8b77474139.jpg";
 import importedImageA from "./assets/4f27c436-9266-420f-96dc-ef31fcd00c1b.jpg";
@@ -21,11 +21,12 @@ const icon = (kind: "header" | "image" | "catalogue" | "content" | "footer") => 
   return `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" stroke="${stroke}" stroke-width="1.8"/><path d="M3 9h18M7 13h4M7 16h7" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 };
 const asset = (value: string) => value.replace(/\\/g, "/");
+const localSvg = (value: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(value)}`;
 const filled = htmlSource
-  .replaceAll("__DTA_HERO__", asset(heroImage))
-  .replaceAll("__DTA_DATES__", asset(datesImage))
-  .replaceAll("__DTA_OLIVE__", asset(oliveImage))
-  .replaceAll("__DTA_HERITAGE__", asset(figsImage));
+  .replaceAll("__DTA_HERO__", localSvg(heroImage))
+  .replaceAll("__DTA_DATES__", localSvg(datesImage))
+  .replaceAll("__DTA_OLIVE__", localSvg(oliveImage))
+  .replaceAll("__DTA_HERITAGE__", localSvg(figsImage));
 const header = filled.slice(filled.indexOf("<header"), filled.indexOf("</header>") + "</header>".length);
 const footer = filled.slice(filled.indexOf("<footer"), filled.indexOf("</footer>") + "</footer>".length);
 const main = filled.slice(filled.indexOf("<main"), filled.indexOf("</main>") + "</main>".length);
@@ -48,10 +49,10 @@ const blockMarkers: Array<{ needle: string; id: string; label: string; kind: Par
 const markerParts = filled.split(/(?=\s*<!--\s*BLOC:)/i).filter((part) => /<!--\s*BLOC:/i.test(part));
 export const DELICES_TRESORS_BLOCKS: DelicesTresorsBlock[] = blockMarkers.map((definition) => ({ ...definition, category: CATEGORY, content: markerParts.find((part) => part.toUpperCase().includes(definition.needle.toUpperCase()))?.trim() ?? "", icon: icon(definition.kind) })).filter((block) => block.content.length > 0).map(({ needle: _needle, kind: _kind, ...block }) => block);
 export const DELICES_TRESORS_MEDIA: DelicesTresorsMedia[] = [
-  { id: "dta-hero-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Oliveraie méditerranéenne · Hero", alt: "Oliveraie méditerranéenne baignée de lumière", url: asset(heroImage), sourceUrl: "https://unsplash.com/s/photos/olive-grove" },
-  { id: "dta-dates-import", family: "Délices & Trésors · Médias importés", label: "Dattes Deglet Nour", alt: "Dattes Deglet Nour", url: asset(datesImage), sourceUrl: "archive://backend/uploads/9b971a15-ff12-4cbe-ac25-5cd5fd79babb.webp" },
-  { id: "dta-olive-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Bouteille d’huile d’olive dorée", alt: "Bouteille d’huile d’olive dorée", url: asset(oliveImage), sourceUrl: "https://unsplash.com/s/photos/olive-oil-bottle" },
-  { id: "dta-figs-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Figues fraîches", alt: "Figues fraîches coupées", url: asset(figsImage), sourceUrl: "https://unsplash.com/s/photos/figs" },
+  { id: "dta-hero-local-svg", family: "Délices & Trésors · Visuels locaux", label: "Oliveraie dorée · Hero", alt: "Oliveraie dorée au coucher du soleil", url: localSvg(heroImage), sourceUrl: "local://dta-olive-grove.svg" },
+  { id: "dta-dates-local-svg", family: "Délices & Trésors · Visuels locaux", label: "Dattes Deglet Nour", alt: "Dattes Deglet Nour sur fond saharien", url: localSvg(datesImage), sourceUrl: "local://dta-dates.svg" },
+  { id: "dta-olive-oil-local-svg", family: "Délices & Trésors · Visuels locaux", label: "Bouteille d’huile d’olive artisanale", alt: "Bouteille dorée d’huile d’olive artisanale", url: localSvg(oliveImage), sourceUrl: "local://dta-olive-oil.svg" },
+  { id: "dta-kabylie-figs-local-svg", family: "Délices & Trésors · Visuels locaux", label: "Figues fraîches · Kabylie", alt: "Figues fraîches devant un paysage de Kabylie", url: localSvg(figsImage), sourceUrl: "local://dta-kabylie-figs.svg" },
 ];
 export const DELICES_TRESORS_PAGES: DelicesTresorsPage[] = [
   { id: "dta-home", title: "Accueil", slug: "/", html: shell("home") },
