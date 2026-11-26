@@ -16,6 +16,7 @@ describe("thème visuel Délices & Trésors · Atelier Mode", () => {
 
   it("partage un Header/Footer et prépare le catalogue et le panier", () => {
     expect(DELICES_TRESORS_MODE_PAGES.every((page) => page.html.includes('data-mazigho-header="true"') && page.html.includes('data-mazigho-footer="true"'))).toBe(true);
+    expect(DELICES_TRESORS_MODE_PAGES.every((page) => page.html.includes('class="mz-dtm-logo" href="/"') && page.html.includes('data-mazigho-logo-mode="image"'))).toBe(true);
     const shopPage = DELICES_TRESORS_MODE_PAGES.find((page) => page.slug === "/boutique");
     expect(shopPage?.html).toContain('data-mazigho-zone="catalogue"');
     expect(shopPage?.html).toContain('data-mazigho-catalogue-state="empty"');
