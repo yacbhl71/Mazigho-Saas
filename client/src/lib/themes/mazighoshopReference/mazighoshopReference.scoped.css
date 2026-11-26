@@ -1620,6 +1620,22 @@
     padding: 0 16px;
   }
 
+  .mz-header-inner {
+    gap: 8px;
+  }
+
+  .mz-brand-name {
+    display: none;
+  }
+
+  .mz-header-actions {
+    gap: 4px;
+  }
+
+  .mz-user-btn {
+    padding: 0 8px;
+  }
+
   .mz-announcement-inner {
     padding-right: 36px;
   }
