@@ -1,8 +1,9 @@
 import htmlSource from "./delicesTresors.html?raw";
 import scopedCss from "./delicesTresors.scoped.css?raw";
-import heroImage from "./assets/53dbd949-883f-4ae0-b855-ed1a36fffb6f.jpg";
+import heroImage from "./assets/dta-unsplash-olive-grove.jpg";
 import datesImage from "./assets/9b971a15-ff12-4cbe-ac25-5cd5fd79babb.webp";
-import oliveImage from "./assets/f76d052f-9584-4dc5-868a-91400637b984.jpg";
+import oliveImage from "./assets/dta-unsplash-olive-oil.jpg";
+import figsImage from "./assets/dta-unsplash-figs.jpg";
 import heritageImage from "./assets/550630bb-9fa5-4f31-9e41-2c4913b42a5c.jpg";
 import beautyImage from "./assets/df9806b4-8598-44f5-92f8-5c8b77474139.jpg";
 import importedImageA from "./assets/4f27c436-9266-420f-96dc-ef31fcd00c1b.jpg";
@@ -24,7 +25,7 @@ const filled = htmlSource
   .replaceAll("__DTA_HERO__", asset(heroImage))
   .replaceAll("__DTA_DATES__", asset(datesImage))
   .replaceAll("__DTA_OLIVE__", asset(oliveImage))
-  .replaceAll("__DTA_HERITAGE__", asset(heritageImage));
+  .replaceAll("__DTA_HERITAGE__", asset(figsImage));
 const header = filled.slice(filled.indexOf("<header"), filled.indexOf("</header>") + "</header>".length);
 const footer = filled.slice(filled.indexOf("<footer"), filled.indexOf("</footer>") + "</footer>".length);
 const main = filled.slice(filled.indexOf("<main"), filled.indexOf("</main>") + "</main>".length);
@@ -47,10 +48,10 @@ const blockMarkers: Array<{ needle: string; id: string; label: string; kind: Par
 const markerParts = filled.split(/(?=\s*<!--\s*BLOC:)/i).filter((part) => /<!--\s*BLOC:/i.test(part));
 export const DELICES_TRESORS_BLOCKS: DelicesTresorsBlock[] = blockMarkers.map((definition) => ({ ...definition, category: CATEGORY, content: markerParts.find((part) => part.toUpperCase().includes(definition.needle.toUpperCase()))?.trim() ?? "", icon: icon(definition.kind) })).filter((block) => block.content.length > 0).map(({ needle: _needle, kind: _kind, ...block }) => block);
 export const DELICES_TRESORS_MEDIA: DelicesTresorsMedia[] = [
-  { id: "dta-hero-import", family: "Délices & Trésors · Médias importés", label: "Bannière importée", alt: "Visuel importé de l’archive, à remplacer si besoin", url: asset(heroImage), sourceUrl: "archive://backend/uploads/53dbd949-883f-4ae0-b855-ed1a36fffb6f.jpg" },
-  { id: "dta-packshot-import", family: "Délices & Trésors · Médias importés", label: "Packshot importé", alt: "Packshot importé de l’archive", url: asset(beautyImage), sourceUrl: "archive://backend/uploads/df9806b4-8598-44f5-92f8-5c8b77474139.jpg" },
-  { id: "dta-detail-import", family: "Délices & Trésors · Médias importés", label: "Détail importé", alt: "Détail produit importé de l’archive", url: asset(importedImageB), sourceUrl: "archive://backend/uploads/44451434-40c0-492f-b10c-0a77fe5033ae.jpg" },
-  { id: "dta-transparent-import", family: "Délices & Trésors · Médias importés", label: "Visuel transparent importé", alt: "Visuel transparent importé de l’archive", url: asset(datesImage), sourceUrl: "archive://backend/uploads/9b971a15-ff12-4cbe-ac25-5cd5fd79babb.webp" },
+  { id: "dta-hero-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Oliveraie méditerranéenne · Hero", alt: "Oliveraie méditerranéenne baignée de lumière", url: asset(heroImage), sourceUrl: "https://unsplash.com/s/photos/olive-grove" },
+  { id: "dta-dates-import", family: "Délices & Trésors · Médias importés", label: "Dattes Deglet Nour", alt: "Dattes Deglet Nour", url: asset(datesImage), sourceUrl: "archive://backend/uploads/9b971a15-ff12-4cbe-ac25-5cd5fd79babb.webp" },
+  { id: "dta-olive-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Bouteille d’huile d’olive dorée", alt: "Bouteille d’huile d’olive dorée", url: asset(oliveImage), sourceUrl: "https://unsplash.com/s/photos/olive-oil-bottle" },
+  { id: "dta-figs-unsplash", family: "Délices & Trésors · Terroir Unsplash", label: "Figues fraîches", alt: "Figues fraîches coupées", url: asset(figsImage), sourceUrl: "https://unsplash.com/s/photos/figs" },
 ];
 export const DELICES_TRESORS_PAGES: DelicesTresorsPage[] = [
   { id: "dta-home", title: "Accueil", slug: "/", html: shell("home") },
