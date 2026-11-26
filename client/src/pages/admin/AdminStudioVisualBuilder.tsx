@@ -585,11 +585,16 @@ export default function AdminStudioVisualBuilder() {
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || !activeBuilderPage?.project || Object.keys(activeBuilderPage.project).length === 0) return;
-    // Les pages peuvent arriver après l'initialisation de l'iframe GrapesJS.
+    // Après la sélection explicite d’un thème, applySelectedStudioTheme a
+    // déjà injecté son HTML/CSS. Le changement de pages provoqué par cette
+    // sélection ne doit pas réinjecter l’ancien projet sauvegardé par-dessus
+    // le canvas et rendre la correction visuelle invisible.
+    if (selectedMode === "theme" && selectedThemeId !== "mazigho-base") return;
+    // Les pages peuvent arriver après l’initialisation de l’iframe GrapesJS.
     // Recharge le projet actif pour que le canvas Studio reflète ses styles
     // enregistrés au lieu de montrer uniquement une structure HTML brute.
     editor.loadProjectData(activeBuilderPage.project as Parameters<Editor["loadProjectData"]>[0]);
-  }, [activeBuilderPage?.id, activeBuilderPage?.project]);
+  }, [activeBuilderPage?.id, activeBuilderPage?.project, selectedMode, selectedThemeId]);
 
   useEffect(() => {
     if (saveTarget === "store" && selectedStoreId === null && stores.length > 0 && projectMode !== "independent") {
