@@ -18,6 +18,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    // GrapesJS renders theme HTML inside a separate iframe. Keep theme media
+    // as public emitted files instead of data URIs, which that canvas can
+    // reject or display as broken image text.
+    assetsInlineLimit: 0,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -70,4 +74,3 @@ export default defineConfig({
     watch: process.env.DISABLE_HMR === "true" ? null : {},
   },
 });
-
