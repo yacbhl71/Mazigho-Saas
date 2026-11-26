@@ -1616,6 +1616,11 @@
 }
 
 @media (max-width: 640px) {
+  .mz-page {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   .mz-container {
     padding: 0 16px;
   }
