@@ -142,6 +142,7 @@ import {
   type TrainingModalMode,
 } from "@/components/site-guides/SiteTrainingModal";
 import { buildClientPreviewSrcDoc } from "./clientAdminHelpers";
+import { BuilderConnectionStatusPanel } from "@/components/builder/BuilderConnectionStatusPanel";
 
 const INDEPENDENT_BLOCK_PALETTE: Record<
   string,
@@ -3098,6 +3099,7 @@ export default function IndependentSiteBuilderPage() {
         <div className="grid gap-5 xl:grid-cols-12">
           {/* ZONE 1 — BIBLIOTHÈQUE PROFESSIONNELLE À 7 ESPACES (Chantier 2) */}
           <aside className="space-y-4 xl:col-span-4">
+            <BuilderConnectionStatusPanel />
             <Card className="border-[#e2dad0] bg-white shadow-xs">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
