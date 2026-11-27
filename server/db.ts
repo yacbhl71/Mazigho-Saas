@@ -15018,9 +15018,44 @@ export async function isStorefrontThemeAllowedForStore(storeId: number, themeId:
   return access.themeIds.includes(themeId);
 }
 
+type PublicStoreIdentity = { displayName: string; isPlatformStore: boolean };
+
+async function getPublicStoreIdentity(storeId?: number): Promise<PublicStoreIdentity | null> {
+  if (!storeId || storeId <= 0) return null;
+  try {
+    const database = await getDb();
+    if (!database) {
+      const store = DEMO_STORES.find(candidate => candidate.id === storeId);
+      return store ? { displayName: store.displayName, isPlatformStore: Boolean(store.isPlatformStore) } : null;
+    }
+    const [store] = await database
+      .select({ displayName: stores.displayName, isPlatformStore: stores.isPlatformStore })
+      .from(stores)
+      .where(eq(stores.id, storeId))
+      .limit(1);
+    return store ? { displayName: store.displayName, isPlatformStore: Boolean(store.isPlatformStore) } : null;
+  } catch (error) {
+    console.warn("[MultiStore] Unable to read public store identity", error);
+    return null;
+  }
+}
+
+function replaceDefaultBrandTokens<T>(value: T, brandName: string): T {
+  if (typeof value === "string") return value.replace(/MAZIGHO/g, brandName) as T;
+  if (Array.isArray(value)) return value.map(item => replaceDefaultBrandTokens(item, brandName)) as T;
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceDefaultBrandTokens(item, brandName)])) as T;
+}
+
 export async function getDesignProfile(storeId?: number): Promise<DesignProfile> {
+  const storeIdentity = await getPublicStoreIdentity(storeId);
   const value = await getStoreSettingValue(storeId, "design_profile");
-  if (!value) return { ...defaultDesignProfile };
+  if (!value) {
+    if (storeIdentity && !storeIdentity.isPlatformStore && storeIdentity.displayName.trim()) {
+      return replaceDefaultBrandTokens({ ...defaultDesignProfile }, storeIdentity.displayName.trim());
+    }
+    return { ...defaultDesignProfile };
+  }
   try {
     const raw = JSON.parse(value) as Record<string, any>;
     const cloneTheme = raw.imported && raw.theme && typeof raw.theme === "object" ? raw.theme : null;
@@ -15033,8 +15068,16 @@ export async function getDesignProfile(storeId?: number): Promise<DesignProfile>
       raw.customColorsEnabled = true;
     }
     if (cloneTheme?.fonts && typeof cloneTheme.fonts === "object") raw.typographyId = "modern";
-    return normalizeDesignProfile(raw);
+    const profile = normalizeDesignProfile(raw);
+    const hasGenericBrand = profile.brandName.trim().toLocaleLowerCase() === "mazigho";
+    if (storeIdentity && !storeIdentity.isPlatformStore && hasGenericBrand && storeIdentity.displayName.trim()) {
+      return replaceDefaultBrandTokens(profile, storeIdentity.displayName.trim());
+    }
+    return profile;
   } catch {
+    if (storeIdentity && !storeIdentity.isPlatformStore && storeIdentity.displayName.trim()) {
+      return replaceDefaultBrandTokens({ ...defaultDesignProfile }, storeIdentity.displayName.trim());
+    }
     return { ...defaultDesignProfile };
   }
 }
