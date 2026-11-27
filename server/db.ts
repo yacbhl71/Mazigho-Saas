@@ -3566,7 +3566,9 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
       "asma.mazigho.ch": 12,
       "pets.mazigho.ch": 13,
       "marche-atlas.mazigho.ch": 10770006,
-      "rituels.mazigho.ch": 15,
+      // The designed Rituels storefront is the historical rabios record;
+      // store 15 is only the generic seeded/demo record.
+      "rituels.mazigho.ch": 7020003,
     };
     if (!db) {
       if (normalizedHost) {
