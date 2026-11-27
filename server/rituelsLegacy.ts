@@ -27,7 +27,7 @@ export const legacyRituelsDesignPatch: Partial<DesignProfile> = {
   navigationShop: "La collection",
   navigationCategories: "Nos univers",
   navigationCreations: "Les coffrets",
-  navigationContact: "Maison Safaya",
+  navigationContact: "Contact",
   discoveryEyebrow: "Explorer la collection",
   discoveryTitle: "Des infusions pour chaque rituel",
   discoveryText: "Thés sélectionnés, infusions fruitées, rooibos et lattes : découvrez les familles historiques de Rabios.",
@@ -53,6 +53,7 @@ export const legacyRituelsDesignPatch: Partial<DesignProfile> = {
   closingContactCtaUrl: "/contact",
   closingVisualText: "Rituels d’Infusion",
   closingImageUrl: RITUELS_PACKAGING_IMAGE,
+  textBanners: [],
   shopPageCopyCustomized: true,
   shopEyebrow: "La collection Rabios",
   shopTitle: "Thés, rooibos et infusions",
@@ -74,6 +75,12 @@ export const legacyRituelsDesignPatch: Partial<DesignProfile> = {
   footerDescription: "Rituels d’Infusion · Thés, rooibos et créations de la maison.",
   footerContactText: "Une collection historique Rabios imaginée avec Maison Safaya.",
   footerCopyrightText: "© Rituels d’Infusion · Rabios",
+  announcementItems: ["Une collection historique Rabios", "Présentation éditoriale", "Commande et paiement fermés"],
+  reassuranceItems: [
+    { icon: "sparkles", title: "Collection historique", text: "Une sélection restaurée à titre éditorial." },
+    { icon: "check", title: "Visuels Rituels", text: "Boîtes, pochettes et coffrets de l’univers Maison Safaya." },
+    { icon: "arrow", title: "Sans transaction", text: "Aucun prix, panier ou paiement n’est ouvert." },
+  ],
 };
 
 type LegacyCategory = {
@@ -127,7 +134,9 @@ const legacyProduct = (id: number, categoryId: number, name: string, slug: strin
   slug,
   description,
   longDescription: description,
-  price: 0,
+  // Aucun prix historique fiable n’a été retrouvé : null évite d’afficher un
+  // montant fictif tout en conservant les références dans la vitrine.
+  price: null as unknown as number,
   originalPrice: null,
   stock: 0,
   featured,

@@ -3572,7 +3572,9 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
         slug: "rituels-dinfusion-rabios",
         displayName: "Rituels d’Infusion",
         primaryDomain: normalizedHost,
-        status: "active",
+        // Restauration éditoriale uniquement : conserver le tenant historique
+        // public, mais fermer panier, commandes et paiements sans mutation DB.
+        status: "limited",
         isPlatformStore: 0,
       };
     }
