@@ -3563,6 +3563,19 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
     await ensureMultiStoreSchema();
     const db = await getDb();
     const normalizedHost = normalizeStoreHost(host);
+    if (normalizedHost === "rituels.mazigho.ch") {
+      // This alias is the public replacement for rabios.mazigho.ch. Keep it
+      // pinned to the historical tenant before any generic/domain lookup can
+      // select the seeded store 15.
+      return {
+        id: 7020003,
+        slug: "rituels-dinfusion-rabios",
+        displayName: "Rituels d’Infusion",
+        primaryDomain: normalizedHost,
+        status: "active",
+        isPlatformStore: 0,
+      };
+    }
     const knownStoreHostIds: Record<string, number> = {
       "tiziri.mazigho.ch": 2,
       "atlas-deco.mazigho.ch": 3,
