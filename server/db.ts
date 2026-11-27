@@ -141,6 +141,14 @@ import {
   clearDemoCart,
   getDemoAdminStats,
 } from "./db/demoFallback";
+import {
+  LEGACY_RITUELS_STORE_ID,
+  getLegacyImages,
+  isLegacyRituelsStore,
+  legacyRituelsCategories,
+  legacyRituelsDesignPatch,
+  legacyRituelsProducts,
+} from "./rituelsLegacy";
 
 const { accountTokens, users, stores, storeMemberships, storeProvisioningDrafts, storeSettings, storeAiMonthlyUsage, studioImageGenerationUsage, ownerKnowledgeDocuments, ownerAiConversations, ownerAiConversationMessages, ownerAiWorkspaceDocuments, storeCmsPages, categories, products, productCategories, productImages, ownerProductVariants, productTranslations, publicContentTranslations, productDeliveryProfiles, reviews, contactMessages, orders, orderDecisions, orderItems, orderFulfillmentJobs, orderSupplierOrders, supplierWebhookEvents, accountingEntries, carts, cartItems, banners, settings, promotions, promotionRedemptions, auditLogs, returnRequests, returnRequestItems, returnRequestEvents, customCreationRequests, customCreationRequestEvents, campaigns, stripeConnectedAccounts, stripeLiveConnectedAccounts, lemonSqueezyBillingCheckouts, lemonSqueezySubscriptions, lemonSqueezyWebhookEvents, studioProjectMembers, studioFamilyAnnouncements } = schema;
 type StorefrontBannerRow = typeof banners.$inferSelect;
@@ -8254,6 +8262,7 @@ export async function repairOwnerAccount(input: {
 // Categories queries
 export async function getAllCategories(storeId?: number) {
   await ensureCreativeCatalogSeed();
+  if (isLegacyRituelsStore(storeId)) return legacyRituelsCategories;
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8265,6 +8274,7 @@ export async function getAllCategories(storeId?: number) {
 
 export async function getCategoryBySlug(slug: string, storeId?: number) {
   await ensureCreativeCatalogSeed();
+  if (isLegacyRituelsStore(storeId)) return legacyRituelsCategories.find(category => category.slug === slug);
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8695,6 +8705,7 @@ export async function getLocalizedCategoryBySlug(slug: string, locale: "fr" | Pu
 
 export async function getAllProducts(storeId?: number) {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) return legacyRituelsProducts.map(({ legacyImageUrl: _legacyImageUrl, ...product }) => ({ ...product, categoryIds: [product.categoryId], isManualProduct: true }));
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8732,6 +8743,7 @@ export async function getAllProducts(storeId?: number) {
 
 export async function getFeaturedProducts(limit: number = 8, storeId?: number) {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) return legacyRituelsProducts.filter(product => product.featured === 1).slice(0, limit).map(({ legacyImageUrl: _legacyImageUrl, ...product }) => ({ ...product, isManualProduct: true }));
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8771,6 +8783,7 @@ export async function getFeaturedProducts(limit: number = 8, storeId?: number) {
 
 export async function getProductsByCategory(categoryId: number, storeId?: number) {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) return legacyRituelsProducts.filter(product => product.categoryId === categoryId).map(({ legacyImageUrl: _legacyImageUrl, ...product }) => ({ ...product, categoryIds: [product.categoryId], isManualProduct: true }));
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8809,6 +8822,13 @@ export async function getProductsByCategory(categoryId: number, storeId?: number
 }
 export async function getProductBySlug(slug: string, storeId?: number) {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) {
+    const product = legacyRituelsProducts.find(item => item.slug === slug);
+    if (!product) return undefined;
+    const category = legacyRituelsCategories.find(item => item.id === product.categoryId);
+    const { legacyImageUrl: _legacyImageUrl, ...publicProduct } = product;
+    return { ...publicProduct, categoryCatalogSection: category?.catalogSection ?? "standard", isManualProduct: true, deliveryProfiles: [] };
+  }
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8857,6 +8877,13 @@ export async function getProductBySlug(slug: string, storeId?: number) {
 
 export async function getProductById(productId: number, storeId?: number) {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) {
+    const product = legacyRituelsProducts.find(item => item.id === productId);
+    if (!product) return undefined;
+    const category = legacyRituelsCategories.find(item => item.id === product.categoryId);
+    const { legacyImageUrl: _legacyImageUrl, ...publicProduct } = product;
+    return { ...publicProduct, categoryCatalogSection: category?.catalogSection ?? "standard", isManualProduct: true, deliveryProfiles: [] };
+  }
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -8903,6 +8930,7 @@ export async function getProductById(productId: number, storeId?: number) {
 // Product images queries
 export async function getProductImages(productId: number, storeId?: number): Promise<ProductImageRow[]> {
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) return (getLegacyImages([productId]).get(productId) || []) as ProductImageRow[];
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -9020,6 +9048,7 @@ export async function getProductImagesForProducts(ids: number[], storeId?: numbe
   const map = new Map<number, Array<typeof productImages.$inferSelect>>();
   if (ids.length === 0) return map;
   await ensureStoreCatalogScopeSchema();
+  if (isLegacyRituelsStore(storeId)) return getLegacyImages(ids) as Map<number, Array<typeof productImages.$inferSelect>>;
   const db = await getDb();
   if (!db) {
     const effectiveStoreId = storeId ?? 1;
@@ -15071,6 +15100,7 @@ function replaceDefaultBrandTokens<T>(value: T, brandName: string): T {
 }
 
 export async function getDesignProfile(storeId?: number): Promise<DesignProfile> {
+  if (storeId === LEGACY_RITUELS_STORE_ID) return { ...defaultDesignProfile, ...legacyRituelsDesignPatch };
   const storeIdentity = await getPublicStoreIdentity(storeId);
   const value = await getStoreSettingValue(storeId, "design_profile");
   if (!value) {
