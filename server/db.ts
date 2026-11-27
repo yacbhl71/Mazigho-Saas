@@ -3555,6 +3555,19 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
     await ensureMultiStoreSchema();
     const db = await getDb();
     const normalizedHost = normalizeStoreHost(host);
+    const knownStoreHostIds: Record<string, number> = {
+      "tiziri.mazigho.ch": 2,
+      "atlas-deco.mazigho.ch": 3,
+      "moda.mazigho.ch": 4,
+      "kenza.mazigho.ch": 5,
+      "dyama.mazigho.ch": 6,
+      "connect.mazigho.ch": 9,
+      "lina.mazigho.ch": 10,
+      "asma.mazigho.ch": 12,
+      "pets.mazigho.ch": 13,
+      "marche-atlas.mazigho.ch": 14,
+      "rituels.mazigho.ch": 15,
+    };
     if (!db) {
       if (normalizedHost) {
         if (["bhll.mazigho.com", "bhllvoyage.mazigho.ch", "bhll.mazigho.ch", "bhll-voyage.mazigho.com"].includes(normalizedHost)) {
@@ -3563,6 +3576,8 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
         }
         const byDomain = DEMO_STORES.find(s => s.primaryDomain === normalizedHost);
         if (byDomain) return byDomain;
+        const byKnownHost = DEMO_STORES.find(s => s.id === knownStoreHostIds[normalizedHost]);
+        if (byKnownHost) return { ...byKnownHost, primaryDomain: normalizedHost };
       }
       const recoverySlug = getStoreSlugForRecoveryHost(normalizedHost);
       if (recoverySlug) {
@@ -3587,6 +3602,12 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
       ? await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.primaryDomain, normalizedHost)).limit(1)
       : [];
     if (byDomain[0]) return byDomain[0];
+    const knownStoreId = normalizedHost ? knownStoreHostIds[normalizedHost] : undefined;
+    if (knownStoreId) {
+      const byKnownHost = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
+        .from(stores).where(eq(stores.id, knownStoreId)).limit(1);
+      if (byKnownHost[0]) return { ...byKnownHost[0], primaryDomain: normalizedHost };
+    }
     const recoverySlug = getStoreSlugForRecoveryHost(normalizedHost);
     if (recoverySlug) {
       const byRecoveryHost = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
