@@ -3602,6 +3602,14 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
       const bhllStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore }).from(stores).where(eq(stores.id, 4)).limit(1);
       if (bhllStore[0]) return { ...bhllStore[0], primaryDomain: "bhll.mazigho.com", status: "active" };
     }
+    // Rabios was deliberately renamed and moved to rituels.mazigho.ch.
+    // Resolve the historical store before the database's old direct-domain row
+    // (store 15), so the restored design and catalogue cannot be shadowed.
+    if (normalizedHost === "rituels.mazigho.ch") {
+      const historicalRituelsStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
+        .from(stores).where(eq(stores.id, 7020003)).limit(1);
+      if (historicalRituelsStore[0]) return { ...historicalRituelsStore[0], primaryDomain: normalizedHost };
+    }
     if (normalizedHost === "test-pickybars.mazigho.ch") {
       const testStore = await db.select({ id: stores.id, slug: stores.slug, displayName: stores.displayName, primaryDomain: stores.primaryDomain, status: stores.status, isPlatformStore: stores.isPlatformStore })
         .from(stores).innerJoin(storeSettings, eq(storeSettings.storeId, stores.id))
