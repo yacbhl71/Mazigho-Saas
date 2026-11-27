@@ -3559,13 +3559,13 @@ export async function resolveStoreForHost(host?: string | null): Promise<StoreSc
       "tiziri.mazigho.ch": 2,
       "atlas-deco.mazigho.ch": 3,
       "moda.mazigho.ch": 4,
-      "kenza.mazigho.ch": 5,
-      "dyama.mazigho.ch": 6,
+      "kenza.mazigho.ch": 9570006,
+      "dyama.mazigho.ch": 3150009,
       "connect.mazigho.ch": 9,
-      "lina.mazigho.ch": 10,
+      "lina.mazigho.ch": 9570005,
       "asma.mazigho.ch": 12,
       "pets.mazigho.ch": 13,
-      "marche-atlas.mazigho.ch": 14,
+      "marche-atlas.mazigho.ch": 10770006,
       "rituels.mazigho.ch": 15,
     };
     if (!db) {
